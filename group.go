@@ -85,6 +85,6 @@ func (own *group) DELETE(part string, handle HandleFunc) {
 func (own *group) addRoute(method, pattern string, handle HandleFunc) {
 	handler := newHandler(method, handle)
 	handler.WithMiddlewares(own.middlewares...).ServeInit()
-	own.engine.router.Handle(own.prefix+pattern, handler)
+	own.engine.router.Handle(method+" "+own.prefix+pattern, handler)
 	loggo.Info(fmt.Sprintf("Add route: %7s %s", method, own.prefix+pattern))
 }

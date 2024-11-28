@@ -3,6 +3,8 @@ package leego
 import (
 	"bufio"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"text/template"
 
@@ -29,8 +31,18 @@ var logoTemplate = `
 
 // 初始化 logo
 func init() {
+	// 获取当前文件的绝对路径
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		loggo.Fatal("not found leego/logo.go path")
+		return
+	}
+
+	// 构建目标文件的路径
+	versionFilePath := filepath.Join(filepath.Dir(currentFile), "VERSION.txt")
+
 	// 读取版本文件
-	file, err := os.Open("VERSION.txt")
+	file, err := os.Open(versionFilePath)
 	if err != nil {
 		loggo.Error(err.Error())
 		return
