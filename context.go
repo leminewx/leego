@@ -34,31 +34,41 @@ type Context struct {
 
 	queryValues url.Values
 
+	engine   *Engine
 	request  *http.Request
 	response http.ResponseWriter
 }
 
 const (
-	HearderKeyContentType = "Content-Type"
+	HeaderOrigin      = "Origin"
+	HeaderContentType = "Content-Type"
+
+	HeaderAccessControlAllowCredentials = "Access-Control-Allow-Credentials"
+	HeaderAccessControlAllowOrigin      = "Access-Control-Allow-Origin"
+	HeaderAccessControlAllowMethods     = "Access-Control-Allow-Methods"
+	HeaderAccessControlAllowHeaders     = "Access-Control-Allow-Headers"
+	HeaderAccessControlExposeHeaders    = "Access-Control-Expose-Headers"
+	HeaderAccessControlMaxAge           = "Access-Control-Max-Age"
 )
 
 const (
-	ContentTypeFormData       = "multipart/form-data"
-	ContentTypeFormUrlencoded = "application/x-www-form-urlencoded"
+	_ContentTypeFormData       = "multipart/form-data"
+	_ContentTypeFormUrlencoded = "application/x-www-form-urlencoded"
 )
 
 // newContext 新建一个上下文
-func newContext(resp http.ResponseWriter, req *http.Request) *Context {
-	if content, _, err := mime.ParseMediaType(req.Header.Get(HearderKeyContentType)); err == nil {
-		if content == ContentTypeFormUrlencoded {
+func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request) *Context {
+	if content, _, err := mime.ParseMediaType(req.Header.Get(HeaderContentType)); err == nil {
+		if content == _ContentTypeFormUrlencoded {
 			req.ParseForm()
-		} else if content == ContentTypeFormData {
+		} else if content == _ContentTypeFormData {
 			req.ParseMultipartForm(maxMultipartMemory)
 		}
 	}
 
 	return &Context{
 		queryValues: req.URL.Query(),
+		engine:      engine,
 		request:     req,
 		response:    resp,
 	}
@@ -96,6 +106,10 @@ func (own *Context) GetMultipartFormValue(key string) string {
 	}
 
 	return ""
+}
+
+func (own *Context) GetSeriveName() string {
+	return own.engine.service
 }
 
 func (own *Context) GetHeader(key string) string {
@@ -273,8 +287,10 @@ func (own *Context) ResponseUpgrade(upgrade func(conn net.Conn)) error {
 	return conn.Close()
 }
 
+const websocketHashKey = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
 func computeAcceptKey(key string) string {
 	hash := sha1.New()
-	io.WriteString(hash, key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+	io.WriteString(hash, key+websocketHashKey)
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }

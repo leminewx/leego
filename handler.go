@@ -10,14 +10,16 @@ type HandleFunc func(ctx *Context)
 // Handler 定义处理器的结构
 type Handler struct {
 	method      string
+	engine      *Engine
 	handle      HandleFunc
 	middlewares []MiddlewareFunc
 }
 
 // newHandler 新建一个处理器
-func newHandler(method string, handle HandleFunc) *Handler {
+func newHandler(engine *Engine, method string, handle HandleFunc) *Handler {
 	return &Handler{
 		method:      method,
+		engine:      engine,
 		handle:      handle,
 		middlewares: make([]MiddlewareFunc, 0),
 	}
@@ -36,15 +38,13 @@ func (own *Handler) ServeInit() {
 	}
 }
 
-const _MethodNotAllowed = "405 method not allowed"
-
 // ServeHTTP 实现 http.Handler 接口
 func (own *Handler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	if req.Method != own.method {
-		http.Error(resp, _MethodNotAllowed, http.StatusMethodNotAllowed)
+		http.Error(resp, _StatusMethodNotAllowed, http.StatusMethodNotAllowed)
 		return
 	}
 
-	ctx := newContext(resp, req)
+	ctx := newContext(own.engine, resp, req)
 	own.handle(ctx)
 }

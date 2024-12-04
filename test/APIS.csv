@@ -1,0 +1,9 @@
+service,name,method,path
+test,通用API1,GET,/v1/a
+test,下载文件1,GET,/v1/files/*
+test,通用API2,GET,/v2/b
+test,登录系统,POST,/v2/login/{name}
+test,获取系统信息,GET,/v2/login/sse
+test,下载文件,GET,/v2/login/files/download/*
+test,显示文件,GET,/v2/login/files/show/*
+test,下载文件2,GET,/v2/login/files/*

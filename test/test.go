@@ -11,9 +11,10 @@ import (
 )
 
 func main() {
-	engine := leego.NewEngine()
+	engine := leego.NewEngine("test")
 	engine.WithMiddlewares(
 		leego.Cors(cors.NewCORS()),
+		leego.AuthFromHubuByHTTP(http.MethodPost, "http://10.254.249.225:12345/api/auth"),
 		leego.Log(),
 	)
 
@@ -37,9 +38,9 @@ func main() {
 		group1.GET("/a", func(ctx *leego.Context) {
 			fmt.Println("/v1/a ok")
 			ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
-		})
+		}, "通用API1")
 
-		group1.WithStatic("/files", "/root/project/gitee.com/leminewx/leego")
+		group1.WithStatic("/files", "/root/project/gitee.com/leminewx/leego", "下载文件1")
 	}
 
 	{
@@ -62,7 +63,7 @@ func main() {
 		group2.GET("/b", func(ctx *leego.Context) {
 			fmt.Println("/v2/b ok")
 			ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
-		})
+		}, "通用API2")
 
 		{
 			group3 := group2.Group("/login").WithMiddlewares(
@@ -78,7 +79,7 @@ func main() {
 			group3.POST("/{name}", func(ctx *leego.Context) {
 				fmt.Printf("/v2/login/%s ok\n", ctx.GetPathValue("name"))
 				ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
-			})
+			}, "登录系统")
 
 			group3.GET("/sse", func(ctx *leego.Context) {
 				ctx.ResponseSSE(func() <-chan []byte {
@@ -94,21 +95,21 @@ func main() {
 
 					return data
 				})
-			})
+			}, "获取系统信息")
 
 			group3.GET("/files/download/*", func(ctx *leego.Context) {
 				if err := ctx.ResponseFile(strings.Split(ctx.GetURL().String(), "/files/download/")[1]); err != nil {
 					ctx.ResponseFail(http.StatusInternalServerError, err.Error())
 				}
-			})
+			}, "下载文件")
 
-			group3.GET("/files/show/*/123", func(ctx *leego.Context) {
+			group3.GET("/files/show/*", func(ctx *leego.Context) {
 				if err := ctx.ResponseFileContent(strings.Split(ctx.GetURL().String(), "/files/show/")[1]); err != nil {
 					ctx.ResponseFail(http.StatusInternalServerError, err.Error())
 				}
-			})
+			}, "显示文件")
 
-			group3.WithStatic("/files", "/root/project/gitee.com/leminewx/leego")
+			group3.WithStatic("/files", "/root/project/gitee.com/leminewx/leego", "下载文件2")
 		}
 	}
 

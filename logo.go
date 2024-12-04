@@ -41,16 +41,16 @@ func init() {
 	// 构建目标文件的路径
 	versionFilePath := filepath.Join(filepath.Dir(currentFile), "VERSION.txt")
 
-	// 读取版本文件
-	file, err := os.Open(versionFilePath)
+	// 打开 VERSION.txt 文件
+	versionFile, err := os.Open(versionFilePath)
 	if err != nil {
 		loggo.Error(err.Error())
 		return
 	}
 
-	reader := bufio.NewReader(file)
+	reader := bufio.NewReader(versionFile)
 	first, _, err := reader.ReadLine()
-	if file.Close(); err != nil {
+	if versionFile.Close(); err != nil {
 		loggo.Error(err.Error())
 		return
 	}

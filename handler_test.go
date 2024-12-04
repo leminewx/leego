@@ -7,7 +7,7 @@ import (
 )
 
 func TestHandler(t *testing.T) {
-	handler := newHandler(http.MethodGet, func(ctx *Context) {
+	handler := newHandler(nil, http.MethodGet, func(ctx *Context) {
 		fmt.Println("hello world")
 	})
 
