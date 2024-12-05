@@ -1,4 +1,4 @@
-package leego
+package logo
 
 import "testing"
 

@@ -1,4 +1,4 @@
-package leego
+package logo
 
 import (
 	"bufio"
@@ -34,12 +34,12 @@ func init() {
 	// 获取当前文件的绝对路径
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
-		loggo.Fatal("not found leego/logo.go path")
+		loggo.Fatal("not found leego/logo/logo.go")
 		return
 	}
 
 	// 构建目标文件的路径
-	versionFilePath := filepath.Join(filepath.Dir(currentFile), "VERSION.txt")
+	versionFilePath := filepath.Join(filepath.Dir(filepath.Dir(currentFile)), "VERSION.txt")
 
 	// 打开 VERSION.txt 文件
 	versionFile, err := os.Open(versionFilePath)

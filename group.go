@@ -3,7 +3,6 @@ package leego
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -80,19 +79,6 @@ func (own *group) PUT(part string, handle HandleFunc, name ...string) {
 // DELETE 给当前路由组添加一个处理 DELETE 方法的处理器
 func (own *group) DELETE(part string, handle HandleFunc, name ...string) {
 	own.addRoute(http.MethodDelete, part, handle, name...)
-}
-
-var apiFile *os.File
-
-func init() {
-	var err error
-	apiFile, err = os.OpenFile("APIS.csv", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
-	if err != nil {
-		loggo.Error(err.Error())
-	}
-	if _, err = apiFile.Write([]byte("service,name,method,path\n")); err != nil {
-		loggo.Error(err.Error())
-	}
 }
 
 // addRoute 添加处理器到当前路由组
