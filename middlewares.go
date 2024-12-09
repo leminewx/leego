@@ -24,11 +24,11 @@ func Log() MiddlewareFunc {
 		formatTime = "2006-01-02 15:04:05.000"
 
 		// INFO:     10.254.249.236:39860 - "POST /datacenter/v1/files/cases/022_V2X_LED_OBU HTTP/1.1" 200 OK
-		format1XX = "\n\033[37mInfo \033[0m:  %s  -  \"%s %v %s\"  |\033[47m\033[30m %d \033[0m|\033[47m\033[30m %v \033[0m|\n"
-		format2XX = "\n\033[32mInfo \033[0m:  %s  -  \"%s %v %s\"  |\033[42m\033[30m %d \033[0m|\033[42m\033[30m %v \033[0m|\n"
-		format3XX = "\n\033[33mInfo \033[0m:  %s  -  \"%s %v %s\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n"
-		format4XX = "\n\033[31mError\033[0m:  %s  -  \"%s %v %s\"  |\033[41m\033[30m %d \033[0m|\033[41m\033[30m %v \033[0m|\n"
-		format5XX = "\n\033[35mError\033[0m:  %s  -  \"%s %v %s\"  |\033[45m\033[30m %d \033[0m|\033[45m\033[30m %v \033[0m|\n"
+		format1XX = "\033[37mInfo \033[0m:  %s  -  \"%s %v %s\"  |\033[47m\033[30m %d \033[0m|\033[47m\033[30m %v \033[0m|\n\n"
+		format2XX = "\033[32mInfo \033[0m:  %s  -  \"%s %v %s\"  |\033[42m\033[30m %d \033[0m|\033[42m\033[30m %v \033[0m|\n\n"
+		format3XX = "\033[33mInfo \033[0m:  %s  -  \"%s %v %s\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n\n"
+		format4XX = "\033[31mError\033[0m:  %s  -  \"%s %v %s\"  |\033[41m\033[30m %d \033[0m|\033[41m\033[30m %v \033[0m|\n\n"
+		format5XX = "\033[35mError\033[0m:  %s  -  \"%s %v %s\"  |\033[45m\033[30m %d \033[0m|\033[45m\033[30m %v \033[0m|\n\n"
 	)
 
 	return func(handle HandleFunc) HandleFunc {

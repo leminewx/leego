@@ -3,6 +3,7 @@ package leego
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -81,6 +82,19 @@ func (own *group) DELETE(part string, handle HandleFunc, name ...string) {
 	own.addRoute(http.MethodDelete, part, handle, name...)
 }
 
+var apiFile *os.File
+
+func init() {
+	var err error
+	apiFile, err = os.OpenFile("APIS.csv", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+	if err != nil {
+		loggo.Error(err.Error())
+	}
+	if _, err = apiFile.Write([]byte("service,method,path,name,type\n")); err != nil {
+		loggo.Error(err.Error())
+	}
+}
+
 // addRoute 添加处理器到当前路由组
 func (own *group) addRoute(method, pattern string, handle HandleFunc, name ...string) {
 	handler := newHandler(own.engine, method, handle)
@@ -91,8 +105,8 @@ func (own *group) addRoute(method, pattern string, handle HandleFunc, name ...st
 	loggo.Info(fmt.Sprintf("Add route: %7s %s", method, path))
 
 	if len(name) > 0 {
-		fmt.Fprintf(apiFile, "%s,%s,%s,%s\n", own.engine.service, name[0], method, path)
+		fmt.Fprintf(apiFile, "%s,%s,%s,%s,\n", own.engine.service, method, path, name[0])
 	} else {
-		fmt.Fprintf(apiFile, "%s,,%s,%s\n", own.engine.service, method, path)
+		fmt.Fprintf(apiFile, "%s,%s,%s,,\n", own.engine.service, method, path)
 	}
 }

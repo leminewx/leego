@@ -3,7 +3,6 @@ package leego
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"runtime"
 	"strings"
 
@@ -57,19 +56,6 @@ func (own *Engine) ListenAndServeTLS(opts *Options) {
 	own.newServer(opts)
 	loggo.Info(fmt.Sprintf("Server is starting %s ...", opts.Addr))
 	loggo.Fatal(fmt.Sprintf("Failed to start server: %v", own.server.ListenAndServeTLS(opts.TLSCertFile, opts.TLSKeyFile)))
-}
-
-var apiFile *os.File
-
-func init() {
-	var err error
-	apiFile, err = os.OpenFile("APIS.csv", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
-	if err != nil {
-		loggo.Error(err.Error())
-	}
-	if _, err = apiFile.Write([]byte("service,name,method,path\n")); err != nil {
-		loggo.Error(err.Error())
-	}
 }
 
 func (own *Engine) newServer(opts *Options) {

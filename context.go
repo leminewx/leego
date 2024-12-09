@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,7 +19,7 @@ import (
 	"gitee.com/leminewx/gokit/pool"
 )
 
-var maxMultipartMemory int64 = 64 << 20 // 64M
+var maxMultipartMemory int64 = 30 << 20 // 30M
 
 func SetMaxMultipartMemory(size int64) {
 	maxMultipartMemory = size
@@ -51,21 +51,8 @@ const (
 	HeaderAccessControlMaxAge           = "Access-Control-Max-Age"
 )
 
-const (
-	_ContentTypeFormData       = "multipart/form-data"
-	_ContentTypeFormUrlencoded = "application/x-www-form-urlencoded"
-)
-
 // newContext 新建一个上下文
 func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request) *Context {
-	if content, _, err := mime.ParseMediaType(req.Header.Get(HeaderContentType)); err == nil {
-		if content == _ContentTypeFormUrlencoded {
-			req.ParseForm()
-		} else if content == _ContentTypeFormData {
-			req.ParseMultipartForm(maxMultipartMemory)
-		}
-	}
-
 	return &Context{
 		queryValues: req.URL.Query(),
 		engine:      engine,
@@ -86,11 +73,25 @@ func (own *Context) GetPathValue(name string) string { return own.request.PathVa
 
 func (own *Context) GetQueryValue(key string) string { return own.queryValues.Get(key) }
 
-func (own *Context) GetFormValue(key string) string { return own.request.Form.Get(key) }
+func (own *Context) GetFormValue(key string) string {
+	if own.request.Form == nil {
+		own.request.ParseForm()
+	}
+
+	return own.request.Form.Get(key)
+}
+
+func (own *Context) GetFormFile(filename string) (multipart.File, *multipart.FileHeader, error) {
+	if own.request.MultipartForm == nil {
+		own.request.ParseMultipartForm(maxMultipartMemory)
+	}
+
+	return own.request.FormFile(filename)
+}
 
 func (own *Context) GetPostFormValue(key string) string {
 	if own.request.PostForm == nil {
-		return ""
+		own.request.ParseForm()
 	}
 
 	return own.request.PostForm.Get(key)
@@ -98,7 +99,7 @@ func (own *Context) GetPostFormValue(key string) string {
 
 func (own *Context) GetMultipartFormValue(key string) string {
 	if own.request.MultipartForm == nil {
-		return ""
+		own.request.ParseMultipartForm(maxMultipartMemory)
 	}
 
 	if params := own.request.MultipartForm.Value[key]; len(params) > 0 {
@@ -287,10 +288,8 @@ func (own *Context) ResponseUpgrade(upgrade func(conn net.Conn)) error {
 	return conn.Close()
 }
 
-const websocketHashKey = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-
 func computeAcceptKey(key string) string {
 	hash := sha1.New()
-	io.WriteString(hash, key+websocketHashKey)
+	io.WriteString(hash, key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
