@@ -41,8 +41,7 @@ func NewEngine(service string) *Engine {
 
 func NewDefaultEngine(service string) *Engine {
 	engine := NewEngine(service)
-	engine.WithInterceptors(Recover())
-	engine.WithMiddlewares(Log())
+	engine.WithInterceptors(Recover()).WithMiddlewares(Log())
 	return engine
 }
 
