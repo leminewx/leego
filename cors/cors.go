@@ -1,39 +1,47 @@
 package cors
 
-import "strings"
+import (
+	"net/http"
+	"strconv"
+	"strings"
+)
 
 type CORS struct {
-	// 表示可以缓存 Access-Control-Allow-Methods 和 Access-Control-Allow-Headers 提供的信息多长时间，单位秒，一般为10分钟
-	MaxAge int64
+	// 表示可以缓存 Access-Control-Allow-Methods 和 Access-Control-Allow-Headers 提供的信息多长时间，单位秒，一般为24小时（86400）
+	maxAge       int64
+	maxAgeString string
 
-	// 是否需要携带 Origin
-	// 设置为 true 时，Access-Control-Allow-Origin 不能设置为 *
-	AllowCredentials bool
+	// 是否需要携带 Origin，设置为 true 时，Access-Control-Allow-Origin 不能设置为 *
+	allowCredentials bool
 
 	// 允许跨域的域
-	allowOrigins map[string]struct{}
+	allowOrigin string
 
 	// 允许访问的方法
-	allowMethods map[string]struct{}
+	allowMethods      map[string]struct{}
+	allowMethodString string
 
 	// 允许携带的字段
-	allowHeaders map[string]struct{}
+	allowHeaders      map[string]struct{}
+	allowHeaderString string
 
 	// 允许暴露的非简单响应头
-	// 在使用CORS方式跨域时，浏览器只会返回 默认的头部 Header，认情况下可用的响应头包括：
+	// 在使用CORS方式跨域时，浏览器只会返回默认的头部 Header，认情况下可用的响应头包括：
 	// Cache-Control
 	// Content-Language
 	// Content-Type
 	// Expires
 	// Last-Modified
 	// Pragma
-	exposeHeaders map[string]struct{}
+	exposeHeaders      map[string]struct{}
+	exposeHeaderString string
 }
 
 func NewCORS() *CORS {
 	return &CORS{
-		MaxAge:        600, // 默认10分钟
-		allowOrigins:  make(map[string]struct{}),
+		maxAge:        86400, // 24小时
+		maxAgeString:  "86400",
+		allowOrigin:   "*",
 		allowMethods:  make(map[string]struct{}),
 		allowHeaders:  make(map[string]struct{}),
 		exposeHeaders: make(map[string]struct{}),
@@ -41,37 +49,15 @@ func NewCORS() *CORS {
 }
 
 func (own *CORS) WithMaxAge(age int64) *CORS {
-	own.MaxAge = age
+	own.maxAge = age
+	own.maxAgeString = strconv.Itoa(int(own.maxAge))
 	return own
 }
 
-func (own *CORS) WithAllowCredentials() *CORS {
-	own.AllowCredentials = true
+func (own *CORS) WithAllowOrigin(origin string) *CORS {
+	own.allowCredentials = true
+	own.allowOrigin = origin
 	return own
-}
-
-func (own *CORS) WithAllowOrigins(origins ...string) *CORS {
-	for _, origin := range origins {
-		own.allowOrigins[origin] = struct{}{}
-	}
-
-	return own
-}
-
-func (own *CORS) GetAllowOrigins(origin string) string {
-	if own.AllowCredentials {
-		if _, ok := own.allowOrigins[origin]; ok {
-			return origin
-		}
-
-		return ""
-	}
-
-	if _, ok := own.allowOrigins[origin]; ok {
-		return origin
-	}
-
-	return "*"
 }
 
 func (own *CORS) WithAllowMethods(methods ...string) *CORS {
@@ -79,11 +65,8 @@ func (own *CORS) WithAllowMethods(methods ...string) *CORS {
 		own.allowMethods[method] = struct{}{}
 	}
 
+	own.allowMethodString = strings.Join(getMapKeys(own.allowMethods), ", ")
 	return own
-}
-
-func (own *CORS) GetAllowMethods() string {
-	return strings.Join(getMapKeys(own.allowMethods), ", ")
 }
 
 func (own *CORS) WithAllowHeaders(headers ...string) *CORS {
@@ -91,11 +74,8 @@ func (own *CORS) WithAllowHeaders(headers ...string) *CORS {
 		own.allowHeaders[header] = struct{}{}
 	}
 
+	own.allowHeaderString = strings.Join(getMapKeys(own.allowHeaders), ", ")
 	return own
-}
-
-func (own *CORS) GetAllowHeaders() string {
-	return strings.Join(getMapKeys(own.allowHeaders), ", ")
 }
 
 func (own *CORS) WithExposeHeaders(headers ...string) *CORS {
@@ -103,11 +83,8 @@ func (own *CORS) WithExposeHeaders(headers ...string) *CORS {
 		own.exposeHeaders[header] = struct{}{}
 	}
 
+	own.exposeHeaderString = strings.Join(getMapKeys(own.allowHeaders), ", ")
 	return own
-}
-
-func (own *CORS) GetExposeHeaders() string {
-	return strings.Join(getMapKeys(own.exposeHeaders), ", ")
 }
 
 func getMapKeys(data map[string]struct{}) []string {
@@ -117,4 +94,67 @@ func getMapKeys(data map[string]struct{}) []string {
 	}
 
 	return keys
+}
+
+const (
+	HEADER_ACCESS_CONTROL_REQUEST_METHOD  = "Access-Control-Request-Method"  // 实际请求方法
+	HEADER_ACCESS_CONTROL_REQUEST_HEADERS = "Access-Control-Request-Headers" // 实际请求携带的自定义字段
+
+	HEADER_ACCESS_CONTROL_MAX_AGE           = "Access-Control-Max-Age"
+	HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS = "Access-Control-Allow-Credentials"
+	HEADER_ACCESS_CONTROL_ALLOW_ORIGIN      = "Access-Control-Allow-Origin"
+	HEADER_ACCESS_CONTROL_ALLOW_METHODS     = "Access-Control-Allow-Methods"
+	HEADER_ACCESS_CONTROL_ALLOW_HEADERS     = "Access-Control-Allow-Headers"
+	HEADER_ACCESS_CONTROL_EXPOSE_HEADERS    = "Access-Control-Expose-Headers"
+)
+
+func (own *CORS) Init() {
+	if own.allowCredentials {
+		if len(own.allowMethods) == 0 {
+			own.allowMethodString = "POST, GET, PUT, DELETE"
+		}
+	}
+}
+
+func (own *CORS) SetResponseHeader(resp http.ResponseWriter) {
+	header := resp.Header()
+	header.Set(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, own.allowOrigin)
+	if own.allowCredentials {
+		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
+	} else {
+		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "false")
+	}
+
+	if len(own.allowMethods) > 0 {
+		header.Set(HEADER_ACCESS_CONTROL_ALLOW_METHODS, own.allowMethodString)
+	}
+
+	if len(own.allowHeaders) > 0 {
+		header.Set(HEADER_ACCESS_CONTROL_ALLOW_HEADERS, own.allowHeaderString)
+	}
+
+	if len(own.exposeHeaders) > 0 {
+		header.Set(HEADER_ACCESS_CONTROL_EXPOSE_HEADERS, own.exposeHeaderString)
+	}
+
+	if own.maxAge > 0 {
+		header.Set(HEADER_ACCESS_CONTROL_MAX_AGE, own.maxAgeString)
+	}
+
+	// if own.allowCredentials {
+	// 	origin := req.Header.Get(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN)
+	// 	if origin == "*" || origin != own.allowOrigin {
+	// 		http.Error(resp, status.STATUS_FORBIDDEN, http.StatusForbidden)
+	// 		return false
+	// 	}
+
+	// 	requestMethod := req.Header.Get(HEADER_ACCESS_CONTROL_REQUEST_METHOD)
+	// 	if requestMethod != "" {
+	// 		if _, ok := own.allowMethods[requestMethod]; !ok {
+	// 			http.Error(resp, status.STATUS_FORBIDDEN, http.StatusForbidden)
+	// 			return false
+	// 		}
+	// 	}
+	// }
+
 }

@@ -13,6 +13,7 @@ import (
 
 // group 定义路由组的结构
 type group struct {
+	hasStatic   bool
 	prefix      string
 	engine      *Engine
 	middlewares []MiddlewareFunc
@@ -38,8 +39,13 @@ func (own *group) WithMiddlewares(middlewares ...MiddlewareFunc) *group {
 
 // WithStatic 给当前路由组添加静态文件服务接口
 func (own *group) WithStatic(relativePath string, root string, name ...string) *group {
+	if own.hasStatic {
+		loggo.Warn(fmt.Sprintf("Static file handler is existed: %s.", path.Join(own.prefix, relativePath)))
+	}
+
 	handler := own.createStaticHandler(relativePath, http.Dir(root))
 	own.GET(path.Join(relativePath, "/*"), handler, name...)
+	own.hasStatic = true
 	return own
 }
 
@@ -47,6 +53,7 @@ func (own *group) createStaticHandler(relativePath string, fs http.FileSystem) H
 	startIndex := len(strings.Split(own.prefix+relativePath, "/"))
 	fileServer := http.StripPrefix(path.Join(own.prefix, relativePath), http.FileServer(fs))
 	return func(ctx *Context) {
+		fmt.Println(ctx.GetMethod(), ctx.GetURL())
 		paths := strings.Split(ctx.GetURL().Path, "/")
 		if len(paths) < startIndex-1 {
 			ctx.WriteCode(http.StatusNotFound)

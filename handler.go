@@ -2,6 +2,8 @@ package leego
 
 import (
 	"net/http"
+
+	"gitee.com/leminewx/leego/status"
 )
 
 // HandleFunc 定义处理函数的类型
@@ -41,7 +43,7 @@ func (own *Handler) ServeInit() {
 // ServeHTTP 实现 http.Handler 接口
 func (own *Handler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	if req.Method != own.method {
-		http.Error(resp, _StatusMethodNotAllowed, http.StatusMethodNotAllowed)
+		http.Error(resp, status.STATUS_METHOD_NOT_ALLOWED, http.StatusMethodNotAllowed)
 		return
 	}
 

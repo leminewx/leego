@@ -39,18 +39,6 @@ type Context struct {
 	response http.ResponseWriter
 }
 
-const (
-	HeaderOrigin      = "Origin"
-	HeaderContentType = "Content-Type"
-
-	HeaderAccessControlAllowCredentials = "Access-Control-Allow-Credentials"
-	HeaderAccessControlAllowOrigin      = "Access-Control-Allow-Origin"
-	HeaderAccessControlAllowMethods     = "Access-Control-Allow-Methods"
-	HeaderAccessControlAllowHeaders     = "Access-Control-Allow-Headers"
-	HeaderAccessControlExposeHeaders    = "Access-Control-Expose-Headers"
-	HeaderAccessControlMaxAge           = "Access-Control-Max-Age"
-)
-
 // newContext 新建一个上下文
 func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request) *Context {
 	return &Context{
