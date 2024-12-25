@@ -37,8 +37,8 @@ func (own *group) WithMiddlewares(middlewares ...MiddlewareFunc) *group {
 	return own
 }
 
-// WithStatic 给当前路由组添加静态文件服务接口
-func (own *group) WithStatic(relativePath string, root string, name ...string) *group {
+// WithStatics 给当前路由组添加静态文件服务接口
+func (own *group) WithStatics(relativePath string, root string, name ...string) *group {
 	if own.hasStatic {
 		loggo.Warn(fmt.Sprintf("Static file handler is existed: %s.", path.Join(own.prefix, relativePath)))
 	}

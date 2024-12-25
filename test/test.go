@@ -41,7 +41,7 @@ func main() {
 			ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
 		}, "通用API1")
 
-		group1.WithStatic("/files", "D:\\Projects\\Golang\\leego\\test", "下载文件1")
+		group1.WithStatics("/files", "D:\\Projects\\Golang\\leego\\test", "下载文件1")
 	}
 
 	{
@@ -101,7 +101,7 @@ func main() {
 				})
 			}, "获取系统信息")
 
-			// group3.WithStatic("/files", "D:\\Projects\\Golang\\leego\\logo", "下载文件2")
+			// group3.WithStatics("/files", "D:\\Projects\\Golang\\leego\\logo", "下载文件2")
 
 			group3.GET("/files/download/*", func(ctx *leego.Context) {
 				fmt.Println("*********ready download file*********")
