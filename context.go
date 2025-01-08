@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -60,6 +62,25 @@ func (own *Context) GetProtocol() string { return own.request.Proto }
 func (own *Context) GetPathValue(name string) string { return own.request.PathValue(name) }
 
 func (own *Context) GetQueryValue(key string) string { return own.queryValues.Get(key) }
+
+var (
+	errNotFoundPage  = errors.New("not found parameter 'page'")
+	errNotFoundLimit = errors.New("not found parameter 'limit'")
+)
+
+func (own *Context) GetPageAndLimit() (page, limit int, err error) {
+	p, e := strconv.ParseInt(own.queryValues.Get("page"), 10, 64)
+	if e != nil {
+		return 0, 0, errNotFoundPage
+	}
+
+	l, e := strconv.ParseInt(own.queryValues.Get("limit"), 10, 64)
+	if e != nil {
+		return 0, 0, errNotFoundLimit
+	}
+
+	return int(p), int(l), nil
+}
 
 func (own *Context) GetFormValue(key string) string {
 	if own.request.Form == nil {
