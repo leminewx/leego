@@ -3,17 +3,7 @@ package jwt
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"time"
-)
-
-var (
-	errNBFDatatype     = errors.New("jwt: 'nbf' datatype is error")
-	errNBFNotEffective = errors.New("jwt: 'nbf' is not effective yet")
-	errEXPNotFound     = errors.New("jwt: 'exp' is not found")
-	errEXPDatatype     = errors.New("jwt: 'exp' datatype is error")
-	errEXPInvalid      = errors.New("jwt: 'exp' is invalid")
-	errIATDatatype     = errors.New("jwt: 'iat' datatype is error")
 )
 
 type Payload map[string]any
@@ -87,54 +77,65 @@ func (own Payload) GetAud() string {
 }
 
 // GetIat 获取令牌的生成时间戳
-func (own Payload) GetIat() (int64, error) {
-	exp, ok := own["iat"]
+func (own Payload) GetIat() int64 {
+	iat, ok := own["iat"]
 	if !ok {
-		return 0, nil
+		return 0
 	}
 
-	switch val := exp.(type) {
-	case float64:
-		return int64(val), nil
+	switch val := iat.(type) {
 	case int64:
-		return val, nil
+		return val
+	case float64:
+		own["iat"] = int64(val)
+		return int64(val)
 	default:
-		return 0, errIATDatatype
+		own["iat"] = int64(0)
+		return 0
 	}
 }
 
 // GetNbf 获取令牌的生效时间戳
-func (own Payload) GetNbf() (int64, error) {
+func (own Payload) GetNbf() int64 {
 	nbf, ok := own["nbf"]
 	if !ok {
-		return 0, nil
+		return 0
 	}
 
 	switch val := nbf.(type) {
-	case float64:
-		return int64(val), nil
 	case int64:
-		return val, nil
+		return val
+	case float64:
+		own["nbf"] = int64(val)
+		return int64(val)
 	default:
-		return 0, errNBFDatatype
+		own["nbf"] = int64(0)
+		return 0
 	}
 }
 
 // GetExp 获取令牌的过期时间戳
-func (own Payload) GetExp() (int64, error) {
+func (own Payload) GetExp() int64 {
 	exp, ok := own["exp"]
 	if !ok {
-		return 0, errEXPNotFound
+		return 0
 	}
 
 	switch val := exp.(type) {
-	case float64:
-		return int64(val), nil
 	case int64:
-		return val, nil
+		return val
+	case float64:
+		own["exp"] = int64(val)
+		return int64(val)
 	default:
-		return 0, errEXPDatatype
+		own["exp"] = int64(0)
+		return 0
 	}
+}
+
+// Delete 删除某个字段
+func (own Payload) Delete(key string) {
+	delete(own, key)
 }
 
 // Validate 验证令牌是否有效
@@ -142,19 +143,13 @@ func (own Payload) Validate() error {
 	now := time.Now().Unix()
 
 	// 校验 nbf
-	nbf, err := own.GetNbf()
-	if err != nil {
-		return err
-	} else if now < nbf {
-		return errNBFNotEffective
+	if nbf := own.GetNbf(); nbf > 0 && now < nbf {
+		return errTokenNotEffective
 	}
 
 	// 校验 exp
-	exp, err := own.GetExp()
-	if err != nil {
-		return err
-	} else if now > exp {
-		return errEXPInvalid
+	if exp := own.GetExp(); now > exp {
+		return errInvalidExp
 	}
 
 	return nil

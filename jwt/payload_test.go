@@ -23,7 +23,7 @@ func TestPayload(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		time.Sleep(1 * time.Second)
 		if err := payload.Validate(); err != nil {
-			if errors.Is(err, errNBFNotEffective) {
+			if errors.Is(err, errTokenNotEffective) {
 				log.Println("ineffective token")
 				continue
 			}
