@@ -57,7 +57,7 @@ type Generator interface {
 
 const (
 	DEFAULT_EXPIRED_DURATION  = 60 * 60 * 24 * 7 // 默认有效期1周
-	DEFAULT_CLEAN_EXPIRED_JTI = 60 * 30          // 默认30分钟清理一次过期令牌
+	DEFAULT_CLEAN_EXPIRED_JTI = 60 * 1           // 默认30分钟清理一次过期令牌
 )
 
 type generator struct {

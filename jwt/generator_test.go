@@ -68,7 +68,7 @@ func BenchmarkGenerator_Encode(b *testing.B) {
 	}
 }
 
-func TestGenerator_Clean(t *testing.T) {
+func TestGenerator_WithJtiWhitelist(t *testing.T) {
 	gen := NewDefaultGenerator([]byte("123qwe!@#QWE")).
 		WithIss("test").
 		WithDelay(10).
@@ -79,6 +79,43 @@ func TestGenerator_Clean(t *testing.T) {
 		// })
 
 	token, err := gen.Encode(NewPayload().With("jti", "1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Println("sign ===>>>", token)
+
+	payload, err := gen.Decode(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Println("payload ===>>>", payload)
+
+	for i := 0; i < 8; i++ {
+		if err := gen.Validate(payload); err != nil {
+			t.Log((i+1)*10, err)
+		} else {
+			t.Log((i+1)*10, "valid token")
+		}
+
+		t.Log(gen.(*generator).jtiWhitelist.Load(payload.GetJti()))
+		time.Sleep(10 * time.Second)
+		fmt.Println()
+	}
+
+	gen.Reset()
+	time.Sleep(1 * time.Second)
+}
+
+func TestGenerator_WithJtiGenerator(t *testing.T) {
+	gen := NewDefaultGenerator([]byte("123qwe!@#QWE")).
+		WithIss("test").
+		WithDelay(10).
+		WithTimeout(50).
+		WithJtiGenerator(func() string {
+			return "0001000"
+		})
+
+	token, err := gen.Encode(NewPayload())
 	if err != nil {
 		t.Fatal(err)
 	}
