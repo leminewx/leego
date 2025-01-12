@@ -119,7 +119,7 @@ func (own *Context) GetMultipartFormValue(key string) string {
 }
 
 func (own *Context) GetSeriveName() string {
-	return own.engine.service
+	return own.engine.GetServiceName()
 }
 
 func (own *Context) GetHeader(key string) string {

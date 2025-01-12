@@ -112,8 +112,8 @@ func (own *group) addRoute(method, pattern string, handle HandleFunc, name ...st
 	loggo.Info(fmt.Sprintf("Add route: %7s %s", method, path))
 
 	if len(name) > 0 {
-		fmt.Fprintf(apiFile, "%s,%s,%s,%s,\n", own.engine.service, method, path, name[0])
+		fmt.Fprintf(apiFile, "%s,%s,%s,%s,\n", own.engine.GetServiceName(), method, path, name[0])
 	} else {
-		fmt.Fprintf(apiFile, "%s,%s,%s,,\n", own.engine.service, method, path)
+		fmt.Fprintf(apiFile, "%s,%s,%s,,\n", own.engine.GetServiceName(), method, path)
 	}
 }
