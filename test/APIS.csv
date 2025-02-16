@@ -1,8 +1,8 @@
-service,method,path,name,type
-test,GET,/v1/a,通用API1,
-test,GET,/v1/files/*,下载文件1,
-test,GET,/v2/b,通用API2,
-test,POST,/v2/login/{name},登录系统,
-test,GET,/v2/login/sse,获取系统信息,
-test,GET,/v2/login/files/download/*,下载文件,
-test,GET,/v2/login/files/show/*,显示文件,
+service,type,name,method,pattern
+test,,通用API2,GET,/v2/b
+test,用户管理,登录系统,POST,/v2/login/{name}
+test,用户管理,获取系统信息,GET,/v2/login/sse
+test,文件管理,下载文件,GET,/v2/login/files/download/*
+test,文件管理,显示文件,GET,/v2/login/files/show/*
+test,,通用API1,GET,/v1/a
+test,,下载文件1,GET,/v1/files/*

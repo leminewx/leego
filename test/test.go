@@ -18,6 +18,16 @@ func main() {
 	// )
 
 	engine := leego.NewDefaultEngine("test")
+	// engine.WithInterceptors(func(handler http.Handler) http.Handler {
+	// 	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+	// 		response := leego.NewResponseWriter(resp)
+	// 		handler.ServeHTTP(response, req)
+
+	// 		if response.GetStatusCode() == http.StatusNotFound {
+	// 			fmt.Println("Oh my god, not found")
+	// 		}
+	// 	})
+	// })
 
 	{
 		group1 := engine.Group("/v1").WithMiddlewares(
@@ -82,7 +92,7 @@ func main() {
 				fmt.Println("*********ready response login*********")
 				fmt.Printf("/v2/login/%s ok\n", ctx.GetPathValue("name"))
 				ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
-			}, "登录系统")
+			}, "登录系统", "用户管理")
 
 			group3.GET("/sse", func(ctx *leego.Context) {
 				fmt.Println("*********ready response sse*********")
@@ -99,7 +109,7 @@ func main() {
 
 					return data
 				})
-			}, "获取系统信息")
+			}, "获取系统信息", "用户管理")
 
 			// group3.WithStatics("/files", "D:\\Projects\\Golang\\leego\\logo", "下载文件2")
 
@@ -108,14 +118,14 @@ func main() {
 				if err := ctx.ResponseFile("APIS.csv"); err != nil {
 					ctx.ResponseFail(http.StatusInternalServerError, err.Error())
 				}
-			}, "下载文件")
+			}, "下载文件", "文件管理")
 
 			group3.GET("/files/show/*", func(ctx *leego.Context) {
 				fmt.Println("*********ready response file content*********")
 				if err := ctx.ResponseFileContent("test.go"); err != nil {
 					ctx.ResponseFail(http.StatusInternalServerError, err.Error())
 				}
-			}, "显示文件")
+			}, "显示文件", "文件管理")
 		}
 	}
 
