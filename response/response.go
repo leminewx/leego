@@ -8,6 +8,9 @@ type (
 		// 继承 http.Flusher
 		http.Flusher
 
+		// 继承 http.Hijacker
+		http.Hijacker
+
 		// 继承 http.ResponseWriter
 		http.ResponseWriter
 
