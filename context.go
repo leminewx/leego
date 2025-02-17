@@ -26,8 +26,8 @@ var maxMultipartMemory int64 = 10 << 20 // 10M
 var (
 	errNotFoundPage         = errors.New("leego: not found parameter 'page'")
 	errNotFoundLimit        = errors.New("leego: not found parameter 'limit'")
-	errNotSupportedHijacker = errors.New("leego: http.ResponseWriter not supported HiJacker")
 	errFailToUpgrade        = errors.New("leego: failed to upgrade connection to WebSocket")
+	errNotSupportedHijacker = errors.New("leego: http.ResponseWriter not supported HiJacker")
 )
 
 func SetMaxMultipartMemory(size int64) {
