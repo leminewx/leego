@@ -19,22 +19,22 @@ type Options struct {
 type Engine struct {
 	*group // 继承路由组，所以引擎本身也是一个路由组
 
-	service      string          // 服务名
-	interceptors []Interceptor   // 拦截器
-	groups       []*group        // 路由组
-	server       *http.Server    // 服务器
-	router       *http.ServeMux  // 路由器
-	apis         map[string]*API // API接口
+	service      string            // 服务名
+	interceptors []InterceptorFunc // 拦截器
+	groups       []*group          // 路由组
+	server       *http.Server      // 服务器
+	router       *http.ServeMux    // 路由器
+	apis         map[string]*api   // API接口
 }
 
 // NewEngine 新建一个引擎
 func NewEngine(service string) *Engine {
 	engine := &Engine{
 		service:      service,
-		interceptors: make([]Interceptor, 0),
+		interceptors: make([]InterceptorFunc, 0),
 		groups:       make([]*group, 0),
 		router:       http.NewServeMux(),
-		apis:         make(map[string]*API),
+		apis:         make(map[string]*api),
 	}
 
 	engine.group = &group{engine: engine}
@@ -55,7 +55,7 @@ func (own *Engine) GetServiceName() string {
 }
 
 // WithInterceptors 添加拦截器
-func (own *Engine) WithInterceptors(interceptors ...Interceptor) *Engine {
+func (own *Engine) WithInterceptors(interceptors ...InterceptorFunc) *Engine {
 	own.interceptors = append(own.interceptors, interceptors...)
 	return own
 }

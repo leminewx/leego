@@ -1,6 +1,13 @@
 package response
 
-import "net/http"
+import (
+	"bufio"
+	"errors"
+	"net"
+	"net/http"
+)
+
+var errNotHijack = errors.New("leego: not supported HiJacker")
 
 type (
 	// ResponseWriter 自定义 HTTP 的 响应接口，用于继承 http.ResponseWriter
@@ -54,4 +61,12 @@ func (own *response) Flush() {
 	if flusher, ok := own.writer.(http.Flusher); ok {
 		flusher.Flush()
 	}
+}
+
+func (own *response) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hijacker, ok := own.writer.(http.Hijacker); ok {
+		return hijacker.Hijack()
+	}
+
+	return nil, nil, errNotHijack
 }

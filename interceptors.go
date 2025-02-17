@@ -12,11 +12,11 @@ import (
 	"gitee.com/leminewx/loggo"
 )
 
-// Interceptor 定义拦截器处理函数的类型
-type Interceptor func(http.Handler) http.Handler
+// InterceptorFunc 定义拦截器处理函数的类型
+type InterceptorFunc func(http.Handler) http.Handler
 
 // Log 打印日志的拦截器
-func Log() Interceptor {
+func Log() InterceptorFunc {
 	const (
 		_FORMAT_DATETIME = "2006-01-02 15:04:05.000"
 
@@ -57,7 +57,7 @@ func Log() Interceptor {
 }
 
 // recover 异常恢复的拦截器
-func Recover() Interceptor {
+func Recover() InterceptorFunc {
 	return func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			defer func() {

@@ -1,6 +1,6 @@
 package leego
 
-type API struct {
+type api struct {
 	// Service 服务名称
 	Service string `json:"service" xml:"service"`
 	// Type 接口类型

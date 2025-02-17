@@ -23,6 +23,13 @@ import (
 
 var maxMultipartMemory int64 = 10 << 20 // 10M
 
+var (
+	errNotFoundPage         = errors.New("leego: not found parameter 'page'")
+	errNotFoundLimit        = errors.New("leego: not found parameter 'limit'")
+	errNotSupportedHijacker = errors.New("leego: http.ResponseWriter not supported HiJacker")
+	errFailToUpgrade        = errors.New("leego: failed to upgrade connection to WebSocket")
+)
+
 func SetMaxMultipartMemory(size int64) {
 	maxMultipartMemory = size
 }
@@ -61,11 +68,6 @@ func (own *Context) GetProtocol() string { return own.request.Proto }
 func (own *Context) QueryValue(key string) string { return own.query.Get(key) }
 
 func (own *Context) GetPathValue(name string) string { return own.request.PathValue(name) }
-
-var (
-	errNotFoundPage  = errors.New("leego: not found parameter 'page'")
-	errNotFoundLimit = errors.New("leego: not found parameter 'limit'")
-)
 
 func (own *Context) QueryPageAndLimit() (page, limit int, err error) {
 	p, e := strconv.ParseInt(own.query.Get("page"), 10, 64)
@@ -269,7 +271,7 @@ func (own *Context) ResponseString(code int, data string) error {
 func (own *Context) ResponseUpgrade(upgrade func(conn net.Conn)) error {
 	header := own.request.Header
 	if !strings.Contains(header.Get("Connection"), "upgrade") || !strings.EqualFold(header.Get("Upgrade"), "websocket") {
-		return fmt.Errorf("failed to upgrade connection to WebSocket")
+		return errFailToUpgrade
 	}
 
 	// set the header of WebSocket
@@ -283,7 +285,7 @@ func (own *Context) ResponseUpgrade(upgrade func(conn net.Conn)) error {
 	hijacker, ok := own.response.(http.Hijacker)
 	if !ok {
 		http.Error(own.response, "Not supported HiJacker", http.StatusBadRequest)
-		return fmt.Errorf("http.ResponseWriter not supported HiJacker")
+		return errNotSupportedHijacker
 	}
 
 	// get the tcp connection from the HiJacker

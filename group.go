@@ -99,11 +99,11 @@ func (own *group) addRoute(method, pattern string, handle HandleFunc, nameAndTyp
 	// 写入 API 接口基本信息
 	switch len(nameAndType) {
 	case 0:
-		own.engine.apis[key] = &API{Service: own.engine.service, Method: method, Pattern: pattern}
+		own.engine.apis[key] = &api{Service: own.engine.service, Method: method, Pattern: pattern}
 	case 1:
-		own.engine.apis[key] = &API{Service: own.engine.service, Name: nameAndType[0], Method: method, Pattern: pattern}
+		own.engine.apis[key] = &api{Service: own.engine.service, Name: nameAndType[0], Method: method, Pattern: pattern}
 	default:
-		own.engine.apis[key] = &API{Service: own.engine.service, Name: nameAndType[0], Type: nameAndType[1], Method: method, Pattern: pattern}
+		own.engine.apis[key] = &api{Service: own.engine.service, Name: nameAndType[0], Type: nameAndType[1], Method: method, Pattern: pattern}
 	}
 
 	// 创建处理器
