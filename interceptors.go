@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/status"
 	"gitee.com/leminewx/loggo"
 )
@@ -30,7 +31,7 @@ func Log() Interceptor {
 	return func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			start := time.Now()
-			response := NewResponseWriter(resp)
+			response := response.NewResponseWriter(resp)
 			handler.ServeHTTP(response, req)
 			status := response.GetStatusCode()
 

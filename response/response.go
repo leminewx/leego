@@ -1,4 +1,4 @@
-package leego
+package response
 
 import "net/http"
 
