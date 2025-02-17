@@ -33,8 +33,8 @@ func (own *Handler) WithMiddlewares(middlewares ...MiddlewareFunc) *Handler {
 	return own
 }
 
-// ServeInit （在启动服务之前）初始化处理器
-func (own *Handler) ServeInit() {
+// InitBeforeServe （在启动服务之前）初始化处理器
+func (own *Handler) InitBeforeServe() {
 	for i := len(own.middlewares); i > 0; i-- {
 		own.handle = own.middlewares[i-1](own.handle)
 	}

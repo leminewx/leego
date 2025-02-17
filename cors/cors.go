@@ -37,7 +37,7 @@ type CORS struct {
 	exposeHeaderString string
 }
 
-func NewCORS() *CORS {
+func New() *CORS {
 	return &CORS{
 		maxAge:        86400, // 24小时
 		maxAgeString:  "86400",

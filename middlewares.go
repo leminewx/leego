@@ -3,11 +3,9 @@ package leego
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/rpc"
-	"time"
 
 	"gitee.com/leminewx/leego/cors"
 	"gitee.com/leminewx/leego/status"
@@ -17,49 +15,6 @@ import (
 
 // MiddlewareFunc 定义处理器中间件函数的类型
 type MiddlewareFunc func(HandleFunc) HandleFunc
-
-// Log 打印日志的中间件
-func Log() MiddlewareFunc {
-	const (
-		_FORMAT_DATETIME = "2006-01-02 15:04:05.000"
-
-		// INFO:     10.254.249.236:39860 - "POST /datacenter/v1/files/cases/022_V2X_LED_OBU HTTP/1.1" 200 OK
-		_FORMAT1XX = "\033[37mInfo \033[0m:  %s  -  \"%s %v %s\"  |\033[47m\033[30m %d \033[0m|\033[47m\033[30m %v \033[0m|\n\n"
-		_FORMAT2XX = "\033[32mInfo \033[0m:  %s  -  \"%s %v %s\"  |\033[42m\033[30m %d \033[0m|\033[42m\033[30m %v \033[0m|\n\n"
-		_FORMAT3XX = "\033[33mInfo \033[0m:  %s  -  \"%s %v %s\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n\n"
-		_FORMAT4XX = "\033[31mError\033[0m:  %s  -  \"%s %v %s\"  |\033[41m\033[30m %d \033[0m|\033[41m\033[30m %v \033[0m|\n\n"
-		_FORMAT5XX = "\033[35mError\033[0m:  %s  -  \"%s %v %s\"  |\033[45m\033[30m %d \033[0m|\033[45m\033[30m %v \033[0m|\n\n"
-	)
-
-	return func(handle HandleFunc) HandleFunc {
-		return func(ctx *Context) {
-			start := time.Now()
-
-			handle(ctx)
-			if ctx.StatusCode == 0 {
-				ctx.StatusCode = http.StatusOK
-			}
-
-			switch {
-			// 0 ~ 199
-			case ctx.StatusCode < http.StatusOK:
-				fmt.Printf(_FORMAT1XX, start.Format(_FORMAT_DATETIME), ctx.GetMethod(), ctx.GetURL(), ctx.GetProtocol(), ctx.StatusCode, time.Since(start))
-			// 200 ~ 299
-			case ctx.StatusCode < http.StatusMultipleChoices:
-				fmt.Printf(_FORMAT2XX, start.Format(_FORMAT_DATETIME), ctx.GetMethod(), ctx.GetURL(), ctx.GetProtocol(), ctx.StatusCode, time.Since(start))
-			// 300 ~ 399
-			case ctx.StatusCode < http.StatusBadRequest:
-				fmt.Printf(_FORMAT3XX, start.Format(_FORMAT_DATETIME), ctx.GetMethod(), ctx.GetURL(), ctx.GetProtocol(), ctx.StatusCode, time.Since(start))
-			// 400 ~ 499
-			case ctx.StatusCode < http.StatusInternalServerError:
-				fmt.Printf(_FORMAT4XX, start.Format(_FORMAT_DATETIME), ctx.GetMethod(), ctx.GetURL(), ctx.GetProtocol(), ctx.StatusCode, time.Since(start))
-			// 500 ~
-			default:
-				fmt.Printf(_FORMAT5XX, start.Format(_FORMAT_DATETIME), ctx.GetMethod(), ctx.GetURL(), ctx.GetProtocol(), ctx.StatusCode, time.Since(start))
-			}
-		}
-	}
-}
 
 // Cors 跨域处理的中间件
 func Cors(cors *cors.CORS) MiddlewareFunc {

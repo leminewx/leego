@@ -21,7 +21,7 @@ import (
 	"gitee.com/leminewx/gokit/pool"
 )
 
-var maxMultipartMemory int64 = 30 << 20 // 30M
+var maxMultipartMemory int64 = 10 << 20 // 10M
 
 func SetMaxMultipartMemory(size int64) {
 	maxMultipartMemory = size
@@ -34,8 +34,7 @@ type Json map[string]any
 type Context struct {
 	StatusCode int
 
-	queryValues url.Values
-
+	query    url.Values
 	engine   *Engine
 	request  *http.Request
 	response http.ResponseWriter
@@ -44,10 +43,10 @@ type Context struct {
 // newContext 新建一个上下文
 func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request) *Context {
 	return &Context{
-		queryValues: req.URL.Query(),
-		engine:      engine,
-		request:     req,
-		response:    resp,
+		query:    req.URL.Query(),
+		engine:   engine,
+		request:  req,
+		response: resp,
 	}
 }
 
@@ -59,22 +58,22 @@ func (own *Context) GetMethod() string { return own.request.Method }
 
 func (own *Context) GetProtocol() string { return own.request.Proto }
 
+func (own *Context) QueryValue(key string) string { return own.query.Get(key) }
+
 func (own *Context) GetPathValue(name string) string { return own.request.PathValue(name) }
 
-func (own *Context) QueryValue(key string) string { return own.queryValues.Get(key) }
-
 var (
-	errNotFoundPage  = errors.New("not found parameter 'page'")
-	errNotFoundLimit = errors.New("not found parameter 'limit'")
+	errNotFoundPage  = errors.New("leego: not found parameter 'page'")
+	errNotFoundLimit = errors.New("leego: not found parameter 'limit'")
 )
 
 func (own *Context) QueryPageAndLimit() (page, limit int, err error) {
-	p, e := strconv.ParseInt(own.queryValues.Get("page"), 10, 64)
+	p, e := strconv.ParseInt(own.query.Get("page"), 10, 64)
 	if e != nil {
 		return 0, 0, errNotFoundPage
 	}
 
-	l, e := strconv.ParseInt(own.queryValues.Get("limit"), 10, 64)
+	l, e := strconv.ParseInt(own.query.Get("limit"), 10, 64)
 	if e != nil {
 		return 0, 0, errNotFoundLimit
 	}

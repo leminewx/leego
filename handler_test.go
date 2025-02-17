@@ -23,7 +23,7 @@ func TestHandler(t *testing.T) {
 			handle(ctx)
 			fmt.Println("middleware 2 end")
 		}
-	}).ServeInit()
+	}).InitBeforeServe()
 
 	t.Log("第1次请求")
 	req, err := http.NewRequest(http.MethodGet, "/", nil)
