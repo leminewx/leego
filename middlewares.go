@@ -8,7 +8,6 @@ import (
 	"net/rpc"
 
 	"gitee.com/leminewx/leego/cors"
-	"gitee.com/leminewx/leego/status"
 	"gitee.com/leminewx/loggo"
 	"gitee.com/leminewx/loggo/attr"
 )
@@ -21,10 +20,11 @@ func Cors(cors *cors.CORS) MiddlewareFunc {
 	cors.Init()
 	return func(handle HandleFunc) HandleFunc {
 		return func(ctx *Context) {
+			// 设置预检响应头
+			cors.SetResponseHeader(ctx.GetResponse())
+
 			// 预检请求（Preflight request）
 			if ctx.GetMethod() == http.MethodOptions {
-				// 设置预检响应头
-				cors.SetResponseHeader(ctx.GetResponse())
 				// 直接返回 204 状态码
 				ctx.WriteCode(http.StatusNoContent)
 				return
@@ -50,7 +50,7 @@ func AuthFromHubuByHTTP(method, url string) MiddlewareFunc {
 			})
 			if err != nil {
 				loggo.Error("Failed to marshal auth data.", attr.New("error", err.Error()))
-				ctx.ResponseFail(http.StatusInternalServerError, status.STATUS_INTERNAL_SERVER_ERROR)
+				ctx.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
 				return
 			}
 
@@ -58,7 +58,7 @@ func AuthFromHubuByHTTP(method, url string) MiddlewareFunc {
 			req, err := http.NewRequest(method, url, bytes.NewBuffer(data))
 			if err != nil {
 				loggo.Error("Failed to create auth request.", attr.New("error", err.Error()))
-				ctx.ResponseFail(http.StatusInternalServerError, status.STATUS_INTERNAL_SERVER_ERROR)
+				ctx.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
 				return
 			}
 			req.Header.Set("Content-Type", "application/json")
@@ -68,7 +68,7 @@ func AuthFromHubuByHTTP(method, url string) MiddlewareFunc {
 			resp, err := client.Do(req)
 			if err != nil {
 				loggo.Error("Failed to request to auth.", attr.New("error", err.Error()))
-				ctx.ResponseFail(http.StatusBadGateway, status.STATUS_BAD_GATEWAY)
+				ctx.ResponseFail(http.StatusBadGateway, _STATUS_BAD_GATEWAY)
 				return
 			}
 
@@ -77,13 +77,13 @@ func AuthFromHubuByHTTP(method, url string) MiddlewareFunc {
 			case http.StatusOK:
 				handle(ctx)
 			case http.StatusForbidden:
-				ctx.ResponseFail(http.StatusForbidden, status.STATUS_FORBIDDEN)
+				ctx.ResponseFail(http.StatusForbidden, _STATUS_FORBIDDEN)
 				return
 			default:
 				body, _ := io.ReadAll(resp.Body)
 				resp.Body.Close()
 				loggo.Error("Failed to auth.", attr.New("error", string(body)))
-				ctx.ResponseFail(http.StatusBadGateway, status.STATUS_BAD_GATEWAY)
+				ctx.ResponseFail(http.StatusBadGateway, _STATUS_BAD_GATEWAY)
 				return
 			}
 		}
@@ -98,7 +98,7 @@ func AuthFromHubuByRPC(host string) MiddlewareFunc {
 			client, err := rpc.Dial("tcp", host)
 			if err != nil {
 				loggo.Error("Failed to create auth connection.", attr.New("error", err.Error()))
-				ctx.ResponseFail(http.StatusBadGateway, status.STATUS_BAD_GATEWAY)
+				ctx.ResponseFail(http.StatusBadGateway, _STATUS_BAD_GATEWAY)
 				return
 			}
 
@@ -127,11 +127,11 @@ func AuthFromHubuByRPC(host string) MiddlewareFunc {
 			case http.StatusOK:
 				handle(ctx)
 			case http.StatusForbidden:
-				ctx.ResponseFail(http.StatusForbidden, status.STATUS_FORBIDDEN)
+				ctx.ResponseFail(http.StatusForbidden, _STATUS_FORBIDDEN)
 				return
 			default:
 				loggo.Error("Failed to auth.", attr.New("error", err.Error()))
-				ctx.ResponseFail(http.StatusBadGateway, status.STATUS_BAD_GATEWAY)
+				ctx.ResponseFail(http.StatusBadGateway, _STATUS_BAD_GATEWAY)
 				return
 			}
 		}

@@ -26,17 +26,25 @@ type CORS struct {
 	allowHeaderString string
 
 	// 允许暴露的非简单响应头
+	//
 	// 在使用CORS方式跨域时，浏览器只会返回默认的头部 Header，认情况下可用的响应头包括：
+	//
 	// Cache-Control
+	//
 	// Content-Language
+	//
 	// Content-Type
+	//
 	// Expires
+	//
 	// Last-Modified
+	//
 	// Pragma
 	exposeHeaders      map[string]struct{}
 	exposeHeaderString string
 }
 
+// New 新建一个跨域处理器
 func New() *CORS {
 	return &CORS{
 		maxAge:        86400, // 24小时
@@ -48,18 +56,21 @@ func New() *CORS {
 	}
 }
 
+// WithMaxAge 设置最大可以缓存 Access-Control-Allow-Methods 和 Access-Control-Allow-Headers 信息的时间
 func (own *CORS) WithMaxAge(age int64) *CORS {
 	own.maxAge = age
 	own.maxAgeString = strconv.Itoa(int(own.maxAge))
 	return own
 }
 
+// WithAllowOrigin 指定可跨域访问的 Origin
 func (own *CORS) WithAllowOrigin(origin string) *CORS {
 	own.allowCredentials = true
 	own.allowOrigin = origin
 	return own
 }
 
+// WithAllowMethods 指定可跨域访问的请求方法
 func (own *CORS) WithAllowMethods(methods ...string) *CORS {
 	for _, method := range methods {
 		own.allowMethods[method] = struct{}{}
@@ -69,6 +80,7 @@ func (own *CORS) WithAllowMethods(methods ...string) *CORS {
 	return own
 }
 
+// WithAllowHeaders 指定可跨域访问的请求头字段
 func (own *CORS) WithAllowHeaders(headers ...string) *CORS {
 	for _, header := range headers {
 		own.allowHeaders[header] = struct{}{}
@@ -78,6 +90,7 @@ func (own *CORS) WithAllowHeaders(headers ...string) *CORS {
 	return own
 }
 
+// WithExposeHeaders 指定响应跨域请求的额外响应头字段
 func (own *CORS) WithExposeHeaders(headers ...string) *CORS {
 	for _, header := range headers {
 		own.exposeHeaders[header] = struct{}{}
@@ -116,13 +129,19 @@ func (own *CORS) Init() {
 	}
 }
 
+// SetResponseHeader 设置响应头
 func (own *CORS) SetResponseHeader(resp http.ResponseWriter) {
 	header := resp.Header()
 	header.Set(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, own.allowOrigin)
+
 	if own.allowCredentials {
 		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
 	} else {
 		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "false")
+	}
+
+	if own.maxAge > 0 {
+		header.Set(HEADER_ACCESS_CONTROL_MAX_AGE, own.maxAgeString)
 	}
 
 	if len(own.allowMethods) > 0 {
@@ -135,10 +154,6 @@ func (own *CORS) SetResponseHeader(resp http.ResponseWriter) {
 
 	if len(own.exposeHeaders) > 0 {
 		header.Set(HEADER_ACCESS_CONTROL_EXPOSE_HEADERS, own.exposeHeaderString)
-	}
-
-	if own.maxAge > 0 {
-		header.Set(HEADER_ACCESS_CONTROL_MAX_AGE, own.maxAgeString)
 	}
 
 	// if own.allowCredentials {

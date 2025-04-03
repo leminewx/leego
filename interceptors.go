@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego/response"
-	"gitee.com/leminewx/leego/status"
 	"gitee.com/leminewx/loggo"
 )
 
@@ -63,7 +62,7 @@ func Recover() InterceptorFunc {
 			defer func() {
 				if err := recover(); err != nil {
 					loggo.Error(fmt.Sprintf("%s\n\n", trace(fmt.Sprintf("%v", err))))
-					http.Error(resp, status.STATUS_INTERNAL_SERVER_ERROR, http.StatusInternalServerError)
+					http.Error(resp, _STATUS_INTERNAL_SERVER_ERROR, http.StatusInternalServerError)
 				}
 			}()
 
