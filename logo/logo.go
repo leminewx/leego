@@ -2,13 +2,13 @@ package logo
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"text/template"
-
-	"gitee.com/leminewx/loggo"
+	"time"
 )
 
 // logo 模板
@@ -34,7 +34,7 @@ func init() {
 	// 获取当前文件的绝对路径
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
-		loggo.Fatal("not found leego/logo/logo.go")
+		fmt.Printf("|\033[42m\033[30m ERROR \033[0m| %s Not found leego/logo/logo.go\n", time.Now().Format(time.DateTime))
 		return
 	}
 
@@ -44,14 +44,14 @@ func init() {
 	// 打开 VERSION.txt 文件
 	versionFile, err := os.Open(versionFilePath)
 	if err != nil {
-		loggo.Error(err.Error())
+		fmt.Printf("|\033[42m\033[30m ERROR \033[0m| %s Failed to open VERSION.txt: %v\n", time.Now().Format(time.DateTime), err)
 		return
 	}
 
 	reader := bufio.NewReader(versionFile)
 	first, _, err := reader.ReadLine()
 	if versionFile.Close(); err != nil {
-		loggo.Error(err.Error())
+		fmt.Printf("|\033[42m\033[30m ERROR \033[0m| %s Failed to read VERSION.txt: %v\n", time.Now().Format(time.DateTime), err)
 		return
 	}
 
@@ -67,7 +67,7 @@ func init() {
 	// 写入 logo 模板
 	templ, err := template.New("logo").Parse(logoTemplate)
 	if err != nil {
-		loggo.Fatal(err.Error())
+		fmt.Printf("|\033[42m\033[30m ERROR \033[0m| %s Failed to parse the logo template: %v\n", time.Now().Format(time.DateTime), err)
 	}
 	if err = templ.Execute(os.Stdout, &struct {
 		NowYear string
@@ -78,6 +78,6 @@ func init() {
 		Version: version,
 		Release: release,
 	}); err != nil {
-		loggo.Fatal(err.Error())
+		fmt.Printf("|\033[42m\033[30m ERROR \033[0m| %s Failed to write version info to logo template: %v\n", time.Now().Format(time.DateTime), err)
 	}
 }

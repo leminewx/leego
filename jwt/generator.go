@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"gitee.com/leminewx/loggo"
 )
 
 type Generator interface {
@@ -126,68 +124,68 @@ func (own *generator) WithAllowIssuers(issuers ...string) Generator {
 	return own
 }
 
-func (own *generator) WithJtiWhitelist(interval ...int64) Generator {
-	if len(interval) > 0 && interval[0] > 59 {
-		own.jtiCleanInterval = time.Duration(interval[0]) * time.Second
-	}
+// func (own *generator) WithJtiWhitelist(interval ...int64) Generator {
+// 	if len(interval) > 0 && interval[0] > 59 {
+// 		own.jtiCleanInterval = time.Duration(interval[0]) * time.Second
+// 	}
 
-	if own.jtiWhitelist == nil {
-		own.jtiWhitelist = &sync.Map{}
-		own.cleanExpiredTokens()
-	}
+// 	if own.jtiWhitelist == nil {
+// 		own.jtiWhitelist = &sync.Map{}
+// 		own.cleanExpiredTokens()
+// 	}
 
-	return own
-}
+// 	return own
+// }
 
-func (own *generator) WithJtiGenerator(jtiGenerator func() string) Generator {
-	if jtiGenerator != nil {
-		own.jtiGenerator = jtiGenerator
-	}
+// func (own *generator) WithJtiGenerator(jtiGenerator func() string) Generator {
+// 	if jtiGenerator != nil {
+// 		own.jtiGenerator = jtiGenerator
+// 	}
 
-	if own.jtiWhitelist == nil {
-		own.jtiWhitelist = &sync.Map{}
-		own.cleanExpiredTokens()
-	}
+// 	if own.jtiWhitelist == nil {
+// 		own.jtiWhitelist = &sync.Map{}
+// 		own.cleanExpiredTokens()
+// 	}
 
-	return own
-}
+// 	return own
+// }
 
-func (own *generator) cleanExpiredTokens() {
-	var ctx context.Context
-	ctx, own.jtiCleanCancel = context.WithCancel(context.Background())
-	go func() {
-		ticker := time.NewTicker(own.jtiCleanInterval)
-		for {
-			select {
-			case <-ticker.C:
-				loggo.Info("Cleaning expired tokens from the whitelist...")
-				now := time.Now().Unix()
+// func (own *generator) cleanExpiredTokens() {
+// 	var ctx context.Context
+// 	ctx, own.jtiCleanCancel = context.WithCancel(context.Background())
+// 	go func() {
+// 		ticker := time.NewTicker(own.jtiCleanInterval)
+// 		for {
+// 			select {
+// 			case <-ticker.C:
+// 				loggo.Info("Cleaning expired tokens from the whitelist...")
+// 				now := time.Now().Unix()
 
-				// 获取过期令牌
-				deleteKeys := make([]any, 0)
-				own.jtiWhitelist.Range(func(key, value any) bool {
-					if value.(int64) > now {
-						return true
-					}
+// 				// 获取过期令牌
+// 				deleteKeys := make([]any, 0)
+// 				own.jtiWhitelist.Range(func(key, value any) bool {
+// 					if value.(int64) > now {
+// 						return true
+// 					}
 
-					deleteKeys = append(deleteKeys, key)
-					return true
-				})
+// 					deleteKeys = append(deleteKeys, key)
+// 					return true
+// 				})
 
-				// 删除过期令牌
-				for _, key := range deleteKeys {
-					own.jtiWhitelist.Delete(key)
-				}
-			case <-ctx.Done():
-				loggo.Info("Close the whitelist goroutine.")
-				ticker.Stop()
-				return
-			}
+// 				// 删除过期令牌
+// 				for _, key := range deleteKeys {
+// 					own.jtiWhitelist.Delete(key)
+// 				}
+// 			case <-ctx.Done():
+// 				loggo.Info("Close the whitelist goroutine.")
+// 				ticker.Stop()
+// 				return
+// 			}
 
-			ticker.Reset(own.jtiCleanInterval)
-		}
-	}()
-}
+// 			ticker.Reset(own.jtiCleanInterval)
+// 		}
+// 	}()
+// }
 
 func (own *generator) Encode(payload Payload) (signature string, err error) {
 	headerStr, err := own.header.Encode()

@@ -10,4 +10,10 @@ const (
 	OP_CODE_CLOSE    OpCdoe = 0x08 // 连接关闭
 	OP_CODE_PING     OpCdoe = 0x09 // ping
 	OP_CODE_PONG     OpCdoe = 0x0A // pong
+// 	1000	正常关闭
+// 1001	端点离开（如服务器重启）
+// 1002	协议错误
+// 1003	接收到不支持的数据类型
+// 1007	数据格式不一致（非UTF-8）
+// 1011	服务器内部错误
 )

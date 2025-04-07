@@ -2,10 +2,20 @@ package leego
 
 import (
 	"net/http"
+
+	"gitee.com/leminewx/leego/response/status"
 )
 
-// HandleFunc 定义处理函数的类型
-type HandleFunc func(ctx *Context)
+type (
+	// HandleFunc 定义处理函数的类型
+	HandleFunc func(ctx *Context)
+
+	// MiddlewareFunc 定义处理器中间件函数的类型
+	MiddlewareFunc func(HandleFunc) HandleFunc
+
+	// InterceptorFunc 定义拦截器处理函数的类型
+	InterceptorFunc func(http.Handler) http.Handler
+)
 
 // Handler 定义处理器的结构
 type Handler struct {
@@ -41,7 +51,7 @@ func (own *Handler) InitBeforeServe() {
 // ServeHTTP 实现 http.Handler 接口
 func (own *Handler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	if req.Method != own.method {
-		http.Error(resp, _STATUS_METHOD_NOT_ALLOWED, http.StatusMethodNotAllowed)
+		http.Error(resp, status.METHOD_NOT_ALLOWED, http.StatusMethodNotAllowed)
 		return
 	}
 

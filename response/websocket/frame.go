@@ -1,15 +1,20 @@
 package websocket
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"net"
 	"sync"
 )
 
+const (
+	MaxChunkSize int64 = 1 << 20 // 数据分片时的最大载荷：1M
+)
+
 var (
+	framePool  = &sync.Pool{New: func() any { return &Frame{Payload: make([]byte, 0, MaxChunkSize)} }}
 	bufferPool = &sync.Pool{New: func() any { return new(bytes.Buffer) }}
-	framePool  = &sync.Pool{New: func() any { return &Frame{Payload: make([]byte, 0, 4096)} }}
 )
 
 // Frame 定义 Websocket 数据帧的数据结构
@@ -31,7 +36,17 @@ func NewFrame(opcode OpCdoe, payload []byte) *Frame {
 	frame.Fin = false
 	frame.OpCode = opcode
 	frame.Masked = false
+	frame.MaskKey = [4]byte{}
 	frame.Payload = payload
+	return frame
+}
+
+func NewEmptyFrame() *Frame {
+	frame := framePool.Get().(*Frame)
+	frame.Fin = false
+	frame.OpCode = OpCdoe(OP_CODE_CONTINUE)
+	frame.Masked = false
+	frame.MaskKey = [4]byte{}
 	return frame
 }
 
@@ -46,7 +61,7 @@ func (own *Frame) WithMask(mask [4]byte) *Frame {
 	return own
 }
 
-func (own *Frame) Write(conn net.Conn) error {
+func (own *Frame) Write(writer net.Conn) error {
 	buf := bufferPool.Get().(*bytes.Buffer)
 
 	// 构造第1个字节
@@ -92,11 +107,60 @@ func (own *Frame) Write(conn net.Conn) error {
 	}
 
 	// 发送数据
-	_, err := conn.Write(buf.Bytes())
+	_, err := writer.Write(buf.Bytes())
 	buf.Reset()
 	bufferPool.Put(buf)
 
 	return err
+}
+
+func (own *Frame) Read(reader *bufio.ReadWriter) error {
+	// 读取前两个字节
+	head, err := reader.ReadByte()
+	if err != nil {
+		return err
+	}
+	second, err := reader.ReadByte()
+	if err != nil {
+		return err
+	}
+
+	// 创建一个接收数据帧
+	own.Fin = (head & 0x80) != 0
+	own.OpCode = OpCdoe(head & 0x0F)
+	own.Masked = (second & 0x80) != 0
+
+	// 处理扩展长度
+	length := int(second & 0x7F)
+	switch {
+	case length == 126:
+		b1, _ := reader.ReadByte()
+		b2, _ := reader.ReadByte()
+		length = int(b1)<<8 | int(b2)
+	case length == 127:
+		// 简化处理，不处理超大长度
+		return nil
+	}
+
+	// 读取掩码密钥
+	if own.Masked {
+		reader.Read(own.MaskKey[:])
+	}
+
+	// 读取数据
+	own.Payload = make([]byte, length)
+	if _, err := reader.Read(own.Payload); err != nil {
+		return err
+	}
+
+	// 应用掩码
+	if own.Masked {
+		for i := 0; i < len(own.Payload); i++ {
+			own.Payload[i] ^= own.MaskKey[i%4]
+		}
+	}
+
+	return nil
 }
 
 func (own *Frame) Recycle() {

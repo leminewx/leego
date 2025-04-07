@@ -4,5 +4,6 @@ import "testing"
 
 func TestCors(t *testing.T) {
 	cors := New()
-	cors.Init()
+	cors.InitBeforeServe()
+	t.Log(cors)
 }

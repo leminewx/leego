@@ -121,7 +121,7 @@ const (
 	HEADER_ACCESS_CONTROL_EXPOSE_HEADERS    = "Access-Control-Expose-Headers"
 )
 
-func (own *CORS) Init() {
+func (own *CORS) InitBeforeServe() {
 	if own.allowCredentials {
 		if len(own.allowMethods) == 0 {
 			own.allowMethodString = "POST, GET, PUT, DELETE"

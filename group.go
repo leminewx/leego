@@ -6,8 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-
-	"gitee.com/leminewx/loggo"
+	"time"
 )
 
 // group 定义路由组的结构
@@ -37,10 +36,10 @@ func (own *group) WithMiddlewares(middlewares ...MiddlewareFunc) *group {
 }
 
 // WithStatics 给当前路由组添加静态文件服务接口
-func (own *group) WithStatics(relativePath string, root string, nameAndType ...string) *group {
+func (own *group) WithStatics(relativePath string, root string, name ...string) *group {
 	if !own.hasStatic {
 		handler := own.createStaticHandler(relativePath, http.Dir(root))
-		own.GET(path.Join(relativePath, "/*"), handler, nameAndType...)
+		own.GET(path.Join(relativePath, "/*"), handler, name...)
 		own.hasStatic = true
 	}
 
@@ -67,27 +66,27 @@ func (own *group) createStaticHandler(relativePath string, fs http.FileSystem) H
 }
 
 // GET 给当前路由组添加一个处理 GET 方法的处理器
-func (own *group) GET(part string, handle HandleFunc, nameAndType ...string) {
-	own.addRoute(http.MethodGet, part, handle, nameAndType...)
+func (own *group) GET(part string, handle HandleFunc, name ...string) {
+	own.addRoute(http.MethodGet, part, handle, name...)
 }
 
 // POST 给当前路由组添加一个处理 POST 方法的处理器
-func (own *group) POST(part string, handle HandleFunc, nameAndType ...string) {
-	own.addRoute(http.MethodPost, part, handle, nameAndType...)
+func (own *group) POST(part string, handle HandleFunc, name ...string) {
+	own.addRoute(http.MethodPost, part, handle, name...)
 }
 
 // PUT 给当前路由组添加一个处理 PUT 方法的处理器
-func (own *group) PUT(part string, handle HandleFunc, nameAndType ...string) {
-	own.addRoute(http.MethodPut, part, handle, nameAndType...)
+func (own *group) PUT(part string, handle HandleFunc, name ...string) {
+	own.addRoute(http.MethodPut, part, handle, name...)
 }
 
 // DELETE 给当前路由组添加一个处理 DELETE 方法的处理器
-func (own *group) DELETE(part string, handle HandleFunc, nameAndType ...string) {
-	own.addRoute(http.MethodDelete, part, handle, nameAndType...)
+func (own *group) DELETE(part string, handle HandleFunc, name ...string) {
+	own.addRoute(http.MethodDelete, part, handle, name...)
 }
 
 // addRoute 添加处理器到当前路由组
-func (own *group) addRoute(method, pattern string, handle HandleFunc, nameAndType ...string) {
+func (own *group) addRoute(method, pattern string, handle HandleFunc, name ...string) {
 	pattern = own.prefix + pattern
 	key := method + " " + pattern
 
@@ -97,18 +96,16 @@ func (own *group) addRoute(method, pattern string, handle HandleFunc, nameAndTyp
 	}
 
 	// 写入 API 接口基本信息
-	switch len(nameAndType) {
+	switch len(name) {
 	case 0:
-		own.engine.apis[key] = &api{Service: own.engine.service, Method: method, Pattern: pattern}
-	case 1:
-		own.engine.apis[key] = &api{Service: own.engine.service, Name: nameAndType[0], Method: method, Pattern: pattern}
+		own.engine.apis[key] = []string{own.engine.service, "", method, pattern}
 	default:
-		own.engine.apis[key] = &api{Service: own.engine.service, Name: nameAndType[0], Type: nameAndType[1], Method: method, Pattern: pattern}
+		own.engine.apis[key] = []string{own.engine.service, name[0], method, pattern}
 	}
 
 	// 创建处理器
 	handler := newHandler(own.engine, method, handle)
 	handler.WithMiddlewares(own.middlewares...).InitBeforeServe() // 初始化处理器中间件
 	own.engine.router.Handle(key, handler)
-	loggo.Info(fmt.Sprintf("Add route: %7s %s", method, pattern))
+	fmt.Printf("|\033[42m\033[30m INFO  \033[0m| %s Add route: %7s - %s\n", time.Now().Format(time.DateTime), method, pattern)
 }

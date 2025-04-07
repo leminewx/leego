@@ -2,7 +2,16 @@ package websocket
 
 import (
 	"bufio"
+	"errors"
 	"net"
+	"strconv"
+	"time"
+)
+
+var (
+	errPingPayloadIsExceed  = errors.New("leego: websocket: ping payload exceeds 125 bytes")
+	errPongPayloadIsExceed  = errors.New("leego: websocket: pong payload exceeds 125 bytes")
+	errClosePayloadIsExceed = errors.New("leego: websocket: close payload exceeds 125 bytes")
 )
 
 // Conn 定义 Websocket 连接的数据结构
@@ -20,51 +29,85 @@ type Conn struct {
 }
 
 // NewConn 新建一个 Websocket 连接
-func NewConn(conn net.Conn) *Conn {
-	return &Conn{chunkSize: 1024, conn: conn}
+func NewConn(conn net.Conn, reader *bufio.ReadWriter) *Conn {
+	return &Conn{chunkSize: MaxChunkSize, conn: conn, reader: reader}
 }
 
+// WithMaskKey 掩码密钥
 func (own *Conn) WithMaskKey(key [4]byte) *Conn {
 	own.masked = true
 	own.maskKey = key
 	return own
 }
 
+// WithChunkSize 设置每帧的数据载荷大小
 func (own *Conn) WithChunkSize(size int64) *Conn {
 	own.chunkSize = size
 	return own
 }
 
-func (own *Conn) SendText(text []byte) error {
-	return own.Write(OP_CODE_TEXT, text)
+// SendText 发送文本消息
+func (own *Conn) SendText(text string) error {
+	return own.Send(OP_CODE_TEXT, []byte(text))
 }
 
+// SendBytes 发送二进制消息
 func (own *Conn) SendBytes(data []byte) error {
-	return own.Write(OP_CODE_BINARY, data)
+	return own.Send(OP_CODE_BINARY, data)
 }
 
-func (own *Conn) Ping() error {
+// SendFile 发送文件数据
+// func (own *Conn) SendFile(filename string) error {
+// 	file, err := os.Open(filename)
+// 	if err != nil {
+// 		return err
+// 	}
 
+// 	reader := bufio.NewReader(file)
+// 	return nil
+// }
+
+// Ping 发送心跳请求
+func (own *Conn) Ping(msg ...string) error {
+	if len(msg) > 0 {
+		if len(msg[0]) > 125 {
+			return errPingPayloadIsExceed
+		}
+
+		return own.Send(OP_CODE_PING, []byte(msg[0]))
+	}
+
+	return own.Send(OP_CODE_PING, []byte(strconv.FormatInt(time.Now().UnixNano(), 10)))
 }
 
-func (own *Conn) Pong() error {
+// Pong 发送心跳响应
+func (own *Conn) Pong(msg ...string) error {
+	if len(msg) > 0 {
+		if len(msg[0]) > 125 {
+			return errPongPayloadIsExceed
+		}
 
+		return own.Send(OP_CODE_PONG, []byte(msg[0]))
+	}
+
+	return own.Send(OP_CODE_PONG, []byte(strconv.FormatInt(time.Now().UnixNano(), 10)))
 }
 
 // Close 关闭 Websocket 连接
-func (own *Conn) Close() error {
-	if err := own.Write(OP_CODE_CLOSE, []byte{}); err != nil {
-		return err
+func (own *Conn) Close(msg ...string) error {
+	if len(msg) > 0 {
+		if len(msg[0]) > 125 {
+			return errClosePayloadIsExceed
+		}
+
+		return own.Send(OP_CODE_CLOSE, []byte(msg[0]))
 	}
 
-	return own.conn.Close()
+	return own.Send(OP_CODE_CLOSE, []byte{})
 }
 
-func (own *Conn) Read() (*Frame, error) {
-
-}
-
-func (own *Conn) Write(opcode OpCdoe, msg []byte) (err error) {
+// Send 发送消息
+func (own *Conn) Send(opcode OpCdoe, msg []byte) (err error) {
 	total := int64(len(msg))
 
 	// 数据不超过1帧
@@ -116,6 +159,12 @@ func (own *Conn) Write(opcode OpCdoe, msg []byte) (err error) {
 	}
 
 	return nil
+}
+
+// Read 接受消息
+func (own *Conn) Read() (*Frame, error) {
+	frame := NewEmptyFrame()
+	return frame, frame.Read(own.reader)
 }
 
 // // 处理分帧消息示例

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,6 +19,9 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+
+	"gitee.com/leminewx/leego/response/status"
+	"gitee.com/leminewx/leego/response/websocket"
 )
 
 var maxMultipartMemory int64 = 10 << 20 // 10M
@@ -61,6 +63,10 @@ func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request) *Co
 		response: resp,
 	}
 }
+
+/**********************************************************************************************************************************************
+**************************************************************   HTTP Request   ***************************************************************
+***********************************************************************************************************************************************/
 
 // Get 获取 RUL 信息
 func (own *Context) GetURL() *url.URL { return own.request.URL }
@@ -198,14 +204,6 @@ func (own *Context) WithContext(ctx context.Context) *Context {
 **************************************************************   HTTP Response   **************************************************************
 ***********************************************************************************************************************************************/
 
-const (
-	_STATUS_BAD_REQUEST           = "400 bad request"
-	_STATUS_FORBIDDEN             = "403 forbidden"
-	_STATUS_METHOD_NOT_ALLOWED    = "405 method not allowed"
-	_STATUS_INTERNAL_SERVER_ERROR = "500 internal server error"
-	_STATUS_BAD_GATEWAY           = "502 bad gateway"
-)
-
 // ResponseFail 响应错误信息
 func (own *Context) ResponseFail(code int, error string) {
 	own.StatusCode = code
@@ -216,7 +214,7 @@ func (own *Context) ResponseFail(code int, error string) {
 func (own *Context) ResponseXML(code int, data any) error {
 	dataBytes, err := xml.Marshal(&data)
 	if err != nil {
-		own.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
 		return err
 	}
 
@@ -229,7 +227,7 @@ func (own *Context) ResponseXML(code int, data any) error {
 func (own *Context) ResponseJSON(code int, data any) error {
 	dataBytes, err := json.Marshal(&data)
 	if err != nil {
-		own.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
 		return err
 	}
 
@@ -256,14 +254,14 @@ func (own *Context) ResponseString(code int, data string) error {
 func (own *Context) ResponseFile(filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
-		own.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
 		return err
 	}
 	defer file.Close()
 
 	info, err := file.Stat()
 	if err != nil {
-		own.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
 		return err
 	}
 
@@ -278,14 +276,14 @@ func (own *Context) ResponseFile(filename string) error {
 func (own *Context) ResponseFileContent(filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
-		own.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
 		return err
 	}
 	defer file.Close()
 
 	info, err := file.Stat()
 	if err != nil {
-		own.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
 		return err
 	}
 
@@ -321,7 +319,7 @@ func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
 
 	flusher, ok := own.response.(http.Flusher)
 	if !ok {
-		own.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
 		return errNotFulsher
 	}
 
@@ -351,43 +349,43 @@ func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
 }
 
 // ResponseUpgrade 发起 Websocket 响应
-func (own *Context) ResponseUpgrade(upgrade func(conn net.Conn, reader *bufio.ReadWriter)) error {
+func (own *Context) ResponseUpgrade(upgrade func(conn *websocket.Conn)) error {
 	// 校验请求头
 	header := own.request.Header
 	if !CheckHeaderValues(header.Get("Connection"), "upgrade") || !strings.EqualFold(header.Get("Upgrade"), "websocket") {
-		own.ResponseFail(http.StatusBadRequest, _STATUS_BAD_REQUEST)
+		own.ResponseFail(http.StatusBadRequest, status.BAD_REQUEST)
 		return errFailToUpgrade
 	}
 
 	// 必须包含有效的 Sec-WebSocket-Key
 	if len(header.Get("Sec-WebSocket-Key")) == 0 {
-		own.ResponseFail(http.StatusBadRequest, _STATUS_BAD_REQUEST)
+		own.ResponseFail(http.StatusBadRequest, status.BAD_REQUEST)
 		return errUpgradeWithoutKey
 	}
 
 	// 获取 Hijacker 接口
 	hijacker, ok := own.response.(http.Hijacker)
 	if !ok {
-		own.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
 		return errNotHijacker
 	}
 
 	// 手动控制连接
 	conn, reader, err := hijacker.Hijack()
 	if err != nil {
-		own.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
 		return err
 	}
 	defer conn.Close()
 
 	// 手动构建符合 WebSocket 规范的响应头
 	if err := HandshakeWebSocket(reader, header); err != nil {
-		own.ResponseFail(http.StatusInternalServerError, _STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
 		return err
 	}
 
 	// 移交连接处理
-	upgrade(conn, reader)
+	upgrade(websocket.NewConn(conn, reader))
 	return nil
 }
 
