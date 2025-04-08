@@ -31,10 +31,10 @@ type Engine struct {
 func NewEngine(service string) *Engine {
 	engine := &Engine{
 		service:      service,
-		interceptors: make([]InterceptorFunc, 0),
-		groups:       make([]*group, 0),
-		router:       http.NewServeMux(),
 		apis:         make(map[string][]string),
+		groups:       make([]*group, 0),
+		interceptors: make([]InterceptorFunc, 0),
+		router:       http.NewServeMux(),
 	}
 
 	engine.group = &group{engine: engine}
