@@ -44,13 +44,13 @@ func (own *response) Header() http.Header {
 	return own.writer.Header()
 }
 
-func (own *response) Write(data []byte) (int, error) {
-	return own.writer.Write(data)
-}
-
 func (own *response) WriteHeader(status int) {
 	own.status = status
 	own.writer.WriteHeader(own.status)
+}
+
+func (own *response) Write(data []byte) (int, error) {
+	return own.writer.Write(data)
 }
 
 func (own *response) GetStatusCode() int {
