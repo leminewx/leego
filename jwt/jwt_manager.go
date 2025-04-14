@@ -94,3 +94,12 @@ func (own *Manager) Validate(token string, claims Claims) error {
 
 // Refresh 刷新 JWT 令牌
 // func (own *Manager) Refresh(token string) (string, error) {}
+
+func encode(data any) ([]byte, error) {
+	src, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return []byte(base64.RawURLEncoding.EncodeToString(src)), nil
+}
