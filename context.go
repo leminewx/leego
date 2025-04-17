@@ -17,16 +17,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"text/template"
 
+	"gitee.com/leminewx/gokit/pool"
 	"gitee.com/leminewx/leego/response/status"
 	"gitee.com/leminewx/leego/response/websocket"
 )
 
 var maxMultipartMemory int64 = 10 << 20 // 10M
-
-var bytesBufferPool = &sync.Pool{New: func() any { return new(bytes.Buffer) }}
 
 var (
 	errNotFoundPage      = errors.New("leego: not found parameter 'page'")
@@ -153,29 +151,27 @@ func (own *Context) GetHeader(key string) string {
 
 // ReadXml 读取 XML 格式的数据
 func (own *Context) ReadXml(data any) error {
-	buf := bytesBufferPool.Get().(*bytes.Buffer)
+	buf := pool.DefaultBytesBufferPool.Alloc()
 	if _, err := io.Copy(buf, own.request.Body); err != nil {
 		return err
 	}
 	own.request.Body.Close()
 
 	err := xml.Unmarshal(buf.Bytes(), &data)
-	buf.Reset()
-	bytesBufferPool.Put(buf)
+	pool.DefaultBytesBufferPool.Dealloc(buf)
 	return err
 }
 
 // ReadJson 读取 JSON 格式的数据
 func (own *Context) ReadJson(data any) error {
-	buf := bytesBufferPool.Get().(*bytes.Buffer)
+	buf := pool.DefaultBytesBufferPool.Alloc()
 	if _, err := io.Copy(buf, own.request.Body); err != nil {
 		return err
 	}
 	own.request.Body.Close()
 
 	err := json.Unmarshal(buf.Bytes(), &data)
-	buf.Reset()
-	bytesBufferPool.Put(buf)
+	pool.DefaultBytesBufferPool.Dealloc(buf)
 	return err
 }
 
