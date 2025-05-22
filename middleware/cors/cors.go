@@ -65,8 +65,11 @@ func (own *CORS) WithMaxAge(age int64) *CORS {
 
 // WithAllowOrigin 指定可跨域访问的 Origin
 func (own *CORS) WithAllowOrigin(origin string) *CORS {
-	own.allowCredentials = true
-	own.allowOrigin = origin
+	if origin != "" {
+		own.allowCredentials = true
+		own.allowOrigin = origin
+	}
+
 	return own
 }
 
@@ -119,39 +122,44 @@ const (
 	HEADER_ACCESS_CONTROL_ALLOW_METHODS     = "Access-Control-Allow-Methods"
 	HEADER_ACCESS_CONTROL_ALLOW_HEADERS     = "Access-Control-Allow-Headers"
 	HEADER_ACCESS_CONTROL_EXPOSE_HEADERS    = "Access-Control-Expose-Headers"
-)
 
-func (own *CORS) InitBeforeServe() {
-	if own.allowCredentials {
-		if len(own.allowMethods) == 0 {
-			own.allowMethodString = "POST, GET, PUT, DELETE"
-		}
-	}
-}
+	_DEFAULT_ALLOW_METHODS = "GET, PUT, POST, DELETE, OPTIONS"
+)
 
 // SetResponseHeader 设置响应头
 func (own *CORS) SetResponseHeader(resp http.ResponseWriter) {
 	header := resp.Header()
+
+	// 设置 Access-Control-Allow-Origin
 	header.Set(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, own.allowOrigin)
 
+	// 设置 Access-Control-Allow-Credentials
 	if own.allowCredentials {
 		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
 	} else {
 		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "false")
 	}
 
+	// Access-Control-Allow-Methods
+	if len(own.allowMethods) > 0 {
+		header.Set(HEADER_ACCESS_CONTROL_ALLOW_METHODS, own.allowMethodString)
+	} else {
+		header.Set(HEADER_ACCESS_CONTROL_ALLOW_METHODS, _DEFAULT_ALLOW_METHODS)
+	}
+
+	// 设置 Access-Control-Allow-Headers
+	if len(own.allowHeaders) > 0 {
+		header.Set(HEADER_ACCESS_CONTROL_ALLOW_HEADERS, own.allowHeaderString)
+	} else {
+		header.Set(HEADER_ACCESS_CONTROL_ALLOW_HEADERS, "*")
+	}
+
+	// 设置 Access-Control-Max-Age
 	if own.maxAge > 0 {
 		header.Set(HEADER_ACCESS_CONTROL_MAX_AGE, own.maxAgeString)
 	}
 
-	if len(own.allowMethods) > 0 {
-		header.Set(HEADER_ACCESS_CONTROL_ALLOW_METHODS, own.allowMethodString)
-	}
-
-	if len(own.allowHeaders) > 0 {
-		header.Set(HEADER_ACCESS_CONTROL_ALLOW_HEADERS, own.allowHeaderString)
-	}
-
+	// 设置 Access-Control-Expose-Headers
 	if len(own.exposeHeaders) > 0 {
 		header.Set(HEADER_ACCESS_CONTROL_EXPOSE_HEADERS, own.exposeHeaderString)
 	}

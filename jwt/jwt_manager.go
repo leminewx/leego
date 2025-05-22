@@ -8,14 +8,6 @@ import (
 	"time"
 )
 
-// 定义错误类型
-var (
-	errInvalidToken     = errors.New("leego: jwt: invalid token")
-	errExpiredToken     = errors.New("leego: jwt: token has expired")
-	errIneffectiveToken = errors.New("leego: jwt: token not yet valid")
-	errInvalidSignature = errors.New("leego: jwt: invalid signature")
-)
-
 // Manager JWT管理器
 type Manager struct {
 	// issuer 令牌的签发者
@@ -63,6 +55,14 @@ func (own *Manager) Generate(claims Claims) string {
 	// 编码令牌
 	return own.header.Encode(claims)
 }
+
+// 定义错误类型
+var (
+	errInvalidToken     = errors.New("invalid token")
+	errExpiredToken     = errors.New("token has expired")
+	errIneffectiveToken = errors.New("token not yet valid")
+	errInvalidSignature = errors.New("invalid signature")
+)
 
 // Validate 验证 JWT 令牌
 func (own *Manager) Validate(token string, claims Claims) error {

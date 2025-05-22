@@ -9,7 +9,6 @@ import (
 
 // Cors 跨域处理的中间件
 func Cors(cors *cors.CORS) leego.MiddlewareFunc {
-	cors.InitBeforeServe()
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
 			// 设置预检响应头
