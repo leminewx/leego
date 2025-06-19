@@ -22,7 +22,7 @@ type Frame struct {
 	// Fin 消息最后一个分片的标志位
 	Fin bool
 	// OpCode 消息类型
-	OpCode OpCdoe
+	OpCode OpCode
 	// Masked 负载数据掩码标志位
 	Masked bool
 	// MaskKey 32位掩码密钥
@@ -31,7 +31,7 @@ type Frame struct {
 	Payload []byte
 }
 
-func NewFrame(opcode OpCdoe, payload []byte) *Frame {
+func NewFrame(opcode OpCode, payload []byte) *Frame {
 	frame := framePool.Get().(*Frame)
 	frame.Fin = false
 	frame.OpCode = opcode
@@ -44,7 +44,7 @@ func NewFrame(opcode OpCdoe, payload []byte) *Frame {
 func NewEmptyFrame() *Frame {
 	frame := framePool.Get().(*Frame)
 	frame.Fin = false
-	frame.OpCode = OpCdoe(OP_CODE_CONTINUE)
+	frame.OpCode = OP_CODE_CONTINUE
 	frame.Masked = false
 	frame.MaskKey = [4]byte{}
 	return frame
@@ -87,11 +87,15 @@ func (own *Frame) Write(writer net.Conn) error {
 	case payloadLen <= 65535:
 		b2 |= 126
 		buf.WriteByte(b2)
-		binary.Write(buf, binary.BigEndian, uint16(payloadLen))
+		if err := binary.Write(buf, binary.BigEndian, uint16(payloadLen)); err != nil {
+			return err
+		}
 	default:
 		b2 |= 127
 		buf.WriteByte(b2)
-		binary.Write(buf, binary.BigEndian, uint64(payloadLen))
+		if err := binary.Write(buf, binary.BigEndian, uint64(payloadLen)); err != nil {
+			return err
+		}
 	}
 
 	// 处理掩码
@@ -127,7 +131,7 @@ func (own *Frame) Read(reader *bufio.ReadWriter) error {
 
 	// 创建一个接收数据帧
 	own.Fin = (head & 0x80) != 0
-	own.OpCode = OpCdoe(head & 0x0F)
+	own.OpCode = OpCode(head & 0x0F)
 	own.Masked = (second & 0x80) != 0
 
 	// 处理扩展长度
@@ -144,7 +148,9 @@ func (own *Frame) Read(reader *bufio.ReadWriter) error {
 
 	// 读取掩码密钥
 	if own.Masked {
-		reader.Read(own.MaskKey[:])
+		if _, err = reader.Read(own.MaskKey[:]); err != nil {
+			return err
+		}
 	}
 
 	// 读取数据

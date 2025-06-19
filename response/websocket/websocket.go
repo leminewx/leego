@@ -40,7 +40,7 @@ func Read(conn net.Conn) (*Frame, error) {
 	// 新建数据帧
 	frame := &Frame{
 		Fin:    (head[0] & 0x80) != 0,
-		OpCode: OpCdoe(head[0] & 0x0F),
+		OpCode: OpCode(head[0] & 0x0F),
 		Masked: (head[1] & 0x80) != 0,
 	}
 
@@ -67,7 +67,6 @@ func Read(conn net.Conn) (*Frame, error) {
 		if _, err := io.ReadFull(conn, maskKey); err != nil {
 			return nil, err
 		}
-
 		copy(frame.MaskKey[:], maskKey)
 	}
 
@@ -114,11 +113,15 @@ func Write(conn net.Conn, frame *Frame) error {
 	case payloadLen <= 65535:
 		b2 |= 126
 		buf.WriteByte(b2)
-		binary.Write(buf, binary.BigEndian, uint16(payloadLen))
+		if err := binary.Write(buf, binary.BigEndian, uint16(payloadLen)); err != nil {
+			return err
+		}
 	default:
 		b2 |= 127
 		buf.WriteByte(b2)
-		binary.Write(buf, binary.BigEndian, uint64(payloadLen))
+		if err := binary.Write(buf, binary.BigEndian, uint64(payloadLen)); err != nil {
+			return err
+		}
 	}
 
 	// 处理掩码

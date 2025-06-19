@@ -107,7 +107,7 @@ func (own *Conn) Close(msg ...string) error {
 }
 
 // Send 发送消息
-func (own *Conn) Send(opcode OpCdoe, msg []byte) (err error) {
+func (own *Conn) Send(opcode OpCode, msg []byte) (err error) {
 	total := int64(len(msg))
 
 	// 数据不超过1帧
