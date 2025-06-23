@@ -153,6 +153,7 @@ func (own *CORS) SetResponseHeader(resp http.ResponseWriter) {
 		}
 	} else {
 		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "false")
+		header.Set(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*")
 	}
 
 	// Access-Control-Allow-Methods
