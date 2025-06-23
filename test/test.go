@@ -85,7 +85,7 @@ func main() {
 			})
 		}, "websocket测试")
 
-		if err := group1.SetStatics("/files", "./test", "下载文件1"); err != nil {
+		if err := group1.SetStatics("/files", "./test", false, "下载文件1"); err != nil {
 			panic(err)
 		}
 	}

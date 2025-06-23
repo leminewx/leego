@@ -36,7 +36,7 @@ func (own *group) WithMiddlewares(middlewares ...MiddlewareFunc) *group {
 }
 
 // SetStatics 设置前路由组的静态文件服务接口
-func (own *group) SetStatics(relativePath, rootPath string, name ...string) (err error) {
+func (own *group) SetStatics(relativePath, rootPath string, cache bool, name ...string) (err error) {
 	// 当前路由组已经设置静态文件服务
 	if own.hasStatic {
 		return
@@ -53,26 +53,11 @@ func (own *group) SetStatics(relativePath, rootPath string, name ...string) (err
 	}
 
 	// 创建静态文件服务的处理器
-	handler := own.createStaticHandler(path.Join(own.prefix+relativePath), http.Dir(rootPath))
+	handler := own.createStaticHandler(path.Join(own.prefix+relativePath), http.Dir(rootPath), cache)
 	own.GET(path.Join(relativePath, "/{leegofilepath...}"), handler, name...)
 	own.hasStatic = true
 
 	return
-}
-
-// createStaticHandler 创建静态文件服务的处理器
-func (own *group) createStaticHandler(relativePath string, fs http.FileSystem) HandleFunc {
-	const FILEPATH = "leegofilepath"
-	fileServer := http.StripPrefix(relativePath, http.FileServer(fs))
-	return func(ctx *Context) {
-		if _, err := fs.Open(filepath.Join(ctx.GetPathValue(FILEPATH))); err != nil {
-			ctx.WriteCode(http.StatusNotFound)
-			return
-		}
-
-		ctx.SetHeader("Cache-Control", "no-store")
-		fileServer.ServeHTTP(ctx.GetResponse(), ctx.GetRequest())
-	}
 }
 
 // GET 给当前路由组添加一个处理 GET 方法的处理器
