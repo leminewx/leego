@@ -15,7 +15,8 @@ type CORS struct {
 	allowCredentials bool
 
 	// 允许跨域的域
-	allowOrigin string
+	allowOrigins       map[string]struct{}
+	allowDefaultOrigin string
 
 	// 允许访问的方法
 	allowMethods      map[string]struct{}
@@ -49,7 +50,7 @@ func New() *CORS {
 	return &CORS{
 		maxAge:        86400, // 24小时
 		maxAgeString:  "86400",
-		allowOrigin:   "*",
+		allowOrigins:  make(map[string]struct{}),
 		allowMethods:  make(map[string]struct{}),
 		allowHeaders:  make(map[string]struct{}),
 		exposeHeaders: make(map[string]struct{}),
@@ -64,10 +65,19 @@ func (own *CORS) WithMaxAge(age int64) *CORS {
 }
 
 // WithAllowOrigin 指定可跨域访问的 Origin
-func (own *CORS) WithAllowOrigin(origin string) *CORS {
-	if origin != "" {
+func (own *CORS) WithAllowOrigin(origins ...string) *CORS {
+	for _, origin := range origins {
+		if origin == "" || origin == "*" {
+			continue
+		}
+
+		own.allowOrigins[origin] = struct{}{}
 		own.allowCredentials = true
-		own.allowOrigin = origin
+		own.allowDefaultOrigin = origin
+	}
+
+	if len(own.allowOrigins) > 0 {
+		delete(own.allowOrigins, "*")
 	}
 
 	return own
@@ -130,12 +140,17 @@ const (
 func (own *CORS) SetResponseHeader(resp http.ResponseWriter) {
 	header := resp.Header()
 
-	// 设置 Access-Control-Allow-Origin
-	header.Set(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, own.allowOrigin)
-
 	// 设置 Access-Control-Allow-Credentials
 	if own.allowCredentials {
 		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
+
+		// 设置 Access-Control-Allow-Origin
+		origin := header.Get("Origin")
+		if _, ok := own.allowOrigins[origin]; ok {
+			header.Set(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin)
+		} else {
+			header.Set(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, own.allowDefaultOrigin)
+		}
 	} else {
 		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "false")
 	}

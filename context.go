@@ -29,8 +29,8 @@ var maxMultipartMemory int64 = 10 << 20 // 10M
 var (
 	errNotFoundPage      = errors.New("leego: not found parameter 'page'")
 	errNotFoundLimit     = errors.New("leego: not found parameter 'limit'")
-	errNotFulsher        = errors.New("leego: http.ResponseWriter is not a Flusher")
-	errNotHijacker       = errors.New("leego: http.ResponseWriter is not a HiJacker")
+	errNotFlusher        = errors.New("leego: http.ResponseWriter is not a Flusher")
+	errNotHijacker       = errors.New("leego: http.ResponseWriter is not a Hijacker")
 	errFailToUpgrade     = errors.New("leego: failed to upgrade connection to WebSocket")
 	errUpgradeWithoutKey = errors.New("leego: upgrade header is without key")
 )
@@ -62,11 +62,11 @@ func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request) *Co
 	}
 }
 
-/**********************************************************************************************************************************************
-**************************************************************   HTTP Request   ***************************************************************
-***********************************************************************************************************************************************/
+/***********************************************************************************************************************
+***************************************************** HTTP Request *****************************************************
+***********************************************************************************************************************/
 
-// Get 获取 RUL 信息
+// GetURL 获取 RUL 信息
 func (own *Context) GetURL() *url.URL { return own.request.URL }
 
 // GetHost 获取主机信息
@@ -117,7 +117,7 @@ func (own *Context) GetPostFormValue(key string) string {
 	return own.request.PostForm.Get(key)
 }
 
-// ParseMultipartForm 获取上传的文件信息
+// GetFormFile 获取上传的文件信息
 func (own *Context) GetFormFile(filename string) (multipart.File, *multipart.FileHeader, error) {
 	if own.request.MultipartForm == nil {
 		own.request.ParseMultipartForm(maxMultipartMemory)
@@ -126,7 +126,7 @@ func (own *Context) GetFormFile(filename string) (multipart.File, *multipart.Fil
 	return own.request.FormFile(filename)
 }
 
-// GetPostFormValue 仅支持查询 multipart/form-data 格式的 body
+// GetMultipartFormValue 仅支持查询 multipart/form-data 格式的 body
 func (own *Context) GetMultipartFormValue(key string) string {
 	if own.request.MultipartForm == nil {
 		own.request.ParseMultipartForm(maxMultipartMemory)
@@ -139,8 +139,8 @@ func (own *Context) GetMultipartFormValue(key string) string {
 	return ""
 }
 
-// GetSeriveName 获取服务名称
-func (own *Context) GetSeriveName() string {
+// GetServiceName 获取服务名称
+func (own *Context) GetServiceName() string {
 	return own.engine.GetServiceName()
 }
 
@@ -175,7 +175,7 @@ func (own *Context) ReadJson(data any) error {
 	return err
 }
 
-// GetRequst 获取原始请求
+// GetRequest 获取原始请求
 func (own *Context) GetRequest() *http.Request { return own.request }
 
 // GetResponse 获取原始响应
@@ -196,9 +196,9 @@ func (own *Context) WithContext(ctx context.Context) *Context {
 	return own
 }
 
-/**********************************************************************************************************************************************
-**************************************************************   HTTP Response   **************************************************************
-***********************************************************************************************************************************************/
+/***********************************************************************************************************************
+**************************************************** HTTP Response *****************************************************
+***********************************************************************************************************************/
 
 // ResponseFail 响应错误信息
 func (own *Context) ResponseFail(code int, error string) {
@@ -293,18 +293,18 @@ func (own *Context) ResponseFileContent(filename string) error {
 var templates = make(map[string]*template.Template)
 
 // ResponseHTML 响应 HTML 内容
-func (own *Context) ResponseHTML(filename, tmplname string, data any) error {
+func (own *Context) ResponseHTML(filename, tmplName string, data any) error {
 	tmpl, ok := templates[filename]
 	if !ok {
 		tmpl = template.Must(template.ParseFiles(filename))
 		templates[filename] = tmpl
 	}
 
-	if tmplname == "" {
+	if tmplName == "" {
 		return tmpl.Execute(own.response, &data)
 	}
 
-	return tmpl.ExecuteTemplate(own.response, tmplname, &data)
+	return tmpl.ExecuteTemplate(own.response, tmplName, &data)
 }
 
 // ResponseSSE 发起 SSE 响应
@@ -316,7 +316,7 @@ func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
 	flusher, ok := own.response.(http.Flusher)
 	if !ok {
 		own.ResponseFail(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR)
-		return errNotFulsher
+		return errNotFlusher
 	}
 
 	events := sse()

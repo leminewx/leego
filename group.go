@@ -3,9 +3,9 @@ package leego
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -35,32 +35,42 @@ func (own *group) WithMiddlewares(middlewares ...MiddlewareFunc) *group {
 	return own
 }
 
-// WithStatics 给当前路由组添加静态文件服务接口
-func (own *group) WithStatics(relativePath string, root string, name ...string) *group {
-	if !own.hasStatic {
-		handler := own.createStaticHandler(relativePath, http.Dir(root))
-		own.GET(path.Join(relativePath, "/*"), handler, name...)
-		own.hasStatic = true
+// SetStatics 设置前路由组的静态文件服务接口
+func (own *group) SetStatics(relativePath, rootPath string, name ...string) (err error) {
+	// 当前路由组已经设置静态文件服务
+	if own.hasStatic {
+		return
 	}
 
-	return own
+	// 获取绝对路径
+	if rootPath, err = filepath.Abs(rootPath); err != nil {
+		return
+	}
+
+	// 检查目录是否存在
+	if _, err = os.Stat(rootPath); os.IsNotExist(err) {
+		return
+	}
+
+	// 创建静态文件服务的处理器
+	handler := own.createStaticHandler(path.Join(own.prefix+relativePath), http.Dir(rootPath))
+	own.GET(path.Join(relativePath, "/{leegofilepath...}"), handler, name...)
+	own.hasStatic = true
+
+	return
 }
 
+// createStaticHandler 创建静态文件服务的处理器
 func (own *group) createStaticHandler(relativePath string, fs http.FileSystem) HandleFunc {
-	startIndex := len(strings.Split(own.prefix+relativePath, "/"))
-	fileServer := http.StripPrefix(path.Join(own.prefix, relativePath), http.FileServer(fs))
+	const FILEPATH = "leegofilepath"
+	fileServer := http.StripPrefix(relativePath, http.FileServer(fs))
 	return func(ctx *Context) {
-		paths := strings.Split(ctx.GetURL().Path, "/")
-		if len(paths) < startIndex-1 {
+		if _, err := fs.Open(filepath.Join(ctx.GetPathValue(FILEPATH))); err != nil {
 			ctx.WriteCode(http.StatusNotFound)
 			return
 		}
 
-		if _, err := fs.Open(filepath.Join(paths[startIndex:]...)); err != nil {
-			ctx.WriteCode(http.StatusNotFound)
-			return
-		}
-
+		ctx.SetHeader("Cache-Control", "no-store")
 		fileServer.ServeHTTP(ctx.GetResponse(), ctx.GetRequest())
 	}
 }

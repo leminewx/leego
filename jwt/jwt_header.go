@@ -54,7 +54,7 @@ func (own *Header) Encode(claims Claims) string {
 	sign = append(append(append(sign, own.signature...), '.'), payload...)
 
 	hasher := own.pool.Get().(hash.Hash)
-	hasher.Write([]byte(sign))
+	hasher.Write(sign)
 	signature := hasher.Sum(nil)
 	hasher.Reset()
 	own.pool.Put(hasher)

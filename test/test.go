@@ -85,7 +85,9 @@ func main() {
 			})
 		}, "websocket测试")
 
-		group1.WithStatics("/files", "D:\\Projects\\Golang\\leego\\test", "下载文件1")
+		if err := group1.SetStatics("/files", "./test", "下载文件1"); err != nil {
+			panic(err)
+		}
 	}
 
 	{

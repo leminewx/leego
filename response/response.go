@@ -7,18 +7,18 @@ import (
 	"net/http"
 )
 
-var errNotHijack = errors.New("leego: not supported HiJacker")
+var errNotHijack = errors.New("leego: not supported Hijacker")
 
 type (
 	// ResponseWriter 自定义 HTTP 的 响应接口，用于继承 http.ResponseWriter
 	ResponseWriter interface {
-		// 继承 http.Flusher
+		// Flusher 继承 http.Flusher
 		http.Flusher
 
-		// 继承 http.Hijacker
+		// Hijacker 继承 http.Hijacker
 		http.Hijacker
 
-		// 继承 http.ResponseWriter
+		// ResponseWriter 继承 http.ResponseWriter
 		http.ResponseWriter
 
 		// GetStatusCode 获取响应状态码
@@ -32,12 +32,16 @@ type (
 	}
 )
 
-// NewResponse 创建一个自定义的响应
+// NewResponseWriter 创建一个自定义的响应
 func NewResponseWriter(resp http.ResponseWriter) *response {
 	return &response{
 		status: http.StatusOK,
 		writer: resp,
 	}
+}
+
+func (own *response) GetStatusCode() int {
+	return own.status
 }
 
 func (own *response) Header() http.Header {
@@ -51,10 +55,6 @@ func (own *response) WriteHeader(status int) {
 
 func (own *response) Write(data []byte) (int, error) {
 	return own.writer.Write(data)
-}
-
-func (own *response) GetStatusCode() int {
-	return own.status
 }
 
 func (own *response) Flush() {

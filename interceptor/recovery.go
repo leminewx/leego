@@ -10,7 +10,7 @@ import (
 	"gitee.com/leminewx/leego/response/status"
 )
 
-// recover 异常恢复的拦截器
+// Recover 异常恢复的拦截器
 func Recover() leego.InterceptorFunc {
 	return func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
