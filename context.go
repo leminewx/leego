@@ -227,6 +227,7 @@ func (own *Context) ResponseJSON(code int, data any) error {
 		return err
 	}
 
+	own.SetHeader("Content-Type", "application/json")
 	own.WriteCode(code)
 	_, err = own.response.Write(dataBytes)
 	return err
