@@ -84,6 +84,21 @@ func (own *Context) QueryValue(key string) string { return own.query.Get(key) }
 // GetPathValue 获取动态路由参数
 func (own *Context) GetPathValue(name string) string { return own.request.PathValue(name) }
 
+// GetContextValue 获取上下文附带的键值对
+func (own *Context) GetContextValue(key any) (any, bool) {
+	ctx := own.request.Context()
+	if ctx == nil {
+		return nil, false
+	}
+
+	val := ctx.Value(key)
+	if val == nil {
+		return nil, false
+	}
+
+	return val, true
+}
+
 // QueryPageAndLimit 查询分页信息(仅支持 page 和 limit 字段)
 func (own *Context) QueryPageAndLimit() (page, limit int, err error) {
 	p, e := strconv.ParseInt(own.query.Get("page"), 10, 64)
