@@ -342,12 +342,15 @@ func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
 		if _, err = buffer.WriteString("data: "); err != nil {
 			return err
 		}
+
 		if _, err = buffer.Write(data); err != nil {
 			return err
 		}
+
 		if _, err = buffer.WriteString("\n\n"); err != nil {
 			return err
 		}
+
 		if _, err = own.response.Write(buffer.Bytes()); err != nil {
 			return err
 		}
