@@ -19,7 +19,7 @@ import (
 	"strings"
 	"text/template"
 
-	"gitee.com/leminewx/gokit/util/pool"
+	"gitee.com/leminewx/gokit/concurrency/pool"
 	"gitee.com/leminewx/leego/response/status"
 	"gitee.com/leminewx/leego/response/websocket"
 )
