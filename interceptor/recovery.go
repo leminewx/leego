@@ -2,12 +2,11 @@ package interceptor
 
 import (
 	"fmt"
+	"gitee.com/leminewx/gokit/concurrency/pool"
+	"gitee.com/leminewx/leego"
+	"gitee.com/leminewx/leego/response"
 	"net/http"
 	"runtime"
-	"strings"
-
-	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/response/status"
 )
 
 // Recover 异常恢复的拦截器
@@ -17,7 +16,7 @@ func Recover() leego.InterceptorFunc {
 			defer func() {
 				if err := recover(); err != nil {
 					fmt.Printf("|\033[45m\033[30m%s\033[0m\n\n", trace(fmt.Sprintf("%v", err)))
-					http.Error(resp, status.INTERNAL_SERVER_ERROR, http.StatusInternalServerError)
+					http.Error(resp, response.STATUS_INTERNAL_SERVER_ERROR, http.StatusInternalServerError)
 				}
 			}()
 
@@ -27,16 +26,20 @@ func Recover() leego.InterceptorFunc {
 }
 
 func trace(message string) string {
+	// 获取调用栈信息(跳过前3层调用)
 	var pcs [32]uintptr
-	n := runtime.Callers(3, pcs[:]) // skip first 3 caller
+	n := runtime.Callers(3, pcs[:])
 
-	var str strings.Builder
-	str.WriteString(message + "\nTraceback:")
+	builder := pool.DefaultBytesBufferPool.Alloc()
+	defer pool.DefaultBytesBufferPool.Dealloc(builder)
+
+	// 封装调用信息
+	builder.WriteString(message + "\nTraceback:")
 	for _, pc := range pcs[:n] {
 		fn := runtime.FuncForPC(pc)
 		file, line := fn.FileLine(pc)
-		str.WriteString(fmt.Sprintf("\n\t%s:%d", file, line))
+		builder.WriteString(fmt.Sprintf("\n\t%s:%d", file, line))
 	}
 
-	return str.String()
+	return builder.String()
 }

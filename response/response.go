@@ -7,62 +7,47 @@ import (
 	"net/http"
 )
 
-var errNotHijack = errors.New("leego: not supported Hijacker")
+var errNotHijack = errors.New("leego: response: not supported Hijacker")
 
-type (
-	// ResponseWriter 自定义 HTTP 的 响应接口，用于继承 http.ResponseWriter
-	ResponseWriter interface {
-		// Flusher 继承 http.Flusher
-		http.Flusher
+// Writer 自定义 HTTP 的 响应接口，继承 http.ResponseWriter
+type Writer interface {
+	// Flusher 继承 http.Flusher
+	http.Flusher
 
-		// Hijacker 继承 http.Hijacker
-		http.Hijacker
+	// Hijacker 继承 http.Hijacker
+	http.Hijacker
 
-		// ResponseWriter 继承 http.ResponseWriter
-		http.ResponseWriter
+	// ResponseWriter 继承 http.ResponseWriter
+	http.ResponseWriter
 
-		// GetStatusCode 获取响应状态码
-		GetStatusCode() int
-	}
+	// GetStatusCode 获取响应状态码
+	GetStatusCode() int
+}
 
-	// response 定义响应的数据结构
-	response struct {
-		status int
-		writer http.ResponseWriter
-	}
-)
+var _ Writer = &response{}
 
-// NewResponseWriter 创建一个自定义的响应
-func NewResponseWriter(resp http.ResponseWriter) *response {
+// response 定义响应的数据结构
+type response struct {
+	status int
+	writer http.ResponseWriter
+}
+
+// NewWriter 创建一个基于 http.ResponseWriter 的响应
+func NewWriter(resp http.ResponseWriter) Writer {
 	return &response{
 		status: http.StatusOK,
 		writer: resp,
 	}
 }
 
-func (own *response) GetStatusCode() int {
-	return own.status
-}
-
-func (own *response) Header() http.Header {
-	return own.writer.Header()
-}
-
-func (own *response) WriteHeader(status int) {
-	own.status = status
-	own.writer.WriteHeader(own.status)
-}
-
-func (own *response) Write(data []byte) (int, error) {
-	return own.writer.Write(data)
-}
-
+// Flush 继承 http.Flusher
 func (own *response) Flush() {
 	if flusher, ok := own.writer.(http.Flusher); ok {
 		flusher.Flush()
 	}
 }
 
+// Hijack 继承 http.Hijacker
 func (own *response) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hijacker, ok := own.writer.(http.Hijacker); ok {
 		return hijacker.Hijack()
@@ -70,3 +55,20 @@ func (own *response) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 	return nil, nil, errNotHijack
 }
+
+// Header 继承 http.ResponseWriter
+func (own *response) Header() http.Header {
+	return own.writer.Header()
+}
+
+// WriteHeader 继承 http.ResponseWriter， 并重构逻辑
+func (own *response) WriteHeader(status int) {
+	own.status = status
+	own.writer.WriteHeader(own.status)
+}
+
+// Write 继承 http.ResponseWriter
+func (own *response) Write(data []byte) (int, error) { return own.writer.Write(data) }
+
+// GetStatusCode 拓展获取响应状态码的功能
+func (own *response) GetStatusCode() int { return own.status }

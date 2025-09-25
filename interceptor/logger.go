@@ -1,0 +1,63 @@
+package interceptor
+
+import (
+	"fmt"
+	"gitee.com/leminewx/leego"
+	"gitee.com/leminewx/leego/response"
+	"net/http"
+	"time"
+)
+
+const (
+	_FORMAT_DATETIME = "2006-01-02 15:04:05.000"
+
+	// INFO : 10.254.249.236:39860 - "POST /api/v1/users/user@qq.com HTTP/1.1" | 200 | 123.456ms |
+	_FORMAT_1XX = "\033[37mINFO \033[0m -  %s  -  \"%s %v %s\"  |\033[47m\033[30m %d \033[0m|\033[47m\033[30m %v \033[0m|\n\n" // 白色
+	_FORMAT_2XX = "\033[32mINFO \033[0m -  %s  -  \"%s %v %s\"  |\033[42m\033[30m %d \033[0m|\033[42m\033[30m %v \033[0m|\n\n" // 绿色
+	_FORMAT_3XX = "\033[36mINFO \033[0m -  %s  -  \"%s %v %s\"  |\033[46m\033[30m %d \033[0m|\033[46m\033[30m %v \033[0m|\n\n" // 蓝色
+	_FORMAT_4XX = "\033[33mWARN \033[0m -  %s  -  \"%s %v %s\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n\n" // 黄色
+	_FORMAT_5XX = "\033[35mERROR\033[0m -  %s  -  \"%s %v %s\"  |\033[45m\033[30m %d \033[0m|\033[45m\033[30m %v \033[0m|\n\n" // 红色
+)
+
+// Log 打印日志的拦截器
+func Log() leego.InterceptorFunc {
+	return func(handler http.Handler) http.Handler {
+		return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+			// 记录时间
+			start := time.Now()
+
+			// 转换响应
+			var res response.Writer
+			if _, ok := resp.(response.Writer); !ok {
+				res = response.NewWriter(resp)
+			}
+
+			// 处理请求
+			handler.ServeHTTP(res, req)
+			status := res.GetStatusCode()
+
+			// 打印信息
+			switch {
+			// 0 ~ 199
+			case status < http.StatusOK:
+				fmt.Printf(_FORMAT_1XX, start.Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, status, time.Since(start))
+
+			// 200 ~ 299
+			case status < http.StatusMultipleChoices:
+				fmt.Printf(_FORMAT_2XX, start.Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, status, time.Since(start))
+
+			// 300 ~ 399
+			case status < http.StatusBadRequest:
+				fmt.Printf(_FORMAT_3XX, start.Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, status, time.Since(start))
+
+			// 400 ~ 499
+			case status < http.StatusInternalServerError:
+				fmt.Printf(_FORMAT_4XX, start.Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, status, time.Since(start))
+
+			// 500 ~
+			default:
+				fmt.Printf(_FORMAT_5XX, start.Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, status, time.Since(start))
+			}
+		})
+	}
+}

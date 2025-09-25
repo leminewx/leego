@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const _FORMAT_DATETIME = "2006-01-02 15:04:05.000"
+
 // Options 定义引擎配置参数的结构
 type Options struct {
 	Addr        string
@@ -59,7 +61,7 @@ func (own *Engine) ListenAndServe(opts *Options) error {
 		return err
 	}
 
-	fmt.Printf("|\033[42m\033[30m INFO  \033[0m| %s HTTP server is starting %s ...\n", time.Now().Format(time.DateTime), opts.Addr)
+	fmt.Printf("\033[32mINFO \033[0m -  %s  -  HTTP server is starting %s ...\n\n", time.Now().Format(_FORMAT_DATETIME), opts.Addr)
 	return own.server.ListenAndServe()
 }
 
@@ -69,7 +71,7 @@ func (own *Engine) ListenAndServeTLS(opts *Options) error {
 		return err
 	}
 
-	fmt.Printf("|\033[42m\033[30m INFO  \033[0m| %s HTTPS server is starting %s ...\n", time.Now().Format(time.DateTime), opts.Addr)
+	fmt.Printf("\033[32mINFO \033[0m -  %s  -  HTTPS server is starting %s ...\n\n", time.Now().Format(_FORMAT_DATETIME), opts.Addr)
 	return own.server.ListenAndServeTLS(opts.TLSCertFile, opts.TLSKeyFile)
 }
 
@@ -100,7 +102,7 @@ func (own *Engine) generateApiMetadata() error {
 	if err != nil {
 		return fmt.Errorf("leego: failed to open the APIS.csv: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// 写入头部
 	if _, err = file.Write([]byte("service,name,method,pattern\n")); err != nil {

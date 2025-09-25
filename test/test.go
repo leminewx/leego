@@ -23,10 +23,9 @@ func main() {
 		interceptor.Log(),
 		func(handler http.Handler) http.Handler {
 			return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-				response := response.NewResponseWriter(resp)
-				handler.ServeHTTP(response, req)
-
-				if response.GetStatusCode() == http.StatusNotFound {
+				res := response.NewWriter(resp)
+				handler.ServeHTTP(res, req)
+				if res.GetStatusCode() == http.StatusNotFound {
 					fmt.Println("Oh my god, not found")
 				}
 			})
@@ -55,12 +54,14 @@ func main() {
 
 		group1.GET("/a", func(ctx *leego.Context) {
 			fmt.Println("/v1/a ok")
-			ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
+			_ = ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
 		}, "通用API1")
 
+		group1.GET("/a", func(ctx *leego.Context) {})
+
 		group1.GET("/ws", func(ctx *leego.Context) {
-			ctx.ResponseUpgrade(func(conn *websocket.Conn) {
-				defer conn.Close()
+			_ = ctx.ResponseUpgrade(func(conn *websocket.Conn) {
+				defer func() { _ = conn.Close() }()
 
 				// 简单消息处理循环
 				var idx int
@@ -76,16 +77,16 @@ func main() {
 					// 处理消息（示例：原样返回）
 					log.Printf("Received: %s", frame.Payload)
 					if idx == 10 {
-						conn.SendText("this is last message!!!")
+						_ = conn.SendText("this is last message!!!")
 						return
 					}
 
-					conn.SendText(strconv.Itoa(idx))
+					_ = conn.SendText(strconv.Itoa(idx))
 				}
 			})
 		}, "websocket测试")
 
-		if err := group1.SetStatics("/files", "./test", false, "下载文件1"); err != nil {
+		if err := group1.SetStatics("/files", "test/data", false, "下载文件1"); err != nil {
 			panic(err)
 		}
 	}
@@ -110,7 +111,7 @@ func main() {
 		group2.GET("/b", func(ctx *leego.Context) {
 			fmt.Println("*********ready response b*********")
 			fmt.Println("/v2/b ok")
-			ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
+			_ = ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
 		}, "通用API2")
 
 		{
@@ -127,12 +128,12 @@ func main() {
 			group3.POST("/{name}", func(ctx *leego.Context) {
 				fmt.Println("*********ready response login*********")
 				fmt.Printf("/v2/login/%s ok\n", ctx.GetPathValue("name"))
-				ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
+				_ = ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
 			}, "登录系统", "用户管理")
 
 			group3.GET("/sse", func(ctx *leego.Context) {
 				fmt.Println("*********ready response sse*********")
-				ctx.ResponseSSE(func() <-chan []byte {
+				_ = ctx.ResponseSSE(func() <-chan []byte {
 					data := make(chan []byte)
 					go func() {
 						for i := 0; i < 10; i++ {
@@ -165,7 +166,7 @@ func main() {
 		}
 	}
 
-	engine.ListenAndServe(&leego.Options{
+	_ = engine.ListenAndServe(&leego.Options{
 		Addr: ":10000",
 	})
 }

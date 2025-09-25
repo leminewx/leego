@@ -17,7 +17,7 @@ func Cors(cors *cors.CORS) leego.MiddlewareFunc {
 			// 预检请求（Preflight request）
 			if ctx.GetMethod() == http.MethodOptions {
 				// 直接返回 204 状态码
-				ctx.WriteCode(http.StatusNoContent)
+				ctx.WithStatusCode(http.StatusNoContent)
 				return
 			}
 

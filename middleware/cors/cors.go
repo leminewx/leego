@@ -1,6 +1,7 @@
 package cors
 
 import (
+	"gitee.com/leminewx/leego/headers"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,21 +27,15 @@ type CORS struct {
 	allowHeaders      map[string]struct{}
 	allowHeaderString string
 
-	// 允许暴露的非简单响应头
-	//
-	// 在使用CORS方式跨域时，浏览器只会返回默认的头部 Header，认情况下可用的响应头包括：
-	//
-	// Cache-Control
-	//
-	// Content-Language
-	//
-	// Content-Type
-	//
-	// Expires
-	//
-	// Last-Modified
-	//
-	// Pragma
+	/*
+		允许暴露的非简单响应头，在使用CORS方式跨域时，浏览器只会返回默认的头部 Header，认情况下可用的响应头包括：
+		  - Cache-Control
+		  - Content-Language
+		  - Content-Type
+		  - Expires
+		  - Last-Modified
+		  - Pragma
+	*/
 	exposeHeaders      map[string]struct{}
 	exposeHeaderString string
 }
@@ -109,7 +104,7 @@ func (own *CORS) WithExposeHeaders(headers ...string) *CORS {
 		own.exposeHeaders[header] = struct{}{}
 	}
 
-	own.exposeHeaderString = strings.Join(getMapKeys(own.allowHeaders), ", ")
+	own.exposeHeaderString = strings.Join(getMapKeys(own.exposeHeaders), ", ")
 	return own
 }
 
@@ -122,19 +117,7 @@ func getMapKeys(data map[string]struct{}) []string {
 	return keys
 }
 
-const (
-	HEADER_ACCESS_CONTROL_REQUEST_METHOD  = "Access-Control-Request-Method"  // 实际请求方法
-	HEADER_ACCESS_CONTROL_REQUEST_HEADERS = "Access-Control-Request-Headers" // 实际请求携带的自定义字段
-
-	HEADER_ACCESS_CONTROL_MAX_AGE           = "Access-Control-Max-Age"
-	HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS = "Access-Control-Allow-Credentials"
-	HEADER_ACCESS_CONTROL_ALLOW_ORIGIN      = "Access-Control-Allow-Origin"
-	HEADER_ACCESS_CONTROL_ALLOW_METHODS     = "Access-Control-Allow-Methods"
-	HEADER_ACCESS_CONTROL_ALLOW_HEADERS     = "Access-Control-Allow-Headers"
-	HEADER_ACCESS_CONTROL_EXPOSE_HEADERS    = "Access-Control-Expose-Headers"
-
-	_DEFAULT_ALLOW_METHODS = "GET, PUT, POST, DELETE, OPTIONS"
-)
+const _DEFAULT_ALLOW_METHODS = "GET, PUT, POST, DELETE, OPTIONS"
 
 // SetResponseHeader 设置响应头
 func (own *CORS) SetResponseHeader(resp http.ResponseWriter) {
@@ -142,42 +125,42 @@ func (own *CORS) SetResponseHeader(resp http.ResponseWriter) {
 
 	// 设置 Access-Control-Allow-Credentials
 	if own.allowCredentials {
-		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
+		header.Set(headers.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
 
 		// 设置 Access-Control-Allow-Origin
 		origin := header.Get("Origin")
 		if _, ok := own.allowOrigins[origin]; ok {
-			header.Set(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin)
+			header.Set(headers.ACCESS_CONTROL_ALLOW_ORIGIN, origin)
 		} else {
-			header.Set(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, own.allowDefaultOrigin)
+			header.Set(headers.ACCESS_CONTROL_ALLOW_ORIGIN, own.allowDefaultOrigin)
 		}
 	} else {
-		header.Set(HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS, "false")
-		header.Set(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+		header.Set(headers.ACCESS_CONTROL_REQUEST_HEADERS, "false")
+		header.Set(headers.ACCESS_CONTROL_ALLOW_ORIGIN, "*")
 	}
 
-	// Access-Control-Allow-Methods
+	// 设置 Access-Control-Allow-Methods
 	if len(own.allowMethods) > 0 {
-		header.Set(HEADER_ACCESS_CONTROL_ALLOW_METHODS, own.allowMethodString)
+		header.Set(headers.ACCESS_CONTROL_ALLOW_METHODS, own.allowMethodString)
 	} else {
-		header.Set(HEADER_ACCESS_CONTROL_ALLOW_METHODS, _DEFAULT_ALLOW_METHODS)
+		header.Set(headers.ACCESS_CONTROL_ALLOW_METHODS, _DEFAULT_ALLOW_METHODS)
 	}
 
 	// 设置 Access-Control-Allow-Headers
 	if len(own.allowHeaders) > 0 {
-		header.Set(HEADER_ACCESS_CONTROL_ALLOW_HEADERS, own.allowHeaderString)
+		header.Set(headers.ACCESS_CONTROL_ALLOW_HEADERS, own.allowHeaderString)
 	} else {
-		header.Set(HEADER_ACCESS_CONTROL_ALLOW_HEADERS, "*")
+		header.Set(headers.ACCESS_CONTROL_ALLOW_HEADERS, "*")
 	}
 
 	// 设置 Access-Control-Max-Age
 	if own.maxAge > 0 {
-		header.Set(HEADER_ACCESS_CONTROL_MAX_AGE, own.maxAgeString)
+		header.Set(headers.ACCESS_CONTROL_MAX_AGE, own.maxAgeString)
 	}
 
 	// 设置 Access-Control-Expose-Headers
 	if len(own.exposeHeaders) > 0 {
-		header.Set(HEADER_ACCESS_CONTROL_EXPOSE_HEADERS, own.exposeHeaderString)
+		header.Set(headers.ACCESS_CONTROL_EXPOSE_HEADERS, own.exposeHeaderString)
 	}
 
 	// if own.allowCredentials {

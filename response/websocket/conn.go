@@ -16,21 +16,16 @@ var (
 
 // Conn 定义 Websocket 连接的数据结构
 type Conn struct {
-	// chunkSize 指定数据帧的载荷大小
-	chunkSize int64
-	// masked 掩码标志位
-	masked bool
-	// MaskKey 掩码密钥
-	maskKey [4]byte
-	// conn 原始连接
-	conn net.Conn
-	// reader 客户端创建连接时可能写入的数据缓存
-	reader *bufio.ReadWriter
+	chunkSize int64             // 指定数据帧的载荷大小
+	masked    bool              // 掩码标志位
+	maskKey   [4]byte           // 掩码密钥
+	conn      net.Conn          // 原始连接
+	reader    *bufio.ReadWriter // 客户端创建连接时可能写入的数据缓存
 }
 
 // NewConn 新建一个 Websocket 连接
 func NewConn(conn net.Conn, reader *bufio.ReadWriter) *Conn {
-	return &Conn{chunkSize: MaxChunkSize, conn: conn, reader: reader}
+	return &Conn{chunkSize: _MAX_CHUNK_SIZE, conn: conn, reader: reader}
 }
 
 // WithMaskKey 掩码密钥

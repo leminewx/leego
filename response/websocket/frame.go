@@ -4,33 +4,27 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"net"
+	"io"
 	"sync"
 )
 
-const (
-	MaxChunkSize int64 = 1 << 20 // 数据分片时的最大载荷：1M
-)
+const _MAX_CHUNK_SIZE int64 = 1 << 20 // 数据分片时的最大载荷：1M
 
 var (
-	framePool  = &sync.Pool{New: func() any { return &Frame{Payload: make([]byte, 0, MaxChunkSize)} }}
+	framePool  = &sync.Pool{New: func() any { return &Frame{Payload: make([]byte, 0, _MAX_CHUNK_SIZE)} }}
 	bufferPool = &sync.Pool{New: func() any { return new(bytes.Buffer) }}
 )
 
 // Frame 定义 Websocket 数据帧的数据结构
 type Frame struct {
-	// Fin 消息最后一个分片的标志位
-	Fin bool
-	// OpCode 消息类型
-	OpCode OpCode
-	// Masked 负载数据掩码标志位
-	Masked bool
-	// MaskKey 32位掩码密钥
-	MaskKey [4]byte
-	// Payload 负载数据
-	Payload []byte
+	Fin     bool    // 消息最后一个分片的标志位
+	OpCode  OpCode  // 消息类型
+	Masked  bool    // 负载数据掩码标志位
+	MaskKey [4]byte // 32位掩码密钥
+	Payload []byte  // 负载数据
 }
 
+// NewFrame 新建一个数据帧
 func NewFrame(opcode OpCode, payload []byte) *Frame {
 	frame := framePool.Get().(*Frame)
 	frame.Fin = false
@@ -41,6 +35,7 @@ func NewFrame(opcode OpCode, payload []byte) *Frame {
 	return frame
 }
 
+// NewEmptyFrame 新建一个空的数据帧
 func NewEmptyFrame() *Frame {
 	frame := framePool.Get().(*Frame)
 	frame.Fin = false
@@ -50,18 +45,21 @@ func NewEmptyFrame() *Frame {
 	return frame
 }
 
+// WithLast 设置该帧为最后一帧
 func (own *Frame) WithLast() *Frame {
 	own.Fin = true
 	return own
 }
 
+// WithMask 设置32位掩码密钥
 func (own *Frame) WithMask(mask [4]byte) *Frame {
 	own.Masked = true
 	own.MaskKey = mask
 	return own
 }
 
-func (own *Frame) Write(writer net.Conn) error {
+// Write 写入帧数据
+func (own *Frame) Write(writer io.Writer) error {
 	buf := bufferPool.Get().(*bytes.Buffer)
 
 	// 构造第1个字节
@@ -118,6 +116,7 @@ func (own *Frame) Write(writer net.Conn) error {
 	return err
 }
 
+// Read 读取帧数据
 func (own *Frame) Read(reader *bufio.ReadWriter) error {
 	// 读取前两个字节
 	head, err := reader.ReadByte()
