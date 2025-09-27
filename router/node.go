@@ -7,18 +7,43 @@ import (
 
 // Node 定义路由节点的数据结构
 type Node[T any] struct {
+	Pattern    string   // 路由模式
+	Handler    T        // 当前节点所对应的路由
+	ParamNames []string // 路由模式中所有的参数名列表
+
 	segment    string     // 当前路径段
-	pattern    string     // 路由模式
-	name       string     // 参数名（如果是通配符）
+	paramName  string     // 参数名（如果是通配符）
 	priority   int        // 优先级（用于路由匹配顺序）
 	isWildcard bool       // 是否是通配符段 (:param 或 *param 或 *)
-	handler    T          // 当前节点所对应的路由
-	names      []string   // 参数名列表
 	children   []*Node[T] // 子节点
 }
 
-// CalculatePriority 计算节点的优先级
-func (own *Node[T]) CalculatePriority() int {
+func NewNode[T any](segment string) *Node[T] {
+	node := &Node[T]{
+		segment:    segment,
+		isWildcard: strings.HasPrefix(segment, ":") || strings.HasPrefix(segment, "*"),
+		children:   make([]*Node[T], 0),
+	}
+
+	node.extractName(segment)
+	return node
+}
+
+// extractName 尝试提取当前参数名称
+func (own *Node[T]) extractName(segment string) {
+	if segment == "*" {
+		own.paramName = "path"
+	}
+
+	if strings.HasPrefix(segment, ":") || strings.HasPrefix(segment, "*") {
+		own.paramName = segment[1:]
+	}
+
+	own.paramName = ""
+}
+
+// GetPriority 获取节点的优先级
+func (own *Node[T]) GetPriority() int {
 	if own.priority != 0 {
 		return own.priority
 	}
