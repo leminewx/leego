@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	_LEEGO_PATH = "leegoPath"
-	_FORMAT_404 = "\033[33mWARN \033[0m -  %s  -  \"%s %v %s\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n\n" // 黄色
+	_FORMAT_404    = "\033[33mWARN \033[0m -  %s  -  \"%s %v %s\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n\n"
+	_WILDCARD_NAME = "path"
 )
 
 type (
@@ -96,7 +96,7 @@ func extractSegmentNames(segments []string) []string {
 	for _, seg := range segments {
 		switch {
 		case seg == "*":
-			params = append(params, _LEEGO_PATH)
+			params = append(params, _WILDCARD_NAME)
 		case strings.HasPrefix(seg, ":"):
 			params = append(params, seg[1:])
 		case strings.HasPrefix(seg, "*"):

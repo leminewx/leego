@@ -79,8 +79,8 @@ func (own *group) SetStatics(relativePath, rootPath string, cache bool, name ...
 	// 创建静态文件服务的处理器，同时支持 GET 和 HEAD 方法
 	relativePath = normalizePath(relativePath)
 	handler := own.createStaticHandler(path.Join(own.prefix, relativePath), http.Dir(rootPath), cache)
-	own.addRoute(http.MethodGet, path.Join(relativePath, "*"+_LEEGO_PATH), rootPath, handler, name...)
-	own.addRoute(http.MethodHead, path.Join(relativePath, "*"+_LEEGO_PATH), rootPath, handler, name...)
+	own.addRoute(http.MethodGet, path.Join(relativePath, "*"+_WILDCARD_NAME), rootPath, handler, name...)
+	own.addRoute(http.MethodHead, path.Join(relativePath, "*"+_WILDCARD_NAME), rootPath, handler, name...)
 	own.hasStatic = true
 
 	return
@@ -91,7 +91,7 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 	fileServer := http.StripPrefix(relativePath, http.FileServer(fileSystem))
 	return func(ctx *Context) {
 		// 获取请求的文件路径
-		requestedPath := ctx.GetPathValue(_LEEGO_PATH)
+		requestedPath := ctx.GetPathValue(_WILDCARD_NAME)
 		if requestedPath == "" {
 			http.Error(ctx.GetResponse(), response.STATUS_NOT_FOUND, http.StatusNotFound)
 			return

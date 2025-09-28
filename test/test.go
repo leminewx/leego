@@ -145,14 +145,14 @@ func main() {
 
 			// group3.WithStatics("/files", "D:\\Projects\\Golang\\leego\\logo", "下载文件2")
 
-			group3.GET("/files/download/*", func(ctx *leego.Context) {
+			group3.GET("/files/download/*filepath", func(ctx *leego.Context) {
 				fmt.Println("*********ready download file*********")
 				if err := ctx.ResponseFile("APIS.csv"); err != nil {
 					ctx.ResponseError(http.StatusInternalServerError, err.Error())
 				}
 			}, "下载文件", "文件管理")
 
-			group3.GET("/files/show/*", func(ctx *leego.Context) {
+			group3.GET("/files/show/*filepath", func(ctx *leego.Context) {
 				fmt.Println("*********ready response file content*********")
 				if err := ctx.ResponseFileContent("test.go"); err != nil {
 					ctx.ResponseError(http.StatusInternalServerError, err.Error())

@@ -44,7 +44,7 @@ func TestRouterServeHTTP(t *testing.T) {
 	testHandler := &handler{
 		handle: func(ctx *Context) {
 			called = true
-			ctx.ResponseString(200, "OK")
+			_ = ctx.ResponseString(200, "OK")
 		},
 	}
 
