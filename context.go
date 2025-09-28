@@ -34,7 +34,7 @@ var (
 	errNotSupportedFlusher  = errors.New("leego: context: http.ResponseWriter does not supported http.Flusher")
 	errNotSupportedHijacker = errors.New("leego: context: http.ResponseWriter does not supported http.Hijacker")
 	errFailToUpgrade        = errors.New("leego: context: failed to upgrade http connection to WebSocket")
-	errUpgradeWithoutKey    = errors.New("leego: context: upgrade headers does not exists 'Sec-WebSocket-Key'")
+	errUpgradeWithoutKey    = errors.New("leego: context: upgrade headers does not carry 'Sec-WebSocket-Key'")
 )
 
 // SetMaxMultipartMemory 设置解析 multipart/form-data 多部分表单时最大使用的内存
@@ -48,16 +48,18 @@ type Json map[string]any
 // Context 定义上下文的结构
 type Context struct {
 	code     int                 // 状态码
-	engine   *Engine             // 绑定引擎
 	query    url.Values          // 查询参数
+	values   map[string]string   // 路由参数
+	engine   *Engine             // 绑定引擎
 	request  *http.Request       // 原始请求
 	response http.ResponseWriter // 原始响应
 }
 
 // newContext 新建一个上下文
-func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request) *Context {
+func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request, values map[string]string) *Context {
 	return &Context{
 		query:    req.URL.Query(),
+		values:   values,
 		engine:   engine,
 		request:  req,
 		response: resp,
@@ -75,11 +77,20 @@ func (own *Context) GetHost() string { return own.request.Host }
 // GetMethod 获取请求方法
 func (own *Context) GetMethod() string { return own.request.Method }
 
+// GetPath 获取请求路径
+func (own *Context) GetPath() string { return own.request.URL.Path }
+
 // GetProtocol 获取请求协议
 func (own *Context) GetProtocol() string { return own.request.Proto }
 
 // GetPathValue 获取动态路由参数
-func (own *Context) GetPathValue(name string) string { return own.request.PathValue(name) }
+func (own *Context) GetPathValue(name string) string {
+	if val, ok := own.values[name]; ok {
+		return val
+	}
+
+	return ""
+}
 
 // GetContextValue 获取上下文附带的键值对
 func (own *Context) GetContextValue(key any) (any, bool) {
@@ -216,8 +227,8 @@ func (own *Context) WithStatusCode(code int) *Context {
 	return own
 }
 
-// ResponseFail 响应错误信息
-func (own *Context) ResponseFail(code int, error string) {
+// ResponseError 响应错误信息
+func (own *Context) ResponseError(code int, error string) {
 	own.code = code
 	http.Error(own.response, error, code)
 }
@@ -264,7 +275,7 @@ func (own *Context) responseFile(filename, disposition string) error {
 	// 打开文件
 	file, err := os.Open(filename)
 	if err != nil {
-		own.ResponseFail(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
 		return err
 	}
 	defer func() { _ = file.Close() }()
@@ -272,7 +283,7 @@ func (own *Context) responseFile(filename, disposition string) error {
 	// 获取文件信息
 	info, err := file.Stat()
 	if err != nil {
-		own.ResponseFail(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
 		return err
 	}
 
@@ -331,7 +342,7 @@ func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
 	// 检查响应是否是 http.Flusher
 	flusher, ok := own.response.(http.Flusher)
 	if !ok {
-		own.ResponseFail(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
 		return errNotSupportedFlusher
 	}
 
@@ -361,7 +372,7 @@ func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
 			// 通道关闭
 			if !ok {
 				buffer.WriteString("data: [CLOSED]\n\n")
-				_, err = own.response.Write([]byte(buffer.String()))
+				_, err = own.response.Write(buffer.Bytes())
 				flusher.Flush()
 				return err
 			}
@@ -390,34 +401,34 @@ func (own *Context) ResponseUpgrade(upgrade func(conn *websocket.Conn)) error {
 	// 校验请求头
 	header := own.request.Header
 	if !checkHeaderValues(header.Get("Connection"), "upgrade") || !strings.EqualFold(header.Get("Upgrade"), "websocket") {
-		own.ResponseFail(http.StatusBadRequest, response.STATUS_BAD_REQUEST)
+		own.ResponseError(http.StatusBadRequest, response.STATUS_BAD_REQUEST)
 		return errFailToUpgrade
 	}
 
 	// 必须包含有效的 Sec-WebSocket-Key
 	if own.GetHeader("Sec-WebSocket-Key") == "" {
-		own.ResponseFail(http.StatusBadRequest, response.STATUS_BAD_REQUEST)
+		own.ResponseError(http.StatusBadRequest, response.STATUS_BAD_REQUEST)
 		return errUpgradeWithoutKey
 	}
 
 	// 获取 Hijacker 接口
 	hijacker, ok := own.response.(http.Hijacker)
 	if !ok {
-		own.ResponseFail(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
 		return errNotSupportedHijacker
 	}
 
 	// 手动控制连接
 	conn, reader, err := hijacker.Hijack()
 	if err != nil {
-		own.ResponseFail(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
 		return err
 	}
 	defer func() { _ = conn.Close() }()
 
 	// 手动构建符合 WebSocket 规范的响应头
 	if err := handshakeWebSocket(reader, header); err != nil {
-		own.ResponseFail(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
 		return err
 	}
 

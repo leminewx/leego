@@ -12,6 +12,7 @@ import (
 
 // Recover 异常恢复
 func Recover() leego.MiddlewareFunc {
+	fmt.Println()
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
 			defer func() {

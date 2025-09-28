@@ -1,8 +1,8 @@
-package interceptor
+package middleware
 
 import (
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/interceptor/collector"
+	"gitee.com/leminewx/leego/middleware/collector"
 	"time"
 )
 

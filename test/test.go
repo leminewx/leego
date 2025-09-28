@@ -8,31 +8,26 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/interceptor"
 	_ "gitee.com/leminewx/leego/logo"
 	"gitee.com/leminewx/leego/middleware"
 	"gitee.com/leminewx/leego/middleware/cors"
-	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/response/websocket"
 )
 
 func main() {
 	engine := leego.NewEngine("test")
-	engine.WithInterceptors(
-		interceptor.Recover(),
-		interceptor.Log(),
-		func(handler http.Handler) http.Handler {
-			return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-				res := response.NewWriter(resp)
-				handler.ServeHTTP(res, req)
-				if res.GetStatusCode() == http.StatusNotFound {
+	engine.WithMiddlewares(
+		middleware.Recover(),
+		middleware.Log(),
+		middleware.Cors(cors.New()),
+		func(handle leego.HandleFunc) leego.HandleFunc {
+			return func(ctx *leego.Context) {
+				handle(ctx)
+				if ctx.GetStatusCode() == http.StatusNotFound {
 					fmt.Println("Oh my god, not found")
 				}
-			})
+			}
 		},
-	)
-	engine.WithMiddlewares(
-		middleware.Cors(cors.New()),
 	)
 
 	{
@@ -125,7 +120,7 @@ func main() {
 				},
 			)
 
-			group3.POST("/{name}", func(ctx *leego.Context) {
+			group3.POST("/:name", func(ctx *leego.Context) {
 				fmt.Println("*********ready response login*********")
 				fmt.Printf("/v2/login/%s ok\n", ctx.GetPathValue("name"))
 				_ = ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
@@ -153,14 +148,14 @@ func main() {
 			group3.GET("/files/download/*", func(ctx *leego.Context) {
 				fmt.Println("*********ready download file*********")
 				if err := ctx.ResponseFile("APIS.csv"); err != nil {
-					ctx.ResponseFail(http.StatusInternalServerError, err.Error())
+					ctx.ResponseError(http.StatusInternalServerError, err.Error())
 				}
 			}, "下载文件", "文件管理")
 
 			group3.GET("/files/show/*", func(ctx *leego.Context) {
 				fmt.Println("*********ready response file content*********")
 				if err := ctx.ResponseFileContent("test.go"); err != nil {
-					ctx.ResponseFail(http.StatusInternalServerError, err.Error())
+					ctx.ResponseError(http.StatusInternalServerError, err.Error())
 				}
 			}, "显示文件", "文件管理")
 		}

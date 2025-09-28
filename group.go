@@ -16,32 +16,39 @@ import (
 type group struct {
 	engine *Engine
 
-	hasStatic   bool             // 是否是静态文件服务路由组
 	prefix      string           // 路由组前缀
+	hasStatic   bool             // 是否是静态文件服务路由组
+	parent      *group           // 父级路由组
 	middlewares []MiddlewareFunc // 路由组中间件
 }
 
 // Group 在当前路由组的基础上创建一个新的路由组
 func (own *group) Group(prefix string) *group {
-	// 创建新的路由组
-	group := &group{
+	return &group{
 		engine:      own.engine,
-		prefix:      path.Join(own.prefix, prefix),                // 使用 path.Join 确保路径正确
-		middlewares: make([]MiddlewareFunc, len(own.middlewares)), // 预分配容量
+		parent:      own,
+		prefix:      path.Join(own.prefix, prefix), // 使用 path.Join 确保路径正确
+		middlewares: make([]MiddlewareFunc, 0, 10), // 预分配容量
 	}
-
-	// 深拷贝中间件切片
-	copy(group.middlewares, own.middlewares)
-	// 添加路由组到引擎中
-	own.engine.groups = append(own.engine.groups, group)
-
-	return group
 }
 
 // WithMiddlewares 添加路由组中间件
 func (own *group) WithMiddlewares(middlewares ...MiddlewareFunc) *group {
 	own.middlewares = append(own.middlewares, middlewares...)
 	return own
+}
+
+// getAllMiddlewares 获取所有中间件
+func (own *group) getAllMiddlewares(middlewares []MiddlewareFunc) {
+	// 倒序添加当前路由组的中间件
+	for i := len(own.middlewares) - 1; i >= 0; i-- {
+		middlewares = append(middlewares, own.middlewares[i])
+	}
+
+	// 递归添加父级路由组的中间件
+	for parent := own.parent; parent != nil; parent = parent.parent {
+		parent.getAllMiddlewares(middlewares)
+	}
 }
 
 /*
@@ -54,26 +61,26 @@ SetStatics 设置路由组的静态文件服务接口
 func (own *group) SetStatics(relativePath, rootPath string, cache bool, name ...string) (err error) {
 	// 检查是否已经设置过静态文件服务
 	if own.hasStatic {
-		return fmt.Errorf("leego: exists a has a static file service in group '%s'", own.prefix)
+		return fmt.Errorf("leego: static: exists a has a static file service in group '%s'", own.prefix)
 	}
 
 	// 获取绝对路径
 	if rootPath, err = filepath.Abs(rootPath); err != nil {
-		return fmt.Errorf("leego: failed to get the absolute path for '%s': %w", rootPath, err)
+		return fmt.Errorf("leego: static: failed to get the absolute path for '%s': %w", rootPath, err)
 	}
 
 	// 检查目录是否存在
 	if info, err := os.Stat(rootPath); err != nil {
-		return fmt.Errorf("leego: failed to access static directory '%s': %w", rootPath, err)
+		return fmt.Errorf("leego: static: failed to access static directory '%s': %w", rootPath, err)
 	} else if !info.IsDir() {
-		return fmt.Errorf("leego: static path is not a directory '%s'", rootPath)
+		return fmt.Errorf("leego: static: static path is not a directory '%s'", rootPath)
 	}
 
 	// 创建静态文件服务的处理器，同时支持 GET 和 HEAD 方法
 	relativePath = normalizePath(relativePath)
 	handler := own.createStaticHandler(path.Join(own.prefix, relativePath), http.Dir(rootPath), cache)
-	own.addRoute(http.MethodGet, path.Join(relativePath, "/{filepath...}"), rootPath, handler, name...)
-	own.addRoute(http.MethodHead, path.Join(relativePath, "/{filepath...}"), rootPath, handler, name...)
+	own.addRoute(http.MethodGet, path.Join(relativePath, "*"+_LEEGO_PATH), rootPath, handler, name...)
+	own.addRoute(http.MethodHead, path.Join(relativePath, "*"+_LEEGO_PATH), rootPath, handler, name...)
 	own.hasStatic = true
 
 	return
@@ -81,11 +88,10 @@ func (own *group) SetStatics(relativePath, rootPath string, cache bool, name ...
 
 // createStaticHandler 创建静态文件服务的处理器
 func (own *group) createStaticHandler(relativePath string, fileSystem http.FileSystem, cache bool) HandleFunc {
-	const FILEPATH = "filepath"
 	fileServer := http.StripPrefix(relativePath, http.FileServer(fileSystem))
 	return func(ctx *Context) {
 		// 获取请求的文件路径
-		requestedPath := ctx.GetPathValue(FILEPATH)
+		requestedPath := ctx.GetPathValue(_LEEGO_PATH)
 		if requestedPath == "" {
 			http.Error(ctx.GetResponse(), response.STATUS_NOT_FOUND, http.StatusNotFound)
 			return
@@ -181,9 +187,8 @@ func (own *group) addRoute(method, pattern, desc string, handle HandleFunc, name
 	}
 
 	// 创建处理器
-	handler := newHandler(own.engine, method, handle)
-	handler.WithMiddlewares(own.middlewares...)
-	own.engine.router.Handle(key, handler)
+	handler := newHandler(own, method, handle)
+	own.engine.router.Insert(method, pattern, handler)
 
 	if desc != "" {
 		fmt.Printf("\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s  -  filepath: %s\n", time.Now().Format(_FORMAT_DATETIME), method, pattern, desc)

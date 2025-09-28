@@ -1,9 +1,7 @@
 package leego
 
 import (
-	"net/http"
-
-	"gitee.com/leminewx/leego/response"
+	"sync"
 )
 
 type (
@@ -12,58 +10,38 @@ type (
 
 	// MiddlewareFunc 定义中间件函数的类型
 	MiddlewareFunc func(HandleFunc) HandleFunc
-
-	// InterceptorFunc 定义拦截器处理函数的类型
-	InterceptorFunc func(http.Handler) http.Handler
 )
 
 // handler 定义处理器的数据结构
 type handler struct {
-	engine *Engine
+	group *group
 
 	method      string           // 请求方法
 	handle      HandleFunc       // 处理函数
 	middlewares []MiddlewareFunc // 中间件函数
 	initialized bool             // 标记是否已经初始化
+
+	initializedMutex sync.Mutex
 }
 
 // newHandler 新建一个处理器
-func newHandler(engine *Engine, method string, handle HandleFunc) *handler {
+func newHandler(group *group, method string, handle HandleFunc) *handler {
 	return &handler{
-		engine:      engine,
+		group:       group,
 		method:      method,
 		handle:      handle,
-		middlewares: make([]MiddlewareFunc, 0),
+		middlewares: make([]MiddlewareFunc, 0, 30),
 	}
 }
 
-// WithMiddlewares 添加处理器中间件
-func (own *handler) WithMiddlewares(middlewares ...MiddlewareFunc) *handler {
-	// 如果已经初始化，需要重新初始化
-	if own.initialized {
-		own.initialized = false
-	}
-
-	// 添加中间件
-	own.middlewares = append(own.middlewares, middlewares...)
-	return own
-}
-
-// ServeHTTP 实现 http.Handler 接口
-func (own *handler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	// 检查请求方法
-	if req.Method != own.method {
-		http.Error(resp, response.STATUS_METHOD_NOT_ALLOWED, http.StatusMethodNotAllowed)
-		return
-	}
-
+// ServeHTTP 实现自定义的 HTTP 处理函数
+func (own *handler) ServeHTTP(ctx *Context) {
 	// 延迟初始化
 	if !own.initialized {
+		own.initializedMutex.Lock()
 		own.initialize()
+		own.initializedMutex.Unlock()
 	}
-
-	// 创建上下文
-	ctx := newContext(own.engine, resp, req)
 
 	// 调用处理函数
 	own.handle(ctx)
@@ -71,12 +49,17 @@ func (own *handler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
 // initialize （在服务前）初始化处理器
 func (own *handler) initialize() {
+	// 如果已经初始化，则返回
 	if own.initialized {
 		return
 	}
 
-	for i := len(own.middlewares); i > 0; i-- {
-		own.handle = own.middlewares[i-1](own.handle)
+	// 获取所有中间件
+	own.group.getAllMiddlewares(own.middlewares)
+
+	// 调用中间件
+	for i := 0; i < len(own.middlewares); i-- {
+		own.handle = own.middlewares[i](own.handle)
 	}
 
 	own.initialized = true

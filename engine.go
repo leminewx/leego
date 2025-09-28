@@ -21,38 +21,27 @@ type Options struct {
 type Engine struct {
 	*group // 继承路由组，所以引擎本身也是一个路由组
 
-	service      string              // 服务名
-	interceptors []InterceptorFunc   // 拦截器
-	groups       []*group            // 路由组
-	server       *http.Server        // 服务器
-	router       *http.ServeMux      // 路由器
-	apis         map[string][]string // API接口
+	service string              // 服务名
+	server  *http.Server        // 服务器
+	router  *router             // 路由器
+	apis    map[string][]string // API接口
 }
 
 // NewEngine 新建一个引擎
 func NewEngine(service string) *Engine {
 	engine := &Engine{
-		service:      service,
-		apis:         make(map[string][]string),
-		groups:       make([]*group, 0),
-		interceptors: make([]InterceptorFunc, 0),
-		router:       http.NewServeMux(),
+		service: service,
+		apis:    make(map[string][]string),
 	}
 
-	engine.group = &group{engine: engine}
-	engine.groups = append(engine.groups, engine.group)
+	engine.group = &group{engine: engine, parent: nil}
+	engine.router = newRouter(engine)
 	return engine
 }
 
 // GetServiceName 获取当前服务的名称
 func (own *Engine) GetServiceName() string {
 	return own.service
-}
-
-// WithInterceptors 添加拦截器
-func (own *Engine) WithInterceptors(interceptors ...InterceptorFunc) *Engine {
-	own.interceptors = append(own.interceptors, interceptors...)
-	return own
 }
 
 // ListenAndServe 启动一个 HTTP 服务
@@ -81,16 +70,10 @@ func (own *Engine) initBeforeServe(opts *Options) error {
 		return err
 	}
 
-	// 初始化拦截器
-	var handler http.Handler = own.router
-	for i := len(own.interceptors); i > 0; i-- {
-		handler = own.interceptors[i-1](handler)
-	}
-
 	// 配置服务器
 	own.server = &http.Server{
 		Addr:    opts.Addr,
-		Handler: handler,
+		Handler: own.router,
 	}
 
 	return nil
