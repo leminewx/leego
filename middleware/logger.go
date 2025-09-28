@@ -2,10 +2,10 @@ package interceptor
 
 import (
 	"fmt"
-	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/response"
 	"net/http"
 	"time"
+
+	"gitee.com/leminewx/leego"
 )
 
 const (
@@ -19,45 +19,39 @@ const (
 	_FORMAT_5XX = "\033[35mERROR\033[0m -  %s  -  \"%s %v %s\"  |\033[45m\033[30m %d \033[0m|\033[45m\033[30m %v \033[0m|\n\n" // 红色
 )
 
-// Log 打印日志的拦截器
-func Log() leego.InterceptorFunc {
-	return func(handler http.Handler) http.Handler {
-		return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+// Log 打印请求日志
+func Log() leego.MiddlewareFunc {
+	return func(handle leego.HandleFunc) leego.HandleFunc {
+		return func(ctx *leego.Context) {
 			// 记录时间
 			start := time.Now()
 
-			// 转换响应
-			var res response.Writer
-			if _, ok := resp.(response.Writer); !ok {
-				res = response.NewWriter(resp)
-			}
-
 			// 处理请求
-			handler.ServeHTTP(res, req)
-			status := res.GetStatusCode()
+			handle(ctx)
+			status := ctx.GetStatusCode()
 
 			// 打印信息
 			switch {
 			// 0 ~ 199
 			case status < http.StatusOK:
-				fmt.Printf(_FORMAT_1XX, start.Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, status, time.Since(start))
+				fmt.Printf(_FORMAT_1XX, start.Format(_FORMAT_DATETIME), ctx.GetMethod(), ctx.GetPath(), ctx.GetProtocol(), status, time.Since(start))
 
 			// 200 ~ 299
 			case status < http.StatusMultipleChoices:
-				fmt.Printf(_FORMAT_2XX, start.Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, status, time.Since(start))
+				fmt.Printf(_FORMAT_2XX, start.Format(_FORMAT_DATETIME), ctx.GetMethod(), ctx.GetPath(), ctx.GetProtocol(), status, time.Since(start))
 
 			// 300 ~ 399
 			case status < http.StatusBadRequest:
-				fmt.Printf(_FORMAT_3XX, start.Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, status, time.Since(start))
+				fmt.Printf(_FORMAT_3XX, start.Format(_FORMAT_DATETIME), ctx.GetMethod(), ctx.GetPath(), ctx.GetProtocol(), status, time.Since(start))
 
 			// 400 ~ 499
 			case status < http.StatusInternalServerError:
-				fmt.Printf(_FORMAT_4XX, start.Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, status, time.Since(start))
+				fmt.Printf(_FORMAT_4XX, start.Format(_FORMAT_DATETIME), ctx.GetMethod(), ctx.GetPath(), ctx.GetProtocol(), status, time.Since(start))
 
 			// 500 ~
 			default:
-				fmt.Printf(_FORMAT_5XX, start.Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, status, time.Since(start))
+				fmt.Printf(_FORMAT_5XX, start.Format(_FORMAT_DATETIME), ctx.GetMethod(), ctx.GetPath(), ctx.GetProtocol(), status, time.Since(start))
 			}
-		})
+		}
 	}
 }

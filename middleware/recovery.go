@@ -1,27 +1,28 @@
-package interceptor
+package middleware
 
 import (
 	"fmt"
+	"net/http"
+	"runtime"
+
 	"gitee.com/leminewx/gokit/concurrency/pool"
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/response"
-	"net/http"
-	"runtime"
 )
 
-// Recover 异常恢复的拦截器
-func Recover() leego.InterceptorFunc {
-	return func(handler http.Handler) http.Handler {
-		return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+// Recover 异常恢复
+func Recover() leego.MiddlewareFunc {
+	return func(handle leego.HandleFunc) leego.HandleFunc {
+		return func(ctx *leego.Context) {
 			defer func() {
 				if err := recover(); err != nil {
 					fmt.Printf("|\033[45m\033[30m%s\033[0m\n\n", trace(fmt.Sprintf("%v", err)))
-					http.Error(resp, response.STATUS_INTERNAL_SERVER_ERROR, http.StatusInternalServerError)
+					ctx.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
 				}
 			}()
 
-			handler.ServeHTTP(resp, req)
-		})
+			handle(ctx)
+		}
 	}
 }
 
