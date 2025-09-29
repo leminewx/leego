@@ -23,7 +23,8 @@ func TestCollector(t *testing.T) {
 	t.Log(string(data))
 }
 
-// cpu: Intel(R) Core(TM) i5-14600KF 		20    	32023226	        37.58 ns/op	       0 B/op	       0 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF 						20    	32023226	        37.58 ns/op	       0 B/op	       0 allocs/op
+// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		25593556	        46.14 ns/op	       0 B/op	       0 allocs/op
 func BenchmarkCollector(b *testing.B) {
 	c := New()
 
