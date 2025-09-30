@@ -49,10 +49,13 @@ func main() {
 
 		group1.GET("/a", func(ctx *leego.Context) {
 			fmt.Println("/v1/a ok")
-			_ = ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
+			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 		}, "通用API1")
 
-		group1.GET("/a", func(ctx *leego.Context) {})
+		group1.GET("/metadata", func(ctx *leego.Context) {
+			collectors := engine.GetCollectors()
+			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok", "data": collectors})
+		})
 
 		group1.GET("/ws", func(ctx *leego.Context) {
 			_ = ctx.ResponseUpgrade(func(conn *websocket.Conn) {
@@ -81,7 +84,7 @@ func main() {
 			})
 		}, "websocket测试")
 
-		if err := group1.SetStatics("/files", "test/data", false, "下载文件1"); err != nil {
+		if err := group1.SetStatics("/files", "data", false, "下载文件1"); err != nil {
 			panic(err)
 		}
 	}
@@ -106,7 +109,7 @@ func main() {
 		group2.GET("/b", func(ctx *leego.Context) {
 			fmt.Println("*********ready response b*********")
 			fmt.Println("/v2/b ok")
-			_ = ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
+			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 		}, "通用API2")
 
 		{
@@ -123,7 +126,7 @@ func main() {
 			group3.POST("/:name", func(ctx *leego.Context) {
 				fmt.Println("*********ready response login*********")
 				fmt.Printf("/v2/login/%s ok\n", ctx.GetPathValue("name"))
-				_ = ctx.ResponseJSON(http.StatusOK, leego.Json{"code": "00000", "desc": "ok"})
+				_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 			}, "登录系统", "用户管理")
 
 			group3.GET("/sse", func(ctx *leego.Context) {

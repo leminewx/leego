@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
 
 	"gitee.com/leminewx/leego"
@@ -14,7 +13,6 @@ func Cors(cors *cors.CORS) leego.MiddlewareFunc {
 		return func(ctx *leego.Context) {
 			// 设置预检响应头
 			cors.SetResponseHeader(ctx.GetResponse())
-			fmt.Println("cors")
 
 			// 预检请求（Preflight request）
 			if ctx.GetMethod() == http.MethodOptions {

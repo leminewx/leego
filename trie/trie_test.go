@@ -280,7 +280,7 @@ func TestTrieComplexPatterns(t *testing.T) {
 // BenchmarkTrieInsert 测试插入性能
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		static paths				8		 2314869	       525.2 ns/op	     280 B/op	      15 allocs/op
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		dynamic paths				8		 3056307	       408.4 ns/op	     296 B/op	       9 allocs/op
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		complex dynamic paths		8		     744	      414095 ns/op	  154939 B/op	    3901 allocs/op
+// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		complex dynamic paths		8		    2916	      404929 ns/op	  154937 B/op	    3901 allocs/op
 func BenchmarkTrieInsert(b *testing.B) {
 	b.Run("简单路径插入", func(b *testing.B) {
 		trie := NewTrie[string]()
@@ -321,16 +321,22 @@ func BenchmarkTrieInsert(b *testing.B) {
 }
 
 // BenchmarkTrieSearch 测试搜索性能
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		static paths				8		 9566714	       117.1 ns/op	     104 B/op	       3 allocs/op
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		dynamic param paths			8		 3076284	       381.0 ns/op	     330 B/op	       4 allocs/op
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		dynamic wildcard paths		8		 4237330	       286.3 ns/op	     448 B/op	       5 allocs/op
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		not found paths				8		 7076790	       173.8 ns/op	     213 B/op	       3 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						static paths				8		18065649	       63.88 ns/op	     104 B/op	       3 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						dynamic param paths			8		 9671016	       127.9 ns/op	     330 B/op	       4 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						dynamic wildcard paths		8		 7430827	       164.9 ns/op	     448 B/op	       5 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						not found paths				8		11812418	       95.67 ns/op	     213 B/op	       3 allocs/op
+//
+// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		static paths				8		10413692	       117.4 ns/op	     104 B/op	       3 allocs/op
+// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		dynamic param paths			8		 5726457	       211.4 ns/op	     330 B/op	       4 allocs/op
+// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		dynamic wildcard paths		8		 4468950	       269.0 ns/op	     448 B/op	       5 allocs/op
+// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		not found paths				8		 7396630	       161.6 ns/op	     213 B/op	       3 allocs/op
 func BenchmarkTrieSearch(b *testing.B) {
 	// 准备测试数据
 	trie := prepareTestTrie(1000)
 
 	b.Run("静态路径搜索", func(b *testing.B) {
 		paths := []string{"/", "/users", "/api/v1", "/deep/nested/path"}
+		b.ReportAllocs()
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
@@ -341,6 +347,7 @@ func BenchmarkTrieSearch(b *testing.B) {
 
 	b.Run("参数路径搜索", func(b *testing.B) {
 		paths := []string{"/users/123", "/posts/456", "/api/v1/resource/789"}
+		b.ReportAllocs()
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
@@ -351,6 +358,7 @@ func BenchmarkTrieSearch(b *testing.B) {
 
 	b.Run("通配符路径搜索", func(b *testing.B) {
 		paths := []string{"/files/docs/report.pdf", "/static/css/main.css"}
+		b.ReportAllocs()
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
@@ -361,6 +369,7 @@ func BenchmarkTrieSearch(b *testing.B) {
 
 	b.Run("未找到路径搜索", func(b *testing.B) {
 		paths := []string{"/notfound", "/invalid/path", "/api/v999/resource"}
+		b.ReportAllocs()
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
@@ -371,11 +380,15 @@ func BenchmarkTrieSearch(b *testing.B) {
 }
 
 // BenchmarkTrieConcurrent 测试并发性能
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		 8526069	       128.2 ns/op	     340 B/op	       4 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						8		 22675866	       51.58 ns/op	     340 B/op	       4 allocs/op
+// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		 10900864	       112.6 ns/op	     340 B/op	       4 allocs/op
 func BenchmarkTrieConcurrent(b *testing.B) {
 	trie := prepareTestTrie(500)
 
 	b.Run("并发搜索", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+
 		b.RunParallel(func(pb *testing.PB) {
 			paths := []string{"/users/123", "/api/v1/resource/456", "/static/file.txt", "/notfound"}
 			i := 0

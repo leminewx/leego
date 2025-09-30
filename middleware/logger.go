@@ -23,14 +23,14 @@ const (
 func Log() leego.MiddlewareFunc {
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
-			// 记录时间
-			start := time.Now()
-
 			// 处理请求
 			handle(ctx)
+
+			// 获取响应信息
+			start := ctx.GetStartTime()
 			status := ctx.GetStatusCode()
 
-			// 打印信息
+			// 打印基本信息
 			switch {
 			// 0 ~ 199
 			case status < http.StatusOK:

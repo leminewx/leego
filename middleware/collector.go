@@ -1,13 +1,14 @@
 package middleware
 
 import (
-	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/middleware/collector"
 	"time"
+
+	"gitee.com/leminewx/leego"
+	"gitee.com/leminewx/leego/middleware/metric"
 )
 
 // Collect 收集服务基本指标数据
-func Collect(collector *collector.Collector) leego.MiddlewareFunc {
+func Collect(collector *metric.Collector) leego.MiddlewareFunc {
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
 			// 记录起始时间

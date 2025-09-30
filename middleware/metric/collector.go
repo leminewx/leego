@@ -1,4 +1,4 @@
-package collector
+package metric
 
 import (
 	"sync"
@@ -21,8 +21,8 @@ type Collector struct {
 	lock sync.RWMutex
 }
 
-// New 新建一个请求指标收集器
-func New() *Collector {
+// NewCollector 新建一个请求指标收集器
+func NewCollector() *Collector {
 	return &Collector{StatusCodeMap: map[int]int{}}
 }
 

@@ -1,6 +1,7 @@
 package leego
 
 import (
+	"gitee.com/leminewx/leego/middleware/metric"
 	"net/http/httptest"
 	"strconv"
 	"strings"
@@ -37,7 +38,7 @@ func TestRouter(t *testing.T) {
 }
 
 func TestRouterServeHTTP(t *testing.T) {
-	router := newRouter(nil)
+	router := newRouter(NewEngine("test"))
 
 	// 创建测试处理器
 	called := false
@@ -46,6 +47,7 @@ func TestRouterServeHTTP(t *testing.T) {
 			called = true
 			_ = ctx.ResponseString(200, "OK")
 		},
+		collector: metric.NewCollector(),
 	}
 
 	router.Insert("GET", "/test", testHandler)

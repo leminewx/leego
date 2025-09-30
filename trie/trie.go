@@ -70,19 +70,27 @@ func (own *Trie[T]) search(node *Node[T], segments []string, params map[string]s
 		return node, true
 	}
 
-	// 优先尝试精确匹配
 	segment := segments[depth]
-	for _, child := range node.children {
-		if !child.isWildcard && child.segment == segment {
+	children := node.children
+
+	for i := 0; i < len(children); i++ {
+		child := children[i]
+
+		// 优先尝试精确匹配
+		if !child.isWildcard {
+			// 匹配失败，直接跳过
+			if child.segment != segment {
+				continue
+			}
+
+			// 匹配成功，进入下一轮递归搜索
 			if n, ok := own.search(child, segments, params, depth+1); ok {
 				return n, true
 			}
 		}
-	}
 
-	// 尝试参数匹配 :param 或 *param 或 *
-	for _, child := range node.children {
-		if child.isWildcard && child.segment != "*" {
+		// 尝试参数匹配 :param
+		if child.GetPriority() == 2 {
 			params[child.paramName] = segment
 			if n, ok := own.search(child, segments, params, depth+1); ok {
 				return n, true
@@ -90,12 +98,11 @@ func (own *Trie[T]) search(node *Node[T], segments []string, params map[string]s
 
 			// 回溯时删除参数
 			delete(params, child.paramName)
+			continue
 		}
-	}
 
-	// 尝试通配符匹配 *
-	for _, child := range node.children {
-		if child.segment == "*" {
+		// 尝试通配符匹配 *param 或 *
+		if child.GetPriority() == 1 {
 			// 通配符匹配，收集剩余路径
 			if depth < len(segments) {
 				remaining := strings.Join(segments[depth:], "/")

@@ -10,6 +10,14 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego/response"
+	"gitee.com/leminewx/leego/trie"
+)
+
+const (
+	_FORMAT_PRINT_EXISTS_ROUTE               = "\033[33mWARN \033[0m -  %s  -  Exists route: %7s: %s\n"
+	_FORMAT_PRINT_CREATE_ROUTE               = "\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s\n"
+	_FORMAT_PRINT_CREATE_ROUTE_WITH_FILEPATH = "\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s  -  filepath: %s\n"
+	_FORMAT_PRINT_404                        = "\033[33mWARN \033[0m -  %s  -  \"%s %v %s\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n\n"
 )
 
 // group 定义路由组的数据结构
@@ -39,16 +47,14 @@ func (own *group) WithMiddlewares(middlewares ...MiddlewareFunc) *group {
 }
 
 // getAllMiddlewares 获取所有中间件
-func (own *group) getAllMiddlewares(middlewares []MiddlewareFunc) {
-	// 倒序添加当前路由组的中间件
-	for i := len(own.middlewares) - 1; i >= 0; i-- {
-		middlewares = append(middlewares, own.middlewares[i])
+func (own *group) getAllMiddlewares(middlewares *[]MiddlewareFunc) {
+	// 先递归父组
+	if own.parent != nil {
+		own.parent.getAllMiddlewares(middlewares)
 	}
 
-	// 递归添加父级路由组的中间件
-	for parent := own.parent; parent != nil; parent = parent.parent {
-		parent.getAllMiddlewares(middlewares)
-	}
+	// 然后添加当前路由组的中间件
+	*middlewares = append(*middlewares, own.middlewares...)
 }
 
 /*
@@ -79,8 +85,10 @@ func (own *group) SetStatics(relativePath, rootPath string, cache bool, name ...
 	// 创建静态文件服务的处理器，同时支持 GET 和 HEAD 方法
 	relativePath = normalizePath(relativePath)
 	handler := own.createStaticHandler(path.Join(own.prefix, relativePath), http.Dir(rootPath), cache)
-	own.addRoute(http.MethodGet, path.Join(relativePath, "*"+_WILDCARD_NAME), rootPath, handler, name...)
-	own.addRoute(http.MethodHead, path.Join(relativePath, "*"+_WILDCARD_NAME), rootPath, handler, name...)
+
+	wildcardName := "*" + trie.WILDCARD_DEFAULT_NAME
+	own.addRoute(http.MethodGet, path.Join(relativePath, wildcardName), rootPath, handler, name...)
+	own.addRoute(http.MethodHead, path.Join(relativePath, wildcardName), rootPath, handler, name...)
 	own.hasStatic = true
 
 	return
@@ -91,7 +99,7 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 	fileServer := http.StripPrefix(relativePath, http.FileServer(fileSystem))
 	return func(ctx *Context) {
 		// 获取请求的文件路径
-		requestedPath := ctx.GetPathValue(_WILDCARD_NAME)
+		requestedPath := ctx.GetPathValue(trie.WILDCARD_DEFAULT_NAME)
 		if requestedPath == "" {
 			http.Error(ctx.GetResponse(), response.STATUS_NOT_FOUND, http.StatusNotFound)
 			return
@@ -172,30 +180,32 @@ func (own *group) addRoute(method, pattern, desc string, handle HandleFunc, name
 	pattern = path.Join(own.prefix, normalizePath(pattern))
 	pattern = strings.ReplaceAll(pattern, "//", "/") // 移除可能出现的双斜杠
 
+	// 检查接口是否已经创建
 	key := method + " " + pattern
-
-	// 重复添加接口，则直接返回
-	if _, ok := own.engine.apis[key]; ok {
-		fmt.Printf("\033[33mWARN \033[0m -  %s  -  Exists route: %7s: %s\n", time.Now().Format(_FORMAT_DATETIME), method, pattern)
+	if _, ok := own.engine.handlers[key]; ok {
+		fmt.Printf(_FORMAT_PRINT_EXISTS_ROUTE, time.Now().Format(_FORMAT_DATETIME), method, pattern)
 		return
 	}
 
-	// 写入 API 接口基本信息
-	own.engine.apis[key] = []string{own.engine.service, "", method, pattern}
-	if len(name) > 0 || name[0] != "" {
-		own.engine.apis[key][1] = name[0]
-	}
-
 	// 创建处理器
-	handler := newHandler(own, method, handle)
-	own.engine.router.Insert(method, pattern, handler)
-
-	if desc != "" {
-		fmt.Printf("\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s  -  filepath: %s\n", time.Now().Format(_FORMAT_DATETIME), method, pattern, desc)
+	var handler *handler
+	if len(name) > 0 && name[0] != "" {
+		handler = newHandler(own, name[0], method, pattern, handle)
 	} else {
-		fmt.Printf("\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s\n", time.Now().Format(_FORMAT_DATETIME), method, pattern)
+		handler = newHandler(own, "", method, pattern, handle)
 	}
 
+	// 生成路由
+	own.engine.router.Insert(method, pattern, handler)
+	// 关联到引擎
+	own.engine.handlers[key] = handler
+
+	// 输出信息
+	if desc != "" {
+		fmt.Printf(_FORMAT_PRINT_CREATE_ROUTE_WITH_FILEPATH, time.Now().Format(_FORMAT_DATETIME), method, pattern, desc)
+	} else {
+		fmt.Printf(_FORMAT_PRINT_CREATE_ROUTE, time.Now().Format(_FORMAT_DATETIME), method, pattern)
+	}
 }
 
 // normalizePath 规范化路径，确保以 / 开头且不包含多余的斜杠

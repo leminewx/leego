@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const WILDCARD_DEFAULT_NAME = "path"
+
 // Node 定义路由树节点的数据结构
 type Node[T any] struct {
 	segment    string     // 当前路径段
@@ -30,7 +32,7 @@ func NewNode[T any](segment string) *Node[T] {
 // extractName 尝试提取当前参数名称
 func (own *Node[T]) extractName(segment string) {
 	if segment == "*" {
-		own.paramName = "path"
+		own.paramName = WILDCARD_DEFAULT_NAME
 		return
 	}
 

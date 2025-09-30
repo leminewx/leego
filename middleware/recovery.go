@@ -1,11 +1,11 @@
 package middleware
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"runtime"
 
-	"gitee.com/leminewx/gokit/concurrency/pool"
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/response"
 )
@@ -17,8 +17,10 @@ func Recover() leego.MiddlewareFunc {
 		return func(ctx *leego.Context) {
 			defer func() {
 				if err := recover(); err != nil {
-					fmt.Printf("|\033[45m\033[30m%s\033[0m\n\n", trace(fmt.Sprintf("%v", err)))
-					ctx.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+					fmt.Printf("\033[45m\033[30m%s\033[0m\n\n", trace(fmt.Sprintf("%v", err)))
+					if ctx.GetStatusCode() == 0 {
+						ctx.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+					}
 				}
 			}()
 
@@ -32,10 +34,8 @@ func trace(message string) string {
 	var pcs [32]uintptr
 	n := runtime.Callers(3, pcs[:])
 
-	builder := pool.DefaultBytesBufferPool.Alloc()
-	defer pool.DefaultBytesBufferPool.Dealloc(builder)
-
 	// 封装调用信息
+	var builder bytes.Buffer
 	builder.WriteString(message + "\nTraceback:")
 	for _, pc := range pcs[:n] {
 		fn := runtime.FuncForPC(pc)

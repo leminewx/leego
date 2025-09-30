@@ -11,60 +11,40 @@ import (
 	"gitee.com/leminewx/leego/trie"
 )
 
-const (
-	_FORMAT_404    = "\033[33mWARN \033[0m -  %s  -  \"%s %v %s\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n\n"
-	_WILDCARD_NAME = "path"
-)
+// router 定义路由器的数据结构
+type router struct {
+	engine *Engine
 
-type (
-	// route 定义路由的数据结构
-	route struct {
-		Pattern    string   // 路由模式
-		Handler    *handler // 处理函数
-		ParamNames []string // 路由模式中所有的参数名列表
-	}
-
-	// router 定义路由器的数据结构
-	router struct {
-		engine *Engine
-		roots  map[string]*trie.Trie[*route] // 不同方法对应不同的路由树
-		mutex  sync.Mutex
-	}
-)
+	roots map[string]*trie.Trie[*handler] // 不同方法对应不同的路由树
+	mutex sync.Mutex
+}
 
 // newRouter 创建一个新的路由器
 func newRouter(engine *Engine) *router {
 	return &router{
 		engine: engine,
-		roots:  make(map[string]*trie.Trie[*route]),
+		roots:  make(map[string]*trie.Trie[*handler]),
 	}
 }
 
 // Insert 插入新增的路由
-func (own *router) Insert(method, pattern string, handler *handler) {
+func (own *router) Insert(method, pattern string, _handler *handler) {
 	own.mutex.Lock()
 	defer own.mutex.Unlock()
 
 	// 若方法对应的路由树不存在，则创建
 	root, ok := own.roots[method]
 	if !ok {
-		root = trie.NewTrie[*route]()
+		root = trie.NewTrie[*handler]()
 		own.roots[method] = root
 	}
 
-	// 创建路由
-	route := &route{
-		Pattern:    pattern,
-		Handler:    handler,
-		ParamNames: extractSegmentNames(trie.SplitPattern(pattern)),
-	}
-
 	// 插入路由
-	root.Insert(method, pattern, route)
+	root.Insert(method, pattern, _handler)
 }
 
 // Search 搜索匹配的路由
-func (own *router) Search(method, path string) (*route, map[string]string, bool) {
+func (own *router) Search(method, path string) (*handler, map[string]string, bool) {
 	// 找到路由根节点
 	root, ok := own.roots[method]
 	if !ok {
@@ -75,19 +55,25 @@ func (own *router) Search(method, path string) (*route, map[string]string, bool)
 	return root.Search(path)
 }
 
-// ServeHTTP 实现http.Handler接口
+// ServeHTTP 实现 http.Handler 接口
 func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	// 匹配路由
-	route, params, ok := own.Search(req.Method, req.URL.Path)
+	handler, params, ok := own.Search(req.Method, req.URL.Path)
 	if !ok {
-		fmt.Printf(_FORMAT_404, time.Now().Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, http.StatusNotFound, "0s")
+		fmt.Printf(_FORMAT_PRINT_404, time.Now().Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, http.StatusNotFound, "0s")
 		http.Error(resp, response.STATUS_NOT_FOUND, http.StatusNotFound)
 		return
 	}
 
 	// 创建上下文
-	ctx := newContext(own.engine, resp, req, params)
-	route.Handler.handle(ctx)
+	res := response.NewWriter(resp)
+	ctx := newContext(own.engine, res, req, params)
+
+	// 处理路由，并收集数据
+	start := time.Now()
+	handler.collector.Increase()
+	handler.Handle(ctx)
+	handler.collector.Decrease(ctx.GetStatusCode(), time.Since(start))
 }
 
 // extractSegmentNames 从路径中提取所有的参数名称（:param 或 *param 或 *）
@@ -96,7 +82,7 @@ func extractSegmentNames(segments []string) []string {
 	for _, seg := range segments {
 		switch {
 		case seg == "*":
-			params = append(params, _WILDCARD_NAME)
+			params = append(params, trie.WILDCARD_DEFAULT_NAME)
 		case strings.HasPrefix(seg, ":"):
 			params = append(params, seg[1:])
 		case strings.HasPrefix(seg, "*"):

@@ -68,7 +68,11 @@ func (own *response) WriteHeader(status int) {
 }
 
 // Write 继承 http.ResponseWriter
-func (own *response) Write(data []byte) (int, error) { return own.writer.Write(data) }
+func (own *response) Write(data []byte) (int, error) {
+	return own.writer.Write(data)
+}
 
-// GetStatusCode 拓展获取响应状态码的功能
-func (own *response) GetStatusCode() int { return own.status }
+// GetStatusCode 获取响应状态码
+func (own *response) GetStatusCode() int {
+	return own.status
+}

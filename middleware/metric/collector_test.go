@@ -1,4 +1,4 @@
-package collector
+package metric
 
 import (
 	"encoding/json"

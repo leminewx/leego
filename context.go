@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"text/template"
+	"time"
 
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/response/websocket"
@@ -42,22 +43,25 @@ func SetMaxMultipartMemory(size int64) {
 	atomic.StoreInt64(&maxMultipartMemory, size)
 }
 
-// Json 定义一个简单的 Json 类型
-type Json map[string]any
+// JSON 定义一个简单的 JSON 类型
+type JSON map[string]any
 
 // Context 定义上下文的结构
 type Context struct {
 	code     int                 // 状态码
+	time     time.Time           // 创建时间
 	query    url.Values          // 查询参数
 	values   map[string]string   // 路由参数
-	engine   *Engine             // 绑定引擎
-	request  *http.Request       // 原始请求
 	response http.ResponseWriter // 原始响应
+	request  *http.Request       // 原始请求
+	engine   *Engine             // 绑定引擎
+
 }
 
 // newContext 新建一个上下文
 func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request, values map[string]string) *Context {
 	return &Context{
+		time:     time.Now(),
 		query:    req.URL.Query(),
 		values:   values,
 		engine:   engine,
@@ -209,8 +213,17 @@ func (own *Context) WithRequestHeader(key, value string) *Context {
 
 /*************************************************** HTTP Response ****************************************************/
 
+// GetStartTime 获取上下文创建时间
+func (own *Context) GetStartTime() time.Time {
+	return own.time
+}
+
 // GetStatusCode 获取响应状态码
 func (own *Context) GetStatusCode() int {
+	if own.code == 0 {
+		own.code = own.response.(response.Writer).GetStatusCode()
+	}
+
 	return own.code
 }
 

@@ -2,6 +2,9 @@ package leego
 
 import (
 	"sync"
+
+	"gitee.com/leminewx/leego/middleware/metric"
+	"gitee.com/leminewx/leego/trie"
 )
 
 type (
@@ -16,26 +19,34 @@ type (
 type handler struct {
 	group *group
 
-	method      string           // 请求方法
-	handle      HandleFunc       // 处理函数
-	middlewares []MiddlewareFunc // 中间件函数
-	initialized bool             // 标记是否已经初始化
+	handle      HandleFunc        // 处理函数
+	metadata    *metric.Metadata  // 路由元数据
+	collector   *metric.Collector // 数据收集器
+	paramNames  []string          // 模式中的参数名列表
+	middlewares []MiddlewareFunc  // 中间件函数
+	initialized bool              // 标记是否已经初始化
 
 	initializedMutex sync.Mutex
 }
 
 // newHandler 新建一个处理器
-func newHandler(group *group, method string, handle HandleFunc) *handler {
+func newHandler(group *group, name, method, pattern string, handle HandleFunc) *handler {
+
 	return &handler{
-		group:       group,
-		method:      method,
-		handle:      handle,
-		middlewares: make([]MiddlewareFunc, 0, 30),
+		group: group,
+		metadata: &metric.Metadata{
+			Name:    name,
+			Method:  method,
+			Pattern: pattern,
+		},
+		handle:     handle,
+		collector:  metric.NewCollector(),
+		paramNames: extractSegmentNames(trie.SplitPattern(pattern)),
 	}
 }
 
-// ServeHTTP 实现自定义的 HTTP 处理函数
-func (own *handler) ServeHTTP(ctx *Context) {
+// Handle 请求处理函数
+func (own *handler) Handle(ctx *Context) {
 	// 延迟初始化
 	if !own.initialized {
 		own.initializedMutex.Lock()
@@ -55,10 +66,11 @@ func (own *handler) initialize() {
 	}
 
 	// 获取所有中间件
-	own.group.getAllMiddlewares(own.middlewares)
+	own.middlewares = make([]MiddlewareFunc, 0, 30)
+	own.group.getAllMiddlewares(&own.middlewares)
 
 	// 调用中间件
-	for i := 0; i < len(own.middlewares); i-- {
+	for i := len(own.middlewares) - 1; i >= 0; i-- {
 		own.handle = own.middlewares[i](own.handle)
 	}
 
