@@ -34,10 +34,7 @@ type response struct {
 
 // NewWriter 创建一个基于 http.ResponseWriter 的响应
 func NewWriter(resp http.ResponseWriter) Writer {
-	return &response{
-		status: http.StatusOK,
-		writer: resp,
-	}
+	return &response{writer: resp}
 }
 
 // Flush 继承 http.Flusher

@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"text/template"
 	"time"
@@ -30,12 +31,10 @@ import (
 var maxMultipartMemory int64 = 10 << 20 // 10M
 
 var (
-	errNotFoundPage         = errors.New("leego: context: not found query parameter 'page'")
-	errNotFoundLimit        = errors.New("leego: context: not found query parameter 'limit'")
-	errNotSupportedFlusher  = errors.New("leego: context: http.ResponseWriter does not supported http.Flusher")
-	errNotSupportedHijacker = errors.New("leego: context: http.ResponseWriter does not supported http.Hijacker")
-	errFailToUpgrade        = errors.New("leego: context: failed to upgrade http connection to WebSocket")
-	errUpgradeWithoutKey    = errors.New("leego: context: upgrade headers does not carry 'Sec-WebSocket-Key'")
+	errNotFoundPage      = errors.New("leego: context: not found query parameter 'page'")
+	errNotFoundLimit     = errors.New("leego: context: not found query parameter 'limit'")
+	errFailToUpgrade     = errors.New("leego: context: failed to upgrade http connection to WebSocket")
+	errUpgradeWithoutKey = errors.New("leego: context: upgrade headers does not carry 'Sec-WebSocket-Key'")
 )
 
 // SetMaxMultipartMemory 设置解析 multipart/form-data 多部分表单时最大使用的内存
@@ -48,14 +47,12 @@ type JSON map[string]any
 
 // Context 定义上下文的结构
 type Context struct {
-	code     int                 // 状态码
-	time     time.Time           // 创建时间
-	query    url.Values          // 查询参数
-	values   map[string]string   // 路由参数
-	response http.ResponseWriter // 原始响应
-	request  *http.Request       // 原始请求
-	engine   *Engine             // 绑定引擎
-
+	time     time.Time         // 创建时间
+	query    url.Values        // 查询参数
+	values   map[string]string // 路由参数
+	engine   *Engine           // 绑定引擎
+	Request  *http.Request     // 原始请求
+	Response response.Writer   // 原始响应
 }
 
 // newContext 新建一个上下文
@@ -65,27 +62,37 @@ func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request, val
 		query:    req.URL.Query(),
 		values:   values,
 		engine:   engine,
-		request:  req,
-		response: resp,
+		Request:  req,
+		Response: response.NewWriter(resp),
 	}
 }
 
 /**************************************************** HTTP Request ****************************************************/
 
 // GetURL 获取 RUL 信息
-func (own *Context) GetURL() *url.URL { return own.request.URL }
-
-// GetHost 获取主机信息
-func (own *Context) GetHost() string { return own.request.Host }
-
-// GetMethod 获取请求方法
-func (own *Context) GetMethod() string { return own.request.Method }
+func (own *Context) GetURL() *url.URL {
+	return own.Request.URL
+}
 
 // GetPath 获取请求路径
-func (own *Context) GetPath() string { return own.request.URL.Path }
+func (own *Context) GetPath() string {
+	return own.Request.URL.Path
+}
+
+// GetHost 获取主机信息
+func (own *Context) GetHost() string {
+	return own.Request.Host
+}
+
+// GetMethod 获取请求方法
+func (own *Context) GetMethod() string {
+	return own.Request.Method
+}
 
 // GetProtocol 获取请求协议
-func (own *Context) GetProtocol() string { return own.request.Proto }
+func (own *Context) GetProtocol() string {
+	return own.Request.Proto
+}
 
 // GetPathValue 获取动态路由参数
 func (own *Context) GetPathValue(name string) string {
@@ -98,21 +105,22 @@ func (own *Context) GetPathValue(name string) string {
 
 // GetContextValue 获取上下文附带的键值对
 func (own *Context) GetContextValue(key any) (any, bool) {
-	ctx := own.request.Context()
+	ctx := own.Request.Context()
 	if ctx == nil {
 		return nil, false
 	}
 
-	val := ctx.Value(key)
-	if val == nil {
-		return nil, false
+	if val := ctx.Value(key); val != nil {
+		return val, true
 	}
 
-	return val, true
+	return nil, false
 }
 
 // QueryValue 获取查询参数
-func (own *Context) QueryValue(key string) string { return own.query.Get(key) }
+func (own *Context) QueryValue(key string) string {
+	return own.query.Get(key)
+}
 
 // QueryPageAndLimit 查询分页信息(仅支持 page 和 limit 字段)
 func (own *Context) QueryPageAndLimit() (page, limit int, err error) {
@@ -131,38 +139,38 @@ func (own *Context) QueryPageAndLimit() (page, limit int, err error) {
 
 // GetFormValue 获取表单信息, 可查询 URL 参数和 x-www-form-urlencoded 格式的 body
 func (own *Context) GetFormValue(key string) string {
-	if own.request.Form == nil {
-		_ = own.request.ParseForm()
+	if own.Request.Form == nil {
+		_ = own.Request.ParseForm()
 	}
 
-	return own.request.Form.Get(key)
+	return own.Request.Form.Get(key)
 }
 
 // GetPostFormValue 仅支持查询 x-www-form-urlencoded 格式的 body
 func (own *Context) GetPostFormValue(key string) string {
-	if own.request.PostForm == nil {
-		_ = own.request.ParseForm()
+	if own.Request.PostForm == nil {
+		_ = own.Request.ParseForm()
 	}
 
-	return own.request.PostForm.Get(key)
+	return own.Request.PostForm.Get(key)
 }
 
 // GetFormFile 获取上传的文件信息
 func (own *Context) GetFormFile(filename string) (multipart.File, *multipart.FileHeader, error) {
-	if own.request.MultipartForm == nil {
-		_ = own.request.ParseMultipartForm(maxMultipartMemory)
+	if own.Request.MultipartForm == nil {
+		_ = own.Request.ParseMultipartForm(maxMultipartMemory)
 	}
 
-	return own.request.FormFile(filename)
+	return own.Request.FormFile(filename)
 }
 
 // GetMultipartFormValue 仅支持查询 multipart/form-data 格式的 body
 func (own *Context) GetMultipartFormValue(key string) string {
-	if own.request.MultipartForm == nil {
-		_ = own.request.ParseMultipartForm(maxMultipartMemory)
+	if own.Request.MultipartForm == nil {
+		_ = own.Request.ParseMultipartForm(maxMultipartMemory)
 	}
 
-	if params := own.request.MultipartForm.Value[key]; len(params) > 0 {
+	if params := own.Request.MultipartForm.Value[key]; len(params) > 0 {
 		return params[0]
 	}
 
@@ -176,38 +184,32 @@ func (own *Context) GetServiceName() string {
 
 // GetHeader 获取请求头字段信息
 func (own *Context) GetHeader(key string) string {
-	return own.request.Header.Get(key)
+	return own.Request.Header.Get(key)
 }
-
-// GetRequest 获取原始请求
-func (own *Context) GetRequest() *http.Request { return own.request }
-
-// GetResponse 获取原始响应
-func (own *Context) GetResponse() http.ResponseWriter { return own.response }
 
 // BindXML 绑定 XML 格式的数据到对象
 func (own *Context) BindXML(obj any) error {
-	err := xml.NewDecoder(own.request.Body).Decode(&obj)
-	_ = own.request.Body.Close()
+	err := xml.NewDecoder(own.Request.Body).Decode(&obj)
+	_ = own.Request.Body.Close()
 	return err
 }
 
 // BindJSON 绑定 JSON 格式的数据到对象
 func (own *Context) BindJSON(data any) error {
-	err := json.NewDecoder(own.request.Body).Decode(&data)
-	_ = own.request.Body.Close()
+	err := json.NewDecoder(own.Request.Body).Decode(&data)
+	_ = own.Request.Body.Close()
 	return err
 }
 
 // WithContext 设置请求上下文
 func (own *Context) WithContext(ctx context.Context) *Context {
-	own.request = own.request.WithContext(ctx)
+	own.Request = own.Request.WithContext(ctx)
 	return own
 }
 
 // WithRequestHeader 设置请求头
 func (own *Context) WithRequestHeader(key, value string) *Context {
-	own.request.Header.Set(key, value)
+	own.Request.Header.Set(key, value)
 	return own
 }
 
@@ -220,56 +222,50 @@ func (own *Context) GetStartTime() time.Time {
 
 // GetStatusCode 获取响应状态码
 func (own *Context) GetStatusCode() int {
-	if own.code == 0 {
-		own.code = own.response.(response.Writer).GetStatusCode()
-	}
-
-	return own.code
-}
-
-// WithResponseHeader 设置响应头
-func (own *Context) WithResponseHeader(key, value string) *Context {
-	own.response.Header().Set(key, value)
-	return own
+	return own.Response.GetStatusCode()
 }
 
 // WithStatusCode 设置响应状态码
 func (own *Context) WithStatusCode(code int) *Context {
-	own.code = code
-	own.response.WriteHeader(code)
+	own.Response.WriteHeader(code)
+	return own
+}
+
+// WithResponseHeader 设置响应头
+func (own *Context) WithResponseHeader(key, value string) *Context {
+	own.Response.Header().Set(key, value)
 	return own
 }
 
 // ResponseError 响应错误信息
 func (own *Context) ResponseError(code int, error string) {
-	own.code = code
-	http.Error(own.response, error, code)
+	http.Error(own.Response, error, code)
 }
 
 // ResponseXML 响应 XML 格式的数据
 func (own *Context) ResponseXML(code int, data any) error {
 	own.WithStatusCode(code)
-	return xml.NewEncoder(own.response).Encode(data)
+	return xml.NewEncoder(own.Response).Encode(data)
 }
 
 // ResponseJSON 响应 JSON 格式的数据
 func (own *Context) ResponseJSON(code int, data any) error {
 	own.WithResponseHeader("Content-Type", "application/json")
 	own.WithStatusCode(code)
-	return json.NewEncoder(own.response).Encode(&data)
+	return json.NewEncoder(own.Response).Encode(&data)
 }
 
 // ResponseBytes 响应字节数据
 func (own *Context) ResponseBytes(code int, data []byte) error {
 	own.WithStatusCode(code)
-	_, err := own.response.Write(data)
+	_, err := own.Response.Write(data)
 	return err
 }
 
 // ResponseString 响应字符串
 func (own *Context) ResponseString(code int, data string) error {
 	own.WithStatusCode(code)
-	_, err := own.response.Write([]byte(data))
+	_, err := own.Response.Write([]byte(data))
 	return err
 }
 
@@ -278,8 +274,8 @@ func (own *Context) ResponseFile(filename string) error {
 	return own.responseFile(filename, "attachment")
 }
 
-// ResponseFileContent 响应文件（页面显示）
-func (own *Context) ResponseFileContent(filename string) error {
+// ResponseContent 响应文件（页面显示）
+func (own *Context) ResponseContent(filename string) error {
 	return own.responseFile(filename, "inline")
 }
 
@@ -310,7 +306,7 @@ func (own *Context) responseFile(filename, disposition string) error {
 	}
 
 	// 支持断点续传
-	http.ServeContent(own.response, own.request, info.Name(), info.ModTime(), file)
+	http.ServeContent(own.Response, own.Request, info.Name(), info.ModTime(), file)
 	return nil
 }
 
@@ -333,31 +329,50 @@ func (own *Context) detectContentType(filename string, file *os.File) string {
 	return "application/octet-stream"
 }
 
-var templates = make(map[string]*template.Template)
+var (
+	templates     = make(map[string]*template.Template)
+	templatesLock sync.RWMutex
+)
 
 // ResponseHTML 响应 HTML 内容
 func (own *Context) ResponseHTML(filename, tmplName string, data any) error {
+	// 先尝试读锁
+	templatesLock.RLock()
 	tmpl, ok := templates[filename]
-	if !ok {
-		tmpl = template.Must(template.ParseFiles(filename))
-		templates[filename] = tmpl
+	if templatesLock.RUnlock(); ok {
+		return own.executeTemplate(tmpl, tmplName, data)
 	}
 
+	// 不存在时需要写锁
+	templatesLock.Lock()
+	defer templatesLock.Unlock()
+
+	// 双重检查
+	if tmpl, exists := templates[filename]; exists {
+		return own.executeTemplate(tmpl, tmplName, data)
+	}
+
+	// 解析模板
+	tmpl, err := template.ParseFiles(filename)
+	if err != nil {
+		return fmt.Errorf("leego: context: failed to parse template: %w", err)
+	}
+
+	templates[filename] = tmpl
+	return own.executeTemplate(tmpl, tmplName, data)
+}
+
+func (own *Context) executeTemplate(tmpl *template.Template, tmplName string, data any) error {
 	if tmplName == "" {
-		return tmpl.Execute(own.response, &data)
+		return tmpl.Execute(own.Response, data)
 	}
 
-	return tmpl.ExecuteTemplate(own.response, tmplName, &data)
+	return tmpl.ExecuteTemplate(own.Response, tmplName, data)
 }
 
 // ResponseSSE 发起 SSE 响应
 func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
-	// 检查响应是否是 http.Flusher
-	flusher, ok := own.response.(http.Flusher)
-	if !ok {
-		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
-		return errNotSupportedFlusher
-	}
+	flusher := own.Response
 
 	// 设置响应头
 	own.WithResponseHeader("Content-Type", "text/event-stream")
@@ -365,7 +380,7 @@ func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
 	own.WithResponseHeader("Connection", "keep-alive")
 
 	// 创建可取消的上下文
-	ctx, cancel := context.WithCancel(own.request.Context())
+	ctx, cancel := context.WithCancel(own.Request.Context())
 	defer cancel()
 
 	// 监听客户端断开连接
@@ -385,7 +400,7 @@ func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
 			// 通道关闭
 			if !ok {
 				buffer.WriteString("data: [CLOSED]\n\n")
-				_, err = own.response.Write(buffer.Bytes())
+				_, err = own.Response.Write(buffer.Bytes())
 				flusher.Flush()
 				return err
 			}
@@ -397,7 +412,7 @@ func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
 			buffer.WriteString("\n\n")
 
 			// 将 buffer 中的数据写入响应
-			if _, err := own.response.Write(buffer.Bytes()); err != nil {
+			if _, err := own.Response.Write(buffer.Bytes()); err != nil {
 				return err
 			}
 			flusher.Flush()
@@ -411,28 +426,28 @@ func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
 
 // ResponseUpgrade 发起 Websocket 响应
 func (own *Context) ResponseUpgrade(upgrade func(conn *websocket.Conn)) error {
+	header := own.Request.Header
+
 	// 校验请求头
-	header := own.request.Header
-	if !checkHeaderValues(header.Get("Connection"), "upgrade") || !strings.EqualFold(header.Get("Upgrade"), "websocket") {
+	switch {
+	// Connection 头必须为 upgrade
+	case !checkHeaderValues(header.Get("Connection"), "upgrade"):
+		own.ResponseError(http.StatusBadRequest, response.STATUS_BAD_REQUEST)
+		return fmt.Errorf("leego: context: ")
+
+	// Upgrade 头必须为 websocket
+	case !strings.EqualFold(header.Get("Upgrade"), "websocket"):
 		own.ResponseError(http.StatusBadRequest, response.STATUS_BAD_REQUEST)
 		return errFailToUpgrade
-	}
 
-	// 必须包含有效的 Sec-WebSocket-Key
-	if own.GetHeader("Sec-WebSocket-Key") == "" {
+	// Sec-WebSocket-Key 头必须为有效值
+	case own.GetHeader("Sec-WebSocket-Key") == "":
 		own.ResponseError(http.StatusBadRequest, response.STATUS_BAD_REQUEST)
 		return errUpgradeWithoutKey
 	}
 
-	// 获取 Hijacker 接口
-	hijacker, ok := own.response.(http.Hijacker)
-	if !ok {
-		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
-		return errNotSupportedHijacker
-	}
-
 	// 手动控制连接
-	conn, reader, err := hijacker.Hijack()
+	conn, reader, err := own.Response.Hijack()
 	if err != nil {
 		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
 		return err
@@ -501,15 +516,17 @@ func handshakeWebSocket(respWriter *bufio.ReadWriter, reqHeader http.Header) err
 	return respWriter.Flush()
 }
 
+const _UPGRADE_ACCEPT_KEY = "258WAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
 func computeAcceptKey(key string) string {
 	hash := sha1.New()
-	_, _ = io.WriteString(hash, key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+	_, _ = io.WriteString(hash, key+_UPGRADE_ACCEPT_KEY)
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
 
 // validateWebSocketOrigin 验证 Origin
 func (own *Context) validateWebSocketOrigin() error {
-	origin := own.request.Header.Get("Origin")
+	origin := own.Request.Header.Get("Origin")
 	if origin == "" {
 		return nil
 	}

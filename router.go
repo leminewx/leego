@@ -15,16 +15,27 @@ import (
 type router struct {
 	engine *Engine
 
-	roots map[string]*trie.Trie[*handler] // 不同方法对应不同的路由树
-	mutex sync.Mutex
+	roots    map[string]*trie.Trie[*handler] // 不同方法对应不同的路由树
+	mutex    sync.Mutex                      // 路由写安全锁
+	backlist sync.Map                        // 路由黑名单
 }
 
 // newRouter 创建一个新的路由器
 func newRouter(engine *Engine) *router {
 	return &router{
-		engine: engine,
-		roots:  make(map[string]*trie.Trie[*handler]),
+		engine:   engine,
+		roots:    make(map[string]*trie.Trie[*handler]),
+		backlist: sync.Map{},
 	}
+}
+
+// WithURLBlacklist 添加 URL 黑名单
+func (own *router) WithURLBlacklist(urls ...string) *router {
+	for _, url := range urls {
+		own.backlist.Store(url, true)
+	}
+
+	return own
 }
 
 // Insert 插入新增的路由
@@ -57,23 +68,27 @@ func (own *router) Search(method, path string) (*handler, map[string]string, boo
 
 // ServeHTTP 实现 http.Handler 接口
 func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	path := req.URL.Path
+
+	// 黑名单检查
+	if _, ok := own.backlist.Load(path); ok {
+		http.Error(resp, response.STATUS_FORBIDDEN, http.StatusForbidden)
+		return
+	}
+
 	// 匹配路由
-	handler, params, ok := own.Search(req.Method, req.URL.Path)
+	handler, params, ok := own.Search(req.Method, path)
 	if !ok {
 		fmt.Printf(_FORMAT_PRINT_404, time.Now().Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, http.StatusNotFound, "0s")
 		http.Error(resp, response.STATUS_NOT_FOUND, http.StatusNotFound)
 		return
 	}
 
-	// 创建上下文
-	res := response.NewWriter(resp)
-	ctx := newContext(own.engine, res, req, params)
-
-	// 处理路由，并收集数据
-	start := time.Now()
+	// 创建上下文,处理路由，并收集数据
+	ctx := newContext(own.engine, resp, req, params)
 	handler.collector.Increase()
 	handler.Handle(ctx)
-	handler.collector.Decrease(ctx.GetStatusCode(), time.Since(start))
+	handler.collector.Decrease(ctx.GetStatusCode(), time.Since(ctx.GetStartTime()))
 }
 
 // extractSegmentNames 从路径中提取所有的参数名称（:param 或 *param 或 *）

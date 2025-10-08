@@ -12,7 +12,7 @@ func Cors(cors *cors.CORS) leego.MiddlewareFunc {
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
 			// 设置预检响应头
-			cors.SetResponseHeader(ctx.GetResponse())
+			cors.SetResponseHeader(ctx.Response)
 
 			// 预检请求（Preflight request）
 			if ctx.GetMethod() == http.MethodOptions {

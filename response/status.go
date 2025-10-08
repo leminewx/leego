@@ -5,7 +5,7 @@ const (
 
 	STATUS_BAD_REQUEST        = "400 Bad Request"        // 请求错误
 	STATUS_UNAUTHORIZED       = "401 Unauthorized"       // 请求未认证
-	STATUS_FORBIDDEN          = "403 Forbidden"          // 禁止请求（通常权限不足）
+	STATUS_FORBIDDEN          = "403 Forbidden"          // 禁止请求（通常权限不足或黑名单）
 	STATUS_NOT_FOUND          = "404 Not Found"          // 未找到请求资源
 	STATUS_METHOD_NOT_ALLOWED = "405 Method Not Allowed" // 请求方法不被允许
 	STATUS_TOO_MANY_REQUESTS  = "429 Too Many Requests"  // 请求太频繁

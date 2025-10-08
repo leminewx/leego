@@ -8,14 +8,15 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego"
-	_ "gitee.com/leminewx/leego/logo"
 	"gitee.com/leminewx/leego/middleware"
 	"gitee.com/leminewx/leego/middleware/cors"
 	"gitee.com/leminewx/leego/response/websocket"
 )
 
 func main() {
-	engine := leego.NewEngine("test")
+	engine := leego.NewEngine("test").
+		WithURLBlacklist("/.well-known/appspecific/com.chrome.devtools.json")
+
 	engine.WithMiddlewares(
 		middleware.Recover(),
 		middleware.Log(),
@@ -84,7 +85,7 @@ func main() {
 			})
 		}, "websocket测试")
 
-		if err := group1.SetStatics("/files", "data", false, "下载文件1"); err != nil {
+		if err := group1.SetStatics("/files", ".", false, "下载文件1"); err != nil {
 			panic(err)
 		}
 	}
@@ -146,8 +147,6 @@ func main() {
 				})
 			}, "获取系统信息", "用户管理")
 
-			// group3.WithStatics("/files", "D:\\Projects\\Golang\\leego\\logo", "下载文件2")
-
 			group3.GET("/files/download/*filepath", func(ctx *leego.Context) {
 				fmt.Println("*********ready download file*********")
 				if err := ctx.ResponseFile("APIS.csv"); err != nil {
@@ -157,7 +156,7 @@ func main() {
 
 			group3.GET("/files/show/*filepath", func(ctx *leego.Context) {
 				fmt.Println("*********ready response file content*********")
-				if err := ctx.ResponseFileContent("test.go"); err != nil {
+				if err := ctx.ResponseContent("test.go"); err != nil {
 					ctx.ResponseError(http.StatusInternalServerError, err.Error())
 				}
 			}, "显示文件", "文件管理")

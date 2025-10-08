@@ -24,14 +24,13 @@ type handler struct {
 	collector   *metric.Collector // 数据收集器
 	paramNames  []string          // 模式中的参数名列表
 	middlewares []MiddlewareFunc  // 中间件函数
-	initialized bool              // 标记是否已经初始化
 
+	initialized      bool // 标记是否已经初始化
 	initializedMutex sync.Mutex
 }
 
 // newHandler 新建一个处理器
 func newHandler(group *group, name, method, pattern string, handle HandleFunc) *handler {
-
 	return &handler{
 		group: group,
 		metadata: &metric.Metadata{
@@ -40,7 +39,7 @@ func newHandler(group *group, name, method, pattern string, handle HandleFunc) *
 			Pattern: pattern,
 		},
 		handle:     handle,
-		collector:  metric.NewCollector(),
+		collector:  metric.NewCollector(method, pattern),
 		paramNames: extractSegmentNames(trie.SplitPattern(pattern)),
 	}
 }

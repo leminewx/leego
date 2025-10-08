@@ -101,7 +101,7 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 		// 获取请求的文件路径
 		requestedPath := ctx.GetPathValue(trie.WILDCARD_DEFAULT_NAME)
 		if requestedPath == "" {
-			http.Error(ctx.GetResponse(), response.STATUS_NOT_FOUND, http.StatusNotFound)
+			ctx.ResponseError(http.StatusNotFound, response.STATUS_NOT_FOUND)
 			return
 		}
 
@@ -111,14 +111,14 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 
 		// 安全检查：防止路径遍历攻击
 		if containsPathTraversal(requestedPath) {
-			http.Error(ctx.GetResponse(), response.STATUS_FORBIDDEN, http.StatusForbidden)
+			ctx.ResponseError(http.StatusForbidden, response.STATUS_FORBIDDEN)
 			return
 		}
 
 		// 检查文件是否存在且可访问
 		file, err := fileSystem.Open(requestedPath)
 		if err != nil {
-			http.Error(ctx.GetResponse(), response.STATUS_NOT_FOUND, http.StatusNotFound)
+			ctx.ResponseError(http.StatusNotFound, response.STATUS_NOT_FOUND)
 			return
 		}
 		defer func() { _ = file.Close() }()
@@ -135,7 +135,7 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 		ctx.WithResponseHeader("X-Frame-Options", "DENY")           // 防止点击劫持（ClickJacking）攻击
 
 		// 响应文件
-		fileServer.ServeHTTP(ctx.GetResponse(), ctx.GetRequest())
+		fileServer.ServeHTTP(ctx.Response, ctx.Request)
 	}
 }
 
