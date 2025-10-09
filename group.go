@@ -17,7 +17,7 @@ const (
 	_FORMAT_PRINT_EXISTS_ROUTE               = "\033[33mWARN \033[0m -  %s  -  Exists route: %7s: %s\n"
 	_FORMAT_PRINT_CREATE_ROUTE               = "\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s\n"
 	_FORMAT_PRINT_CREATE_ROUTE_WITH_FILEPATH = "\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s  -  filepath: %s\n"
-	_FORMAT_PRINT_404                        = "\033[33mWARN \033[0m -  %s  -  \"%s %v %s\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n\n"
+	_FORMAT_PRINT_404_423                    = "\033[33mWARN \033[0m -  %s  -  \"%s %s %v\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n\n"
 )
 
 // group 定义路由组的数据结构
@@ -101,7 +101,7 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 		// 获取请求的文件路径
 		requestedPath := ctx.GetPathValue(trie.WILDCARD_DEFAULT_NAME)
 		if requestedPath == "" {
-			ctx.ResponseError(http.StatusNotFound, response.STATUS_NOT_FOUND)
+			ctx.ResponseError(http.StatusNotFound, response.STATUS_404_NOT_FOUND)
 			return
 		}
 
@@ -111,14 +111,14 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 
 		// 安全检查：防止路径遍历攻击
 		if containsPathTraversal(requestedPath) {
-			ctx.ResponseError(http.StatusForbidden, response.STATUS_FORBIDDEN)
+			ctx.ResponseError(http.StatusForbidden, response.STATUS_403_FORBIDDEN)
 			return
 		}
 
 		// 检查文件是否存在且可访问
 		file, err := fileSystem.Open(requestedPath)
 		if err != nil {
-			ctx.ResponseError(http.StatusNotFound, response.STATUS_NOT_FOUND)
+			ctx.ResponseError(http.StatusNotFound, response.STATUS_404_NOT_FOUND)
 			return
 		}
 		defer func() { _ = file.Close() }()

@@ -19,7 +19,7 @@ func Recover() leego.MiddlewareFunc {
 				if err := recover(); err != nil {
 					fmt.Printf("\033[45m\033[30m%s\033[0m\n\n", trace(fmt.Sprintf("%v", err)))
 					if ctx.GetStatusCode() == 0 {
-						ctx.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+						ctx.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
 					}
 				}
 			}()

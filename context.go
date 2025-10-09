@@ -2,7 +2,6 @@ package leego
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
@@ -25,6 +24,7 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego/response"
+	"gitee.com/leminewx/leego/response/sse"
 	"gitee.com/leminewx/leego/response/websocket"
 )
 
@@ -284,7 +284,7 @@ func (own *Context) responseFile(filename, disposition string) error {
 	// 打开文件
 	file, err := os.Open(filename)
 	if err != nil {
-		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
 		return err
 	}
 	defer func() { _ = file.Close() }()
@@ -292,7 +292,7 @@ func (own *Context) responseFile(filename, disposition string) error {
 	// 获取文件信息
 	info, err := file.Stat()
 	if err != nil {
-		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
 		return err
 	}
 
@@ -370,52 +370,47 @@ func (own *Context) executeTemplate(tmpl *template.Template, tmplName string, da
 	return tmpl.ExecuteTemplate(own.Response, tmplName, data)
 }
 
-// ResponseSSE 发起 SSE 响应
-func (own *Context) ResponseSSE(sse func() <-chan []byte) (err error) {
-	flusher := own.Response
-
-	// 设置响应头
-	own.WithResponseHeader("Content-Type", "text/event-stream")
-	own.WithResponseHeader("Cache-Control", "no-cache")
-	own.WithResponseHeader("Connection", "keep-alive")
-
-	// 创建可取消的上下文
-	ctx, cancel := context.WithCancel(own.Request.Context())
-	defer cancel()
-
-	// 监听客户端断开连接
-	go func() {
-		<-ctx.Done()
-		cancel()
-	}()
+// ResponseSSE 发起 SSE 事件响应
+func (own *Context) ResponseSSE(sseMessages func(ctx context.Context) <-chan *sse.Message) (err error) {
+	// 设置 SSE 响应头
+	sse.SetResponseHeader(own.Response)
 
 	// 调用 SSE 处理函数
-	events := sse()
+	ctx := own.Request.Context()
+	messages := sseMessages(ctx)
 
-	var buffer bytes.Buffer
 	for {
 		select {
 		// 正常接收数据
-		case data, ok := <-events:
+		case msg, ok := <-messages:
 			// 通道关闭
 			if !ok {
-				buffer.WriteString("data: [CLOSED]\n\n")
-				_, err = own.Response.Write(buffer.Bytes())
-				flusher.Flush()
-				return err
+				// 关闭前发送数据
+				if msg != nil && len(msg.Data) > 0 {
+					if err = msg.Write(own.Response); err != nil {
+						return err
+					}
+				}
+
+				// 尝试获取事件 ID
+				var id string
+				if msg != nil {
+					id = msg.Id
+				}
+
+				// 发送关闭事件
+				return sse.NewClosedMessage(id).Write(own.Response)
 			}
 
-			// 重置 buffer，并写入数据到 buffer
-			buffer.Reset()
-			buffer.WriteString("data: ")
-			buffer.Write(data)
-			buffer.WriteString("\n\n")
+			// 跳过空数据
+			if msg == nil || len(msg.Data) == 0 {
+				continue
+			}
 
-			// 将 buffer 中的数据写入响应
-			if _, err := own.Response.Write(buffer.Bytes()); err != nil {
+			// 发送事件数据
+			if err := msg.Write(own.Response); err != nil {
 				return err
 			}
-			flusher.Flush()
 
 		// 客户端断开连接
 		case <-ctx.Done():
@@ -432,31 +427,31 @@ func (own *Context) ResponseUpgrade(upgrade func(conn *websocket.Conn)) error {
 	switch {
 	// Connection 头必须为 upgrade
 	case !checkHeaderValues(header.Get("Connection"), "upgrade"):
-		own.ResponseError(http.StatusBadRequest, response.STATUS_BAD_REQUEST)
+		own.ResponseError(http.StatusBadRequest, response.STATUS_400_BAD_REQUEST)
 		return fmt.Errorf("leego: context: ")
 
 	// Upgrade 头必须为 websocket
 	case !strings.EqualFold(header.Get("Upgrade"), "websocket"):
-		own.ResponseError(http.StatusBadRequest, response.STATUS_BAD_REQUEST)
+		own.ResponseError(http.StatusBadRequest, response.STATUS_400_BAD_REQUEST)
 		return errFailToUpgrade
 
 	// Sec-WebSocket-Key 头必须为有效值
 	case own.GetHeader("Sec-WebSocket-Key") == "":
-		own.ResponseError(http.StatusBadRequest, response.STATUS_BAD_REQUEST)
+		own.ResponseError(http.StatusBadRequest, response.STATUS_400_BAD_REQUEST)
 		return errUpgradeWithoutKey
 	}
 
 	// 手动控制连接
 	conn, reader, err := own.Response.Hijack()
 	if err != nil {
-		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
 		return err
 	}
 	defer func() { _ = conn.Close() }()
 
 	// 手动构建符合 WebSocket 规范的响应头
 	if err := handshakeWebSocket(reader, header); err != nil {
-		own.ResponseError(http.StatusInternalServerError, response.STATUS_INTERNAL_SERVER_ERROR)
+		own.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
 		return err
 	}
 

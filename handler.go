@@ -2,6 +2,7 @@ package leego
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"gitee.com/leminewx/leego/middleware/metric"
 	"gitee.com/leminewx/leego/trie"
@@ -19,6 +20,7 @@ type (
 type handler struct {
 	group *group
 
+	enable      int32             // 使能标志
 	handle      HandleFunc        // 处理函数
 	metadata    *metric.Metadata  // 路由元数据
 	collector   *metric.Collector // 数据收集器
@@ -32,16 +34,33 @@ type handler struct {
 // newHandler 新建一个处理器
 func newHandler(group *group, name, method, pattern string, handle HandleFunc) *handler {
 	return &handler{
-		group: group,
+		group:  group,
+		enable: 1,
+		handle: handle,
 		metadata: &metric.Metadata{
 			Name:    name,
 			Method:  method,
 			Pattern: pattern,
 		},
-		handle:     handle,
 		collector:  metric.NewCollector(method, pattern),
 		paramNames: extractSegmentNames(trie.SplitPattern(pattern)),
 	}
+}
+
+// WithEnable 启用或禁用处理器
+func (own *handler) WithEnable(enable bool) *handler {
+	if enable {
+		atomic.StoreInt32(&own.enable, 1)
+		return own
+	}
+
+	atomic.StoreInt32(&own.enable, 0)
+	return own
+}
+
+// IsEnable 检查处理器是否启用
+func (own *handler) IsEnable() bool {
+	return atomic.LoadInt32(&own.enable) == 1
 }
 
 // Handle 请求处理函数

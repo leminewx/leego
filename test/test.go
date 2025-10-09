@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/middleware"
 	"gitee.com/leminewx/leego/middleware/cors"
+	"gitee.com/leminewx/leego/response/sse"
 	"gitee.com/leminewx/leego/response/websocket"
 )
 
@@ -132,18 +135,23 @@ func main() {
 
 			group3.GET("/sse", func(ctx *leego.Context) {
 				fmt.Println("*********ready response sse*********")
-				_ = ctx.ResponseSSE(func() <-chan []byte {
-					data := make(chan []byte)
+				_ = ctx.ResponseSSE(func(ctx context.Context) <-chan *sse.Message {
+					events := make(chan *sse.Message, 1)
 					go func() {
 						for i := 0; i < 10; i++ {
-							data <- []byte(fmt.Sprintf("hello, now is %v", time.Now()))
+							data, _ := json.Marshal(&leego.JSON{"code": "00000", "desc": "ok", "size": strconv.Itoa(i), "time": time.Now().Format(time.DateTime)})
+							events <- &sse.Message{
+								Event: "test_msg",
+								Id:    "tid1234567890",
+								Data:  data,
+							}
 							time.Sleep(1 * time.Second)
 						}
 
-						close(data)
+						close(events)
 					}()
 
-					return data
+					return events
 				})
 			}, "获取系统信息", "用户管理")
 

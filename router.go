@@ -72,19 +72,26 @@ func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
 	// 黑名单检查
 	if _, ok := own.backlist.Load(path); ok {
-		http.Error(resp, response.STATUS_FORBIDDEN, http.StatusForbidden)
+		http.Error(resp, response.STATUS_403_FORBIDDEN, http.StatusForbidden)
 		return
 	}
 
 	// 匹配路由
 	handler, params, ok := own.Search(req.Method, path)
 	if !ok {
-		fmt.Printf(_FORMAT_PRINT_404, time.Now().Format(_FORMAT_DATETIME), req.Method, req.URL.Path, req.Proto, http.StatusNotFound, "0s")
-		http.Error(resp, response.STATUS_NOT_FOUND, http.StatusNotFound)
+		fmt.Printf(_FORMAT_PRINT_404_423, time.Now().Format(_FORMAT_DATETIME), req.Proto, req.Method, req.URL.Path, http.StatusNotFound, "0s")
+		http.Error(resp, response.STATUS_404_NOT_FOUND, http.StatusNotFound)
 		return
 	}
 
-	// 创建上下文,处理路由，并收集数据
+	// 检查处理器是否禁用
+	if !handler.IsEnable() {
+		fmt.Printf(_FORMAT_PRINT_404_423, time.Now().Format(_FORMAT_DATETIME), req.Proto, req.Method, req.URL.Path, http.StatusLocked, "0s")
+		http.Error(resp, response.STATUS_423_LOCKED, http.StatusLocked)
+		return
+	}
+
+	// 创建上下文，处理路由，并收集数据
 	ctx := newContext(own.engine, resp, req, params)
 	handler.collector.Increase()
 	handler.Handle(ctx)
