@@ -1,14 +1,16 @@
 package headers
 
 const (
+	/****************************************************** 普通头 *****************************************************/
+
+	X_REQUEST_ID = "X-Request-Id"
+
 	/****************************************************** 跨域头 *****************************************************/
 
 	ACCESS_CONTROL_REQUEST_METHOD = "Access-Control-Request-Method" // 实际请求方法
 
 	ACCESS_CONTROL_REQUEST_HEADERS = "Access-Control-Request-Headers" // 实际请求携带的自定义字段
 
-	ACCESS_CONTROL_MAX_AGE = "Access-Control-Max-Age"
-	
 	ACCESS_CONTROL_ALLOW_CREDENTIALS = "Access-Control-Allow-Credentials"
 
 	ACCESS_CONTROL_ALLOW_ORIGIN = "Access-Control-Allow-Origin"
@@ -18,6 +20,8 @@ const (
 	ACCESS_CONTROL_ALLOW_HEADERS = "Access-Control-Allow-Headers"
 
 	ACCESS_CONTROL_EXPOSE_HEADERS = "Access-Control-Expose-Headers"
+
+	ACCESS_CONTROL_MAX_AGE = "Access-Control-Max-Age"
 
 	/****************************************************** 安全头 *****************************************************/
 

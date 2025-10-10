@@ -2,20 +2,40 @@ package metric
 
 import (
 	"encoding/json"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 )
 
 func TestCollector(t *testing.T) {
-	c := NewCollector(http.MethodGet, "/api/v1/users/:id")
-	for range 100 {
-		c.Increase()
-		time.Sleep(time.Duration(rand.Intn(30)) * time.Millisecond)
-		c.Decrease([]int{200, 400, 401, 403, 404, 405, 429, 500, 502, 503}[rand.Intn(10)], time.Duration(rand.Intn(100))*time.Microsecond)
-	}
+	c := NewCollector("获取用户信息", http.MethodGet, "/api/v1/users/:id")
 
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 1000 {
+			c.Increase()
+			time.Sleep(time.Duration(rand.IntN(30)) * time.Millisecond)
+			c.Decrease([]int{200, 400, 401, 500, 502}[rand.IntN(5)], time.Duration(rand.IntN(100))*time.Microsecond)
+		}
+	})
+
+	wg.Go(func() {
+		for range 5 {
+			time.Sleep(time.Duration(rand.IntN(6)) * time.Second)
+			data, err := json.MarshalIndent(&c, "", "    ")
+			if err != nil {
+				t.Error(err)
+			}
+
+			t.Log(string(data))
+		}
+	})
+
+	wg.Wait()
+
+	time.Sleep(time.Duration(rand.IntN(6)) * time.Second)
 	data, err := json.MarshalIndent(&c, "", "    ")
 	if err != nil {
 		t.Error(err)
@@ -24,10 +44,10 @@ func TestCollector(t *testing.T) {
 	t.Log(string(data))
 }
 
-// cpu: Intel(R) Core(TM) i5-14600KF 						20    	34621842	        34.89 ns/op	       0 B/op	       0 allocs/op
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		25593556	        46.14 ns/op	       0 B/op	       0 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF 						20    	24746859	        49.05 ns/op	       0 B/op	       0 allocs/op
+// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		17951575	        64.34 ns/op	       0 B/op	       0 allocs/op
 func BenchmarkCollector(b *testing.B) {
-	c := NewCollector(http.MethodGet, "/api/v1/users/:id")
+	c := NewCollector("获取用户信息", http.MethodGet, "/api/v1/users/:id")
 
 	b.ResetTimer()
 	b.ReportAllocs()

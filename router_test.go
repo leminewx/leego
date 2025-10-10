@@ -49,7 +49,7 @@ func TestRouterServeHTTP(t *testing.T) {
 			called = true
 			_ = ctx.ResponseString(200, "OK")
 		},
-		collector: metric.NewCollector(http.MethodGet, "users/:id"),
+		collector: metric.NewCollector("get user info", http.MethodGet, "users/:id"),
 	}
 
 	router.Insert("GET", "/test", testHandler)

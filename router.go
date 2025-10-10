@@ -1,11 +1,9 @@
 package leego
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/trie"
@@ -79,23 +77,19 @@ func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	// 匹配路由
 	handler, params, ok := own.Search(req.Method, path)
 	if !ok {
-		fmt.Printf(_FORMAT_PRINT_404_423, time.Now().Format(_FORMAT_DATETIME), req.Proto, req.Method, req.URL.Path, http.StatusNotFound, "0s")
 		http.Error(resp, response.STATUS_404_NOT_FOUND, http.StatusNotFound)
 		return
 	}
 
 	// 检查处理器是否禁用
 	if !handler.IsEnable() {
-		fmt.Printf(_FORMAT_PRINT_404_423, time.Now().Format(_FORMAT_DATETIME), req.Proto, req.Method, req.URL.Path, http.StatusLocked, "0s")
 		http.Error(resp, response.STATUS_423_LOCKED, http.StatusLocked)
 		return
 	}
 
-	// 创建上下文，处理路由，并收集数据
+	// 创建上下文，处理路由
 	ctx := newContext(own.engine, resp, req, params)
-	handler.collector.Increase()
 	handler.Handle(ctx)
-	handler.collector.Decrease(ctx.GetStatusCode(), time.Since(ctx.GetStartTime()))
 }
 
 // extractSegmentNames 从路径中提取所有的参数名称（:param 或 *param 或 *）

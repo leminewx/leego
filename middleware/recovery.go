@@ -12,9 +12,9 @@ import (
 
 // Recover 异常恢复
 func Recover() leego.MiddlewareFunc {
-	fmt.Println()
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
+			// 处理异常
 			defer func() {
 				if err := recover(); err != nil {
 					fmt.Printf("\033[45m\033[30m%s\033[0m\n\n", trace(fmt.Sprintf("%v", err)))
@@ -24,6 +24,7 @@ func Recover() leego.MiddlewareFunc {
 				}
 			}()
 
+			// 处理请求
 			handle(ctx)
 		}
 	}

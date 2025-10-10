@@ -17,7 +17,6 @@ const (
 	_FORMAT_PRINT_EXISTS_ROUTE               = "\033[33mWARN \033[0m -  %s  -  Exists route: %7s: %s\n"
 	_FORMAT_PRINT_CREATE_ROUTE               = "\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s\n"
 	_FORMAT_PRINT_CREATE_ROUTE_WITH_FILEPATH = "\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s  -  filepath: %s\n"
-	_FORMAT_PRINT_404_423                    = "\033[33mWARN \033[0m -  %s  -  \"%s %s %v\"  |\033[43m\033[30m %d \033[0m|\033[43m\033[30m %v \033[0m|\n\n"
 )
 
 // group 定义路由组的数据结构

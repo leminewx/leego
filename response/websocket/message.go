@@ -1,7 +1,6 @@
 package websocket
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -14,6 +13,7 @@ const (
 	MSG_TYPE_BROADCAST MessageType = "broadcast"
 	MSG_TYPE_PRIVATE   MessageType = "private"
 	MSG_TYPE_IDENTIFY  MessageType = "identify"
+	MSG_TYPE_CONNECTED MessageType = "connected"
 )
 
 // Message 定义 WebSocket 消息的数据结构
@@ -28,7 +28,7 @@ type Message struct {
 // NewWelcomeMessage 创建一条欢迎消息
 func NewWelcomeMessage(clientId string) *Message {
 	return &Message{
-		Type:      "connected",
+		Type:      MSG_TYPE_CONNECTED,
 		Timestamp: time.Now().Unix(),
 		Data: map[string]any{
 			"client_id": clientId,
@@ -55,7 +55,11 @@ func NewPongMessage() *Message {
 	}
 }
 
-func (own *Message) Marshal() []byte {
-	bytes, _ := json.Marshal(own)
-	return bytes
+// NewSimpleMessage 创建一条简单的消息
+func NewSimpleMessage(messageType MessageType, message any) *Message {
+	return &Message{
+		Type:      messageType,
+		Timestamp: time.Now().Unix(),
+		Data:      message,
+	}
 }

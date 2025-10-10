@@ -3,6 +3,7 @@ package leego
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"gitee.com/leminewx/leego/middleware/metric"
 	"gitee.com/leminewx/leego/trie"
@@ -22,7 +23,6 @@ type handler struct {
 
 	enable      int32             // 使能标志
 	handle      HandleFunc        // 处理函数
-	metadata    *metric.Metadata  // 路由元数据
 	collector   *metric.Collector // 数据收集器
 	paramNames  []string          // 模式中的参数名列表
 	middlewares []MiddlewareFunc  // 中间件函数
@@ -34,15 +34,10 @@ type handler struct {
 // newHandler 新建一个处理器
 func newHandler(group *group, name, method, pattern string, handle HandleFunc) *handler {
 	return &handler{
-		group:  group,
-		enable: 1,
-		handle: handle,
-		metadata: &metric.Metadata{
-			Name:    name,
-			Method:  method,
-			Pattern: pattern,
-		},
-		collector:  metric.NewCollector(method, pattern),
+		group:      group,
+		enable:     1,
+		handle:     handle,
+		collector:  metric.NewCollector(name, method, pattern),
 		paramNames: extractSegmentNames(trie.SplitPattern(pattern)),
 	}
 }
@@ -67,13 +62,13 @@ func (own *handler) IsEnable() bool {
 func (own *handler) Handle(ctx *Context) {
 	// 延迟初始化
 	if !own.initialized {
-		own.initializedMutex.Lock()
 		own.initialize()
-		own.initializedMutex.Unlock()
 	}
 
-	// 调用处理函数
+	// 调用处理函数，并收集指标数据
+	own.collector.Increase()
 	own.handle(ctx)
+	own.collector.Decrease(ctx.GetStatusCode(), time.Since(ctx.GetStartTime()))
 }
 
 // initialize （在服务前）初始化处理器
@@ -82,6 +77,8 @@ func (own *handler) initialize() {
 	if own.initialized {
 		return
 	}
+
+	own.initializedMutex.Lock()
 
 	// 获取所有中间件
 	own.middlewares = make([]MiddlewareFunc, 0, 30)
@@ -92,5 +89,7 @@ func (own *handler) initialize() {
 		own.handle = own.middlewares[i](own.handle)
 	}
 
+	// 标记已初始化
 	own.initialized = true
+	own.initializedMutex.Unlock()
 }

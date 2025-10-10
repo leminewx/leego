@@ -22,10 +22,9 @@ const (
 
 // Options 定义引擎配置参数的结构
 type Options struct {
-	Addr            string
-	TLSKeyFile      string
-	TLSCertFile     string
-	ShutdownTimeout time.Duration
+	Addr        string
+	TLSKeyFile  string
+	TLSCertFile string
 }
 
 // Engine 定义引擎的结构
@@ -66,16 +65,6 @@ func (own *Engine) GetCollectors() []*metric.Collector {
 	return collectors
 }
 
-// GetMetadatas 获取接口的元数据信息
-func (own *Engine) GetMetadatas() []*metric.Metadata {
-	metadatas := make([]*metric.Metadata, 0, len(own.handlers))
-	for _, handler := range own.handlers {
-		metadatas = append(metadatas, handler.metadata)
-	}
-
-	return metadatas
-}
-
 // WithURLBlacklist 添加 URL 黑名单
 func (own *Engine) WithURLBlacklist(urls ...string) *Engine {
 	own.router.WithURLBlacklist(urls...)
@@ -112,11 +101,9 @@ func (own *Engine) ListenAndServeTLS(opts *Options) error {
 	return own.server.ListenAndServeTLS(opts.TLSCertFile, opts.TLSKeyFile)
 }
 
+// initialize 初始化服务器
 func (own *Engine) initialize(opts *Options) {
-	// 绑定配置项
 	own.config = opts
-
-	// 配置服务器
 	own.server = &http.Server{
 		Addr:    opts.Addr,
 		Handler: own.router,
@@ -124,14 +111,14 @@ func (own *Engine) initialize(opts *Options) {
 }
 
 // Shutdown 优雅关闭服务
-func (own *Engine) Shutdown() error {
+func (own *Engine) Shutdown(timeout time.Duration) error {
 	// 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	// 创建一个超时 context.Context
-	ctx, cancel := context.WithTimeout(context.Background(), own.config.ShutdownTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// 优雅关闭服务器

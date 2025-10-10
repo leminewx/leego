@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"net/http"
-
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/middleware/cors"
 )
@@ -11,16 +9,15 @@ import (
 func Cors(cors *cors.CORS) leego.MiddlewareFunc {
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
-			// 设置预检响应头
-			cors.SetResponseHeader(ctx.Response)
-
-			// 预检请求（Preflight request）
-			if ctx.GetMethod() == http.MethodOptions {
-				// 直接返回 204 状态码
-				ctx.WithStatusCode(http.StatusNoContent)
+			// 处理预检请求
+			if cors.HandlePreflight(ctx.Response, ctx.Request) {
 				return
 			}
 
+			// 处理普通请求，设置 CORS 头
+			cors.SetResponseHeader(ctx.Response, ctx.Request)
+
+			// 处理请求
 			handle(ctx)
 		}
 	}

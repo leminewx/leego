@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"gitee.com/leminewx/leego/headers"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,7 +13,6 @@ import (
 	"gitee.com/leminewx/leego/middleware"
 	"gitee.com/leminewx/leego/middleware/cors"
 	"gitee.com/leminewx/leego/response/sse"
-	"gitee.com/leminewx/leego/response/websocket"
 )
 
 func main() {
@@ -21,9 +20,13 @@ func main() {
 		WithURLBlacklist("/.well-known/appspecific/com.chrome.devtools.json")
 
 	engine.WithMiddlewares(
-		middleware.Recover(),
 		middleware.Log(),
+		middleware.Limit(1),
+		middleware.Recover(),
 		middleware.Cors(cors.New()),
+		middleware.GenerateXRequestId(func(req *http.Request) string {
+			return fmt.Sprintf("rid_%d", time.Now().UnixNano())
+		}),
 		func(handle leego.HandleFunc) leego.HandleFunc {
 			return func(ctx *leego.Context) {
 				handle(ctx)
@@ -52,7 +55,7 @@ func main() {
 			})
 
 		group1.GET("/a", func(ctx *leego.Context) {
-			fmt.Println("/v1/a ok")
+			fmt.Printf("/v1/a ok  -  request_id: %s\n", ctx.GetRequestHeader(headers.X_REQUEST_ID))
 			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 		}, "通用API1")
 
@@ -60,33 +63,6 @@ func main() {
 			collectors := engine.GetCollectors()
 			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok", "data": collectors})
 		})
-
-		group1.GET("/ws", func(ctx *leego.Context) {
-			_ = ctx.ResponseUpgrade(func(conn *websocket.Conn) {
-				defer func() { _ = conn.Close() }()
-
-				// 简单消息处理循环
-				var idx int
-				for {
-					// 读取客户端消息（简化版，仅处理小文本消息）
-					idx++
-					frame, err := conn.Read()
-					if err != nil {
-						log.Println("Read error:", err)
-						return
-					}
-
-					// 处理消息（示例：原样返回）
-					log.Printf("Received: %s", frame.Payload)
-					if idx == 10 {
-						_ = conn.SendText("this is last message!!!")
-						return
-					}
-
-					_ = conn.SendText(strconv.Itoa(idx))
-				}
-			})
-		}, "websocket测试")
 
 		if err := group1.SetStatics("/files", ".", false, "下载文件1"); err != nil {
 			panic(err)
@@ -164,7 +140,7 @@ func main() {
 
 			group3.GET("/files/show/*filepath", func(ctx *leego.Context) {
 				fmt.Println("*********ready response file content*********")
-				if err := ctx.ResponseContent("test.go"); err != nil {
+				if err := ctx.ResponseContent("server.go"); err != nil {
 					ctx.ResponseError(http.StatusInternalServerError, err.Error())
 				}
 			}, "显示文件", "文件管理")

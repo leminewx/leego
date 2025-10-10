@@ -11,9 +11,13 @@ import (
 func Collect(collector *metric.Collector) leego.MiddlewareFunc {
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
-			// 处理响应，并收集数据
+			// 采集请求数据
 			collector.Increase()
+
+			// 处理请求
 			handle(ctx)
+
+			// 采集响应数据
 			collector.Decrease(ctx.GetStatusCode(), time.Since(ctx.GetStartTime()))
 		}
 	}

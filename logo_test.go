@@ -1,7 +1,10 @@
 package leego
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestLogo(t *testing.T) {
-	t.Log(1024 * 1024)
+	fmt.Println()
 }

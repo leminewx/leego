@@ -1,15 +1,11 @@
 package leego
 
 import (
-	"bufio"
 	"context"
-	"crypto/sha1"
-	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -25,16 +21,13 @@ import (
 
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/response/sse"
-	"gitee.com/leminewx/leego/response/websocket"
 )
 
 var maxMultipartMemory int64 = 10 << 20 // 10M
 
 var (
-	errNotFoundPage      = errors.New("leego: context: not found query parameter 'page'")
-	errNotFoundLimit     = errors.New("leego: context: not found query parameter 'limit'")
-	errFailToUpgrade     = errors.New("leego: context: failed to upgrade http connection to WebSocket")
-	errUpgradeWithoutKey = errors.New("leego: context: upgrade headers does not carry 'Sec-WebSocket-Key'")
+	errNotFoundPage  = errors.New("leego: context: not found query parameter 'page'")
+	errNotFoundLimit = errors.New("leego: context: not found query parameter 'limit'")
 )
 
 // SetMaxMultipartMemory 设置解析 multipart/form-data 多部分表单时最大使用的内存
@@ -182,9 +175,21 @@ func (own *Context) GetServiceName() string {
 	return own.engine.GetServiceName()
 }
 
-// GetHeader 获取请求头字段信息
-func (own *Context) GetHeader(key string) string {
+// GetRequestHeader 获取请求头字段信息
+func (own *Context) GetRequestHeader(key string) string {
 	return own.Request.Header.Get(key)
+}
+
+// WithRequestHeader 设置请求头
+func (own *Context) WithRequestHeader(key, value string) *Context {
+	own.Request.Header.Set(key, value)
+	return own
+}
+
+// WithContext 设置请求上下文
+func (own *Context) WithContext(ctx context.Context) *Context {
+	own.Request = own.Request.WithContext(ctx)
+	return own
 }
 
 // BindXML 绑定 XML 格式的数据到对象
@@ -201,18 +206,6 @@ func (own *Context) BindJSON(data any) error {
 	return err
 }
 
-// WithContext 设置请求上下文
-func (own *Context) WithContext(ctx context.Context) *Context {
-	own.Request = own.Request.WithContext(ctx)
-	return own
-}
-
-// WithRequestHeader 设置请求头
-func (own *Context) WithRequestHeader(key, value string) *Context {
-	own.Request.Header.Set(key, value)
-	return own
-}
-
 /*************************************************** HTTP Response ****************************************************/
 
 // GetStartTime 获取上下文创建时间
@@ -225,15 +218,20 @@ func (own *Context) GetStatusCode() int {
 	return own.Response.GetStatusCode()
 }
 
-// WithStatusCode 设置响应状态码
-func (own *Context) WithStatusCode(code int) *Context {
-	own.Response.WriteHeader(code)
-	return own
+// GetResponseHeader 获取响应头字段信息
+func (own *Context) GetResponseHeader(key string) string {
+	return own.Response.Header().Get(key)
 }
 
 // WithResponseHeader 设置响应头
 func (own *Context) WithResponseHeader(key, value string) *Context {
 	own.Response.Header().Set(key, value)
+	return own
+}
+
+// WithStatusCode 设置响应状态码
+func (own *Context) WithStatusCode(code int) *Context {
+	own.Response.WriteHeader(code)
 	return own
 }
 
@@ -417,119 +415,4 @@ func (own *Context) ResponseSSE(sseMessages func(ctx context.Context) <-chan *ss
 			return nil
 		}
 	}
-}
-
-// ResponseUpgrade 发起 Websocket 响应
-func (own *Context) ResponseUpgrade(upgrade func(conn *websocket.Conn)) error {
-	header := own.Request.Header
-
-	// 校验请求头
-	switch {
-	// Connection 头必须为 upgrade
-	case !checkHeaderValues(header.Get("Connection"), "upgrade"):
-		own.ResponseError(http.StatusBadRequest, response.STATUS_400_BAD_REQUEST)
-		return fmt.Errorf("leego: context: ")
-
-	// Upgrade 头必须为 websocket
-	case !strings.EqualFold(header.Get("Upgrade"), "websocket"):
-		own.ResponseError(http.StatusBadRequest, response.STATUS_400_BAD_REQUEST)
-		return errFailToUpgrade
-
-	// Sec-WebSocket-Key 头必须为有效值
-	case own.GetHeader("Sec-WebSocket-Key") == "":
-		own.ResponseError(http.StatusBadRequest, response.STATUS_400_BAD_REQUEST)
-		return errUpgradeWithoutKey
-	}
-
-	// 手动控制连接
-	conn, reader, err := own.Response.Hijack()
-	if err != nil {
-		own.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
-		return err
-	}
-	defer func() { _ = conn.Close() }()
-
-	// 手动构建符合 WebSocket 规范的响应头
-	if err := handshakeWebSocket(reader, header); err != nil {
-		own.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
-		return err
-	}
-
-	// 移交连接处理
-	upgrade(websocket.NewConn(conn, reader))
-	return nil
-}
-
-// checkHeaderValues 检查某个 Header 中是否包含目标值
-func checkHeaderValues(values, target string) bool {
-	targets := strings.Split(strings.ToLower(values), ",")
-	for _, t := range targets {
-		if strings.TrimSpace(t) == target {
-			return true
-		}
-	}
-
-	return false
-}
-
-// handshakeWebSocket 处理 WebSocket 的握手响应
-func handshakeWebSocket(respWriter *bufio.ReadWriter, reqHeader http.Header) error {
-	// 构建响应头
-	headers := make(http.Header)
-	headers.Set("Upgrade", "websocket")
-	headers.Set("Connection", "Upgrade")
-	headers.Set("Sec-WebSocket-Accept", computeAcceptKey(reqHeader.Get("Sec-WebSocket-Key")))
-
-	// 处理子协议
-	//if clientProtocols := reqHeader.Get("Sec-WebSocket-Protocol"); clientProtocols != "" {
-	//	// 这里可以根据客户端发送的子协议选择一个，这里我们简单返回第一个
-	//	protocols := strings.Split(clientProtocols, ",")
-	//	if len(protocols) > 0 {
-	//		headers.Set("Sec-WebSocket-Protocol", strings.TrimSpace(protocols[0]))
-	//	}
-	//}
-
-	// 写入协议切换响应
-	if _, err := respWriter.WriteString("HTTP/1.1 101 Switching Protocols\r\n"); err != nil {
-		return err
-	}
-
-	// 写入头字段
-	for key, values := range headers {
-		for _, value := range values {
-			if _, err := respWriter.WriteString(key + ": " + value + "\r\n"); err != nil {
-				return err
-			}
-		}
-	}
-
-	// 结束头部分
-	if _, err := respWriter.WriteString("\r\n"); err != nil {
-		return err
-	}
-
-	return respWriter.Flush()
-}
-
-const _UPGRADE_ACCEPT_KEY = "258WAFA5-E914-47DA-95CA-C5AB0DC85B11"
-
-func computeAcceptKey(key string) string {
-	hash := sha1.New()
-	_, _ = io.WriteString(hash, key+_UPGRADE_ACCEPT_KEY)
-	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
-}
-
-// validateWebSocketOrigin 验证 Origin
-func (own *Context) validateWebSocketOrigin() error {
-	origin := own.Request.Header.Get("Origin")
-	if origin == "" {
-		return nil
-	}
-
-	// 自定义 Origin 验证逻辑
-	if own.engine != nil {
-		// 使用引擎的配置进行验证
-	}
-
-	return nil
 }

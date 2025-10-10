@@ -9,7 +9,9 @@ import (
 type Trie[T any] Node[T]
 
 // NewTrie 新建一个路由树
-func NewTrie[T any]() *Trie[T] { return &Trie[T]{} }
+func NewTrie[T any]() *Trie[T] {
+	return &Trie[T]{}
+}
 
 // Insert 插入路由
 func (own *Trie[T]) Insert(method, pattern string, route T) {

@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leego 服务管理系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+
+    <!-- 配置Tailwind主题 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        secondary: '#36CFC9',
+                        success: '#52C41A',
+                        warning: '#FAAD14',
+                        danger: '#FF4D4F',
+                        dark: '#1D2129',
+                        'gray-light': '#F2F3F5',
+                        'gray-medium': '#C9CDD4'
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                },
+            }
+        }
+    </script>
+
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .sidebar-item {
+                @apply flex items-center gap-3 px-4 py-3 text-gray-600 hover:bg-primary/10 hover:text-primary rounded-lg transition-all duration-200;
+            }
+            .sidebar-item.active {
+                @apply bg-primary/10 text-primary font-medium;
+            }
+            .card {
+                @apply bg-white rounded-xl shadow-sm border border-gray-100 p-5 transition-all duration-300 hover:shadow-md;
+            }
+            .stat-card {
+                @apply card flex flex-col gap-2;
+            }
+            .btn {
+                @apply px-4 py-2 rounded-lg font-medium transition-all duration-200;
+            }
+            .btn-primary {
+                @apply bg-primary text-white hover:bg-primary/90;
+            }
+            .btn-outline {
+                @apply border border-gray-200 hover:bg-gray-50;
+            }
+            .table-row-hover {
+                @apply hover:bg-gray-50 transition-colors;
+            }
+        }
+    </style>
+</head>
+<body class="font-inter bg-gray-50 text-dark min-h-screen flex flex-col">
+<!-- 顶部导航 -->
+<header class="bg-white border-b border-gray-100 sticky top-0 z-30">
+    <div class="container mx-auto px-4 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <button id="sidebar-toggle" class="lg:hidden text-gray-500 hover:text-primary">
+                <i class="fa fa-bars text-xl"></i>
+            </button>
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-primary rounded-md flex items-center justify-center text-white">
+                    <i class="fa fa-cubes"></i>
+                </div>
+                <h1 class="text-xl font-semibold">Leego Manager</h1>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+            <button class="text-gray-500 hover:text-primary relative">
+                <i class="fa fa-bell text-xl"></i>
+                <span class="absolute -top-1 -right-1 w-4 h-4 bg-danger rounded-full text-white text-xs flex items-center justify-center">2</span>
+            </button>
+            <div class="flex items-center gap-2">
+                <img src="https://picsum.photos/id/1005/200/200" alt="用户头像" class="w-8 h-8 rounded-full object-cover border border-gray-200">
+                <span class="hidden md:inline font-medium">管理员</span>
+            </div>
+        </div>
+    </div>
+</header>
+
+<div class="flex flex-1 overflow-hidden">
+    <!-- 侧边栏 -->
+    <aside id="sidebar" class="bg-white w-64 border-r border-gray-100 flex-shrink-0 hidden lg:block transition-all duration-300 overflow-y-auto">
+        <div class="p-4">
+            <div class="bg-gray-light rounded-lg p-3 mb-6">
+                <div class="text-sm text-gray-500 mb-1">当前服务</div>
+                <div class="font-medium" id="service-name">-</div>
+                <div class="text-xs text-success flex items-center mt-1">
+                    <i class="fa fa-circle mr-1"></i>
+                    <span>运行中</span>
+                </div>
+            </div>
+
+            <nav class="space-y-1">
+                <a href="#dashboard" class="sidebar-item active" data-page="dashboard">
+                    <i class="fa fa-dashboard w-5 text-center"></i>
+                    <span>仪表盘</span>
+                </a>
+                <a href="#apis" class="sidebar-item" data-page="apis">
+                    <i class="fa fa-exchange w-5 text-center"></i>
+                    <span>接口管理</span>
+                </a>
+                <a href="#metrics" class="sidebar-item" data-page="metrics">
+                    <i class="fa fa-bar-chart w-5 text-center"></i>
+                    <span>性能指标</span>
+                </a>
+                <a href="#system" class="sidebar-item" data-page="system">
+                    <i class="fa fa-cog w-5 text-center"></i>
+                    <span>系统设置</span>
+                </a>
+            </nav>
+        </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="flex-1 overflow-y-auto p-4 lg:p-6">
+        <!-- 仪表盘页面 -->
+        <div id="page-dashboard" class="page-content">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold">仪表盘</h2>
+                <p class="text-gray-500 mt-1">服务状态概览与关键指标</p>
+            </div>
+
+            <!-- 状态卡片 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="stat-card">
+                    <div class="text-gray-500 text-sm">总接口数</div>
+                    <div class="text-3xl font-bold" id="total-apis">0</div>
+                    <div class="text-success text-sm flex items-center mt-auto">
+                        <i class="fa fa-arrow-up mr-1"></i>
+                        <span>较昨日 +5</span>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="text-gray-500 text-sm">今日请求</div>
+                    <div class="text-3xl font-bold" id="today-requests">0</div>
+                    <div class="text-success text-sm flex items-center mt-auto">
+                        <i class="fa fa-arrow-up mr-1"></i>
+                        <span>较昨日 +12.5%</span>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="text-gray-500 text-sm">平均响应时间</div>
+                    <div class="text-3xl font-bold" id="avg-response">0ms</div>
+                    <div class="text-danger text-sm flex items-center mt-auto">
+                        <i class="fa fa-arrow-up mr-1"></i>
+                        <span>较昨日 +8ms</span>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="text-gray-500 text-sm">错误率</div>
+                    <div class="text-3xl font-bold" id="error-rate">0%</div>
+                    <div class="text-success text-sm flex items-center mt-auto">
+                        <i class="fa fa-arrow-down mr-1"></i>
+                        <span>较昨日 -0.2%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 图表区域 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="card">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-semibold">请求趋势</h3>
+                        <div class="flex gap-2">
+                            <button class="btn btn-outline text-sm px-3 py-1">今日</button>
+                            <button class="btn btn-outline text-sm px-3 py-1">本周</button>
+                            <button class="btn btn-outline text-sm px-3 py-1">本月</button>
+                        </div>
+                    </div>
+                    <div class="h-72">
+                        <canvas id="requests-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-semibold">状态码分布</h3>
+                        <button class="text-primary text-sm flex items-center">
+                            <span>详情</span>
+                            <i class="fa fa-angle-right ml-1"></i>
+                        </button>
+                    </div>
+                    <div class="h-72">
+                        <canvas id="status-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 最近请求 -->
+            <div class="card">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-semibold">最近请求</h3>
+                    <button class="btn btn-outline text-sm">查看全部</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                        <tr class="border-b border-gray-100">
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">时间</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">方法</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">路径</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">状态</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">耗时</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">IP</th>
+                        </tr>
+                        </thead>
+                        <tbody id="recent-requests">
+                        <!-- 数据将通过JS动态加载 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 接口管理页面 -->
+        <div id="page-apis" class="page-content hidden">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold">接口管理</h2>
+                <p class="text-gray-500 mt-1">所有注册的API接口列表</p>
+            </div>
+
+            <div class="card mb-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                    <div class="flex gap-2">
+                        <div class="relative">
+                            <input type="text" placeholder="搜索接口..." class="pl-10 pr-4 py-2 border border-gray-200 rounded-lg w-full md:w-64 focus:outline-none focus:ring-2 focus:ring-primary/30">
+                            <i class="fa fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                        </div>
+                        <select class="border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30">
+                            <option value="">所有方法</option>
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                            <option value="PUT">PUT</option>
+                            <option value="DELETE">DELETE</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary flex items-center justify-center gap-2">
+                        <i class="fa fa-download"></i>
+                        <span>导出接口列表</span>
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                        <tr class="border-b border-gray-100">
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">名称</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">方法</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">路径</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">调用次数</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">平均耗时</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">错误率</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">操作</th>
+                        </tr>
+                        </thead>
+                        <tbody id="apis-table-body">
+                        <!-- 数据将通过JS动态加载 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 性能指标页面 -->
+        <div id="page-metrics" class="page-content hidden">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold">性能指标</h2>
+                <p class="text-gray-500 mt-1">系统性能与接口响应分析</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="card">
+                    <h3 class="font-semibold mb-4">响应时间分布</h3>
+                    <div class="h-72">
+                        <canvas id="response-time-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 class="font-semibold mb-4">接口调用排行</h3>
+                    <div class="h-72">
+                        <canvas id="api-ranking-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 class="font-semibold mb-4">接口性能详情</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                        <tr class="border-b border-gray-100">
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">接口</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">方法</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">P50</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">P90</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">P99</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">最大耗时</th>
+                            <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">状态</th>
+                        </tr>
+                        </thead>
+                        <tbody id="performance-table-body">
+                        <!-- 数据将通过JS动态加载 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统设置页面 -->
+        <div id="page-system" class="page-content hidden">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold">系统设置</h2>
+                <p class="text-gray-500 mt-1">服务配置与管理选项</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2">
+                    <div class="card mb-6">
+                        <h3 class="font-semibold mb-4">服务信息</h3>
+                        <div class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm text-gray-500 mb-1">服务名称</label>
+                                    <div class="text-lg font-medium" id="system-service-name">-</div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-500 mb-1">启动时间</label>
+                                    <div class="text-lg font-medium" id="system-start-time">-</div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-500 mb-1">监听地址</label>
+                                    <div class="text-lg font-medium" id="system-listen-addr">-</div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-500 mb-1">框架版本</label>
+                                    <div class="text-lg font-medium">v1.0.0</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="font-semibold mb-4">服务器信息</h3>
+                        <div class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm text-gray-500 mb-1">操作系统</label>
+                                    <div class="text-lg font-medium" id="system-os">-</div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-500 mb-1">CPU核心数</label>
+                                    <div class="text-lg font-medium" id="system-cpu">-</div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-500 mb-1">内存使用</label>
+                                    <div class="text-lg font-medium" id="system-memory">-</div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-500 mb-1">Go版本</label>
+                                    <div class="text-lg font-medium" id="system-go-version">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="card mb-6">
+                        <h3 class="font-semibold mb-4">服务控制</h3>
+                        <div class="space-y-4">
+                            <button class="btn btn-primary w-full flex items-center justify-center gap-2">
+                                <i class="fa fa-refresh"></i>
+                                <span>重启服务</span>
+                            </button>
+                            <button class="btn btn-outline w-full flex items-center justify-center gap-2">
+                                <i class="fa fa-save"></i>
+                                <span>导出配置</span>
+                            </button>
+                            <button class="btn btn-outline w-full flex items-center justify-center gap-2 text-danger border-danger">
+                                <i class="fa fa-stop"></i>
+                                <span>停止服务</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="font-semibold mb-4">管理设置</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">自动刷新</label>
+                                <select class="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30">
+                                    <option value="0">关闭</option>
+                                    <option value="10">10秒</option>
+                                    <option value="30" selected>30秒</option>
+                                    <option value="60">1分钟</option>
+                                    <option value="300">5分钟</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">主题设置</label>
+                                <div class="flex gap-2">
+                                    <button class="flex-1 py-2 border border-gray-200 rounded-lg bg-white text-dark">亮色</button>
+                                    <button class="flex-1 py-2 border border-gray-200 rounded-lg bg-dark text-white">暗色</button>
+                                </div>
+                            </div>
+                            <button class="btn btn-outline w-full">保存设置</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+    // 页面切换功能
+    document.querySelectorAll('.sidebar-item').forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+
+            // 更新选中状态
+            document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+            this.classList.add('active');
+
+            // 显示对应页面
+            const pageId = `page-${this.dataset.page}`;
+            document.querySelectorAll('.page-content').forEach(page => {
+                page.classList.add('hidden');
+            });
+            document.getElementById(pageId).classList.remove('hidden');
+        });
+    });
+
+    // 移动端侧边栏切换
+    document.getElementById('sidebar-toggle').addEventListener('click', function() {
+        const sidebar = document.getElementById('sidebar');
+        sidebar.classList.toggle('hidden');
+        sidebar.classList.toggle('absolute');
+        sidebar.classList.toggle('inset-y-0');
+        sidebar.classList.toggle('left-0');
+        sidebar.classList.toggle('z-50');
+    });
+
+    // 模拟数据
+    const mockData = {
+        serviceName: "用户服务API",
+        totalApis: 24,
+        todayRequests: 1528,
+        avgResponse: "45ms",
+        errorRate: "1.2%",
+        startTime: "2023-06-15 08:30:45",
+        listenAddr: "0.0.0.0:8080",
+        os: "Linux 5.15.0-48-generic",
+        cpu: "8 核心",
+        memory: "2.4GB / 8GB",
+        goVersion: "go1.20.5",
+
+        recentRequests: [
+            { time: "14:32:15", method: "GET", path: "/api/users", status: 200, duration: "32ms", ip: "192.168.1.100" },
+            { time: "14:31:58", method: "POST", path: "/api/login", status: 200, duration: "45ms", ip: "192.168.1.101" },
+            { time: "14:31:42", method: "GET", path: "/api/products/123", status: 404, duration: "12ms", ip: "192.168.1.102" },
+            { time: "14:31:25", method: "PUT", path: "/api/users/456", status: 200, duration: "68ms", ip: "192.168.1.103" },
+            { time: "14:31:10", method: "DELETE", path: "/api/orders/789", status: 500, duration: "22ms", ip: "192.168.1.104" }
+        ],
+
+        apis: [
+            { name: "用户列表", method: "GET", path: "/api/users", calls: 1254, avg: "32ms", error: "0.5%" },
+            { name: "用户详情", method: "GET", path: "/api/users/:id", calls: 896, avg: "28ms", error: "1.2%" },
+            { name: "创建用户", method: "POST", path: "/api/users", calls: 324, avg: "56ms", error: "0.8%" },
+            { name: "更新用户", method: "PUT", path: "/api/users/:id", calls: 412, avg: "45ms", error: "1.5%" },
+            { name: "删除用户", method: "DELETE", path: "/api/users/:id", calls: 187, avg: "38ms", error: "2.1%" },
+            { name: "用户登录", method: "POST", path: "/api/login", calls: 956, avg: "62ms", error: "0.3%" },
+            { name: "产品列表", method: "GET", path: "/api/products", calls: 2154, avg: "42ms", error: "0.7%" },
+            { name: "产品详情", method: "GET", path: "/api/products/:id", calls: 1896, avg: "36ms", error: "1.0%" }
+        ],
+
+        performanceData: [
+            { api: "用户列表", method: "GET", p50: "28ms", p90: "45ms", p99: "82ms", max: "120ms", status: "正常" },
+            { api: "用户登录", method: "POST", p50: "55ms", p90: "78ms", p99: "130ms", max: "210ms", status: "正常" },
+            { api: "产品列表", method: "GET", p50: "38ms", p90: "62ms", p99: "105ms", max: "150ms", status: "需优化" },
+            { api: "订单创建", method: "POST", p50: "85ms", p90: "130ms", p99: "210ms", max: "320ms", status: "需优化" }
+        ]
+    };
+
+    // 填充页面数据
+    function populateData() {
+        document.getElementById('service-name').textContent = mockData.serviceName;
+        document.getElementById('total-apis').textContent = mockData.totalApis;
+        document.getElementById('today-requests').textContent = mockData.todayRequests;
+        document.getElementById('avg-response').textContent = mockData.avgResponse;
+        document.getElementById('error-rate').textContent = mockData.errorRate;
+
+        // 系统信息
+        document.getElementById('system-service-name').textContent = mockData.serviceName;
+        document.getElementById('system-start-time').textContent = mockData.startTime;
+        document.getElementById('system-listen-addr').textContent = mockData.listenAddr;
+        document.getElementById('system-os').textContent = mockData.os;
+        document.getElementById('system-cpu').textContent = mockData.cpu;
+        document.getElementById('system-memory').textContent = mockData.memory;
+        document.getElementById('system-go-version').textContent = mockData.goVersion;
+
+        // 最近请求表格
+        const requestsBody = document.getElementById('recent-requests');
+        mockData.recentRequests.forEach(req => {
+            const row = document.createElement('tr');
+            row.className = 'border-b border-gray-50 table-row-hover';
+
+            // 状态码样式
+            let statusClass = 'bg-success/10 text-success';
+            if (req.status >= 500) statusClass = 'bg-danger/10 text-danger';
+            else if (req.status >= 400) statusClass = 'bg-warning/10 text-warning';
+
+            row.innerHTML = `
+          <td class="py-3 px-2">${req.time}</td>
+          <td class="py-3 px-2"><span class="px-2 py-1 rounded text-xs font-medium bg-primary/10 text-primary">${req.method}</span></td>
+          <td class="py-3 px-2 font-medium">${req.path}</td>
+          <td class="py-3 px-2"><span class="px-2 py-1 rounded text-xs font-medium ${statusClass}">${req.status}</span></td>
+          <td class="py-3 px-2">${req.duration}</td>
+          <td class="py-3 px-2">${req.ip}</td>
+        `;
+            requestsBody.appendChild(row);
+        });
+
+        // 接口列表表格
+        const apisBody = document.getElementById('apis-table-body');
+        mockData.apis.forEach(api => {
+            const row = document.createElement('tr');
+            row.className = 'border-b border-gray-50 table-row-hover';
+
+            row.innerHTML = `
+          <td class="py-3 px-2 font-medium">${api.name}</td>
+          <td class="py-3 px-2"><span class="px-2 py-1 rounded text-xs font-medium bg-primary/10 text-primary">${api.method}</span></td>
+          <td class="py-3 px-2">${api.path}</td>
+          <td class="py-3 px-2">${api.calls}</td>
+          <td class="py-3 px-2">${api.avg}</td>
+          <td class="py-3 px-2">
+            <span class="px-2 py-1 rounded text-xs font-medium ${parseFloat(api.error) > 1 ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'}">
+              ${api.error}
+            </span>
+          </td>
+          <td class="py-3 px-2">
+            <div class="flex gap-2">
+              <button class="text-primary hover:text-primary/80"><i class="fa fa-bar-chart"></i></button>
+              <button class="text-gray-500 hover:text-gray-700"><i class="fa fa-cog"></i></button>
+            </div>
+          </td>
+        `;
+            apisBody.appendChild(row);
+        });
+
+        // 性能表格
+        const perfBody = document.getElementById('performance-table-body');
+        mockData.performanceData.forEach(item => {
+            const row = document.createElement('tr');
+            row.className = 'border-b border-gray-50 table-row-hover';
+
+            let statusClass = 'bg-success/10 text-success';
+            if (item.status === '需优化') statusClass = 'bg-warning/10 text-warning';
+
+            row.innerHTML = `
+          <td class="py-3 px-2 font-medium">${item.api}</td>
+          <td class="py-3 px-2"><span class="px-2 py-1 rounded text-xs font-medium bg-primary/10 text-primary">${item.method}</span></td>
+          <td class="py-3 px-2">${item.p50}</td>
+          <td class="py-3 px-2">${item.p90}</td>
+          <td class="py-3 px-2">${item.p99}</td>
+          <td class="py-3 px-2">${item.max}</td>
+          <td class="py-3 px-2"><span class="px-2 py-1 rounded text-xs font-medium ${statusClass}">${item.status}</span></td>
+        `;
+            perfBody.appendChild(row);
+        });
+
+        // 初始化图表
+        initCharts();
+    }
+
+    // 初始化图表
+    function initCharts() {
+        // 请求趋势图表
+        const requestsCtx = document.getElementById('requests-chart').getContext('2d');
+        new Chart(requestsCtx, {
+            type: 'line',
+            data: {
+                labels: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
+                datasets: [{
+                    label: '请求数',
+                    data: [45, 30, 25, 80, 150, 180, 120, 75],
+                    borderColor: '#165DFF',
+                    backgroundColor: 'rgba(22, 93, 255, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+
+        // 状态码分布图表
+        const statusCtx = document.getElementById('status-chart').getContext('2d');
+        new Chart(statusCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['200', '400', '404', '500'],
+                datasets: [{
+                    data: [85, 8, 5, 2],
+                    backgroundColor: ['#52C41A', '#FAAD14', '#165DFF', '#FF4D4F'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '70%'
+            }
+        });
+
+        // 响应时间图表
+        const responseCtx = document.getElementById('response-time-chart').getContext('2d');
+        new Chart(responseCtx, {
+            type: 'bar',
+            data: {
+                labels: ['用户API', '产品API', '订单API', '支付API', '消息API'],
+                datasets: [{
+                    label: '平均响应时间(ms)',
+                    data: [35, 42, 68, 95, 28],
+                    backgroundColor: '#165DFF'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+
+        // 接口调用排行图表
+        const rankingCtx = document.getElementById('api-ranking-chart').getContext('2d');
+        new Chart(rankingCtx, {
+            type: 'horizontalBar',
+            data: {
+                labels: ['产品列表', '用户列表', '首页数据', '用户登录', '订单查询'],
+                datasets: [{
+                    label: '调用次数',
+                    data: [2154, 1896, 1542, 956, 875],
+                    backgroundColor: '#36CFC9'
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true }
+                }
+            }
+        });
+    }
+
+    // 页面加载完成后初始化
+    document.addEventListener('DOMContentLoaded', populateData);
+</script>
+</body>
+</html>
