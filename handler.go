@@ -3,9 +3,8 @@ package leego
 import (
 	"sync"
 	"sync/atomic"
-	"time"
 
-	"gitee.com/leminewx/leego/middleware/metric"
+	"gitee.com/leminewx/leego/middleware/monitor"
 	"gitee.com/leminewx/leego/trie"
 )
 
@@ -21,41 +20,40 @@ type (
 type handler struct {
 	group *group
 
-	enable      int32             // 使能标志
-	handle      HandleFunc        // 处理函数
-	collector   *metric.Collector // 数据收集器
-	paramNames  []string          // 模式中的参数名列表
-	middlewares []MiddlewareFunc  // 中间件函数
+	handle      HandleFunc       // 处理函数
+	monitor     *monitor.Monitor // 监控器
+	paramNames  []string         // 模式中的参数名列表
+	middlewares []MiddlewareFunc // 中间件函数
 
 	initialized      bool // 标记是否已经初始化
 	initializedMutex sync.Mutex
 }
 
 // newHandler 新建一个处理器
-func newHandler(group *group, name, method, pattern string, handle HandleFunc) *handler {
+func newHandler(group *group, method, pattern string, handle HandleFunc, tags ...string) *handler {
 	return &handler{
 		group:      group,
-		enable:     1,
 		handle:     handle,
-		collector:  metric.NewCollector(name, method, pattern),
+		monitor:    monitor.New(method, pattern, tags...),
 		paramNames: extractSegmentNames(trie.SplitPattern(pattern)),
 	}
 }
 
-// WithEnable 启用或禁用处理器
-func (own *handler) WithEnable(enable bool) *handler {
-	if enable {
-		atomic.StoreInt32(&own.enable, 1)
-		return own
-	}
+// Enable 启用
+func (own *handler) Enable() *handler {
+	atomic.StoreInt32(&own.monitor.Enabled, 1)
+	return own
+}
 
-	atomic.StoreInt32(&own.enable, 0)
+// Disnable 禁用
+func (own *handler) Disnable() *handler {
+	atomic.StoreInt32(&own.monitor.Enabled, 0)
 	return own
 }
 
 // IsEnable 检查处理器是否启用
 func (own *handler) IsEnable() bool {
-	return atomic.LoadInt32(&own.enable) == 1
+	return atomic.LoadInt32(&own.monitor.Enabled) == 1
 }
 
 // Handle 请求处理函数
@@ -65,10 +63,8 @@ func (own *handler) Handle(ctx *Context) {
 		own.initialize()
 	}
 
-	// 调用处理函数，并收集指标数据
-	own.collector.Increase()
+	// 调用处理函数
 	own.handle(ctx)
-	own.collector.Decrease(ctx.GetStatusCode(), time.Since(ctx.GetStartTime()))
 }
 
 // initialize （在服务前）初始化处理器

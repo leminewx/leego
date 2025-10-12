@@ -60,10 +60,10 @@ func (own *group) getAllMiddlewares(middlewares *[]MiddlewareFunc) {
 SetStatics 设置路由组的静态文件服务接口
   - relativePath：URI 中的相对路径
   - rootPath：静态文件服务的根目录
-  - cache：是否缓存（最大缓存1小时）
-  - name：服务接口的名称
+  - cache：是否允许前端缓存（最大缓存1小时）
+  - tags：第1个参数为路由名称，后续参数为路由标签
 */
-func (own *group) SetStatics(relativePath, rootPath string, cache bool, name ...string) (err error) {
+func (own *group) SetStatics(relativePath, rootPath string, cache bool, tags ...string) (err error) {
 	// 检查是否已经设置过静态文件服务
 	if own.hasStatic {
 		return fmt.Errorf("leego: static: exists a has a static file service in group '%s'", own.prefix)
@@ -86,8 +86,8 @@ func (own *group) SetStatics(relativePath, rootPath string, cache bool, name ...
 	handler := own.createStaticHandler(path.Join(own.prefix, relativePath), http.Dir(rootPath), cache)
 
 	wildcardName := "*" + trie.WILDCARD_DEFAULT_NAME
-	own.addRoute(http.MethodGet, path.Join(relativePath, wildcardName), rootPath, handler, name...)
-	own.addRoute(http.MethodHead, path.Join(relativePath, wildcardName), rootPath, handler, name...)
+	own.addRoute(http.MethodGet, path.Join(relativePath, wildcardName), rootPath, handler, tags...)
+	own.addRoute(http.MethodHead, path.Join(relativePath, wildcardName), rootPath, handler, tags...)
 	own.hasStatic = true
 
 	return
@@ -139,42 +139,42 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 }
 
 // GET 添加一个处理 GET 方法的处理器
-func (own *group) GET(pattern string, handle HandleFunc, name ...string) {
-	own.addRoute(http.MethodGet, pattern, "", handle, name...)
+func (own *group) GET(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodGet, pattern, "", handle, tags...)
 }
 
 // PUT 添加一个处理 PUT 方法的处理器
-func (own *group) PUT(pattern string, handle HandleFunc, name ...string) {
-	own.addRoute(http.MethodPut, pattern, "", handle, name...)
+func (own *group) PUT(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodPut, pattern, "", handle, tags...)
 }
 
 // HEAD 添加一个处理 HEAD 方法的处理器
-func (own *group) HEAD(pattern string, handle HandleFunc, name ...string) {
-	own.addRoute(http.MethodHead, pattern, "", handle, name...)
+func (own *group) HEAD(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodHead, pattern, "", handle, tags...)
 }
 
 // POST 添加一个处理 POST 方法的处理器
-func (own *group) POST(pattern string, handle HandleFunc, name ...string) {
-	own.addRoute(http.MethodPost, pattern, "", handle, name...)
+func (own *group) POST(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodPost, pattern, "", handle, tags...)
 }
 
 // PATCH 添加一个处理 PATCH 方法的处理器
-func (own *group) PATCH(pattern string, handle HandleFunc, name ...string) {
-	own.addRoute(http.MethodPatch, pattern, "", handle, name...)
+func (own *group) PATCH(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodPatch, pattern, "", handle, tags...)
 }
 
 // DELETE 添加一个处理 DELETE 方法的处理器
-func (own *group) DELETE(pattern string, handle HandleFunc, name ...string) {
-	own.addRoute(http.MethodDelete, pattern, "", handle, name...)
+func (own *group) DELETE(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodDelete, pattern, "", handle, tags...)
 }
 
 // OPTIONS 添加一个处理 OPTIONS 方法的处理器
-func (own *group) OPTIONS(pattern string, handle HandleFunc, name ...string) {
-	own.addRoute(http.MethodOptions, pattern, "", handle, name...)
+func (own *group) OPTIONS(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodOptions, pattern, "", handle, tags...)
 }
 
 // addRoute 添加处理器到当前路由组
-func (own *group) addRoute(method, pattern, desc string, handle HandleFunc, name ...string) {
+func (own *group) addRoute(method, pattern, desc string, handle HandleFunc, tags ...string) {
 	// 规范化路径
 	pattern = path.Join(own.prefix, normalizePath(pattern))
 	pattern = strings.ReplaceAll(pattern, "//", "/") // 移除可能出现的双斜杠
@@ -187,16 +187,10 @@ func (own *group) addRoute(method, pattern, desc string, handle HandleFunc, name
 	}
 
 	// 创建处理器
-	var handler *handler
-	if len(name) > 0 && name[0] != "" {
-		handler = newHandler(own, name[0], method, pattern, handle)
-	} else {
-		handler = newHandler(own, "", method, pattern, handle)
-	}
-
-	// 生成路由
+	handler := newHandler(own, method, pattern, handle, tags...)
+	// 写入到路由器
 	own.engine.router.Insert(method, pattern, handler)
-	// 关联到引擎
+	// 关联到服务引擎
 	own.engine.handlers[key] = handler
 
 	// 输出信息

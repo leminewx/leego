@@ -10,14 +10,28 @@ import (
 	"gitee.com/leminewx/leego/response"
 )
 
-// Recover 异常恢复
-func Recover() leego.MiddlewareFunc {
+/*
+Recover 当请求触发 panic 时恢复正常
+  - notify：异步通知，可设为 nil
+*/
+func Recover(notify func(req *http.Request, traceback string)) leego.MiddlewareFunc {
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
 			// 处理异常
 			defer func() {
 				if err := recover(); err != nil {
-					fmt.Printf("\033[45m\033[30m%s\033[0m\n\n", trace(fmt.Sprintf("%v", err)))
+					// 获取错误信息
+					msg := trace(fmt.Sprintf("%v", err))
+
+					// 打印错误信息
+					fmt.Printf("\033[45m\033[30m%s\033[0m\n\n", msg)
+
+					// 异步通知
+					if notify != nil {
+						go notify(ctx.Request, msg)
+					}
+
+					// 若该请求还未处理，则响应错误
 					if ctx.GetStatusCode() == 0 {
 						ctx.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
 					}
@@ -37,11 +51,12 @@ func trace(message string) string {
 
 	// 封装调用信息
 	var builder bytes.Buffer
-	builder.WriteString(message + "\nTraceback:")
+	builder.WriteString(message)
+	builder.WriteString("\nTraceback:")
 	for _, pc := range pcs[:n] {
 		fn := runtime.FuncForPC(pc)
 		file, line := fn.FileLine(pc)
-		builder.WriteString(fmt.Sprintf("\n\t%s:%d", file, line))
+		builder.WriteString(fmt.Sprintf("\n    %s:%d", file, line))
 	}
 
 	return builder.String()

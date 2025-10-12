@@ -1,7 +1,6 @@
 package trie
 
 import (
-	"net/http"
 	"strings"
 )
 
@@ -65,12 +64,4 @@ func (own *Node[T]) GetPriority() int {
 	}
 
 	return own.priority
-}
-
-// GetParam 从请求中获取参数值
-func GetParam(req *http.Request, key string) string {
-	if value := req.Context().Value(key); value != nil {
-		return value.(string)
-	}
-	return ""
 }

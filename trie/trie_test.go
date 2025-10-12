@@ -5,6 +5,32 @@ import (
 	"testing"
 )
 
+func TestTrie(t *testing.T) {
+	trie := NewTrie[string]()
+	trie.Insert("GET", "/", "root")
+	trie.Insert("GET", "/users", "users")
+	trie.Insert("PUT", "/users/:id", "user_detail")
+	trie.Insert("GET", "/users/:id/posts", "user_posts")
+	trie.Insert("GET", "/files/*", "file_server")
+	trie.Insert("GET", "/api/v1/:service/*", "api_handler")
+
+	for _, pattern := range []string{
+		"/",                           // 静态路径
+		"/users",                      // 静态路径
+		"/users/testuer",              // 参数路径
+		"/users/testuser/posts",       // 参数路径
+		"/files/*",                    // 通配符路径
+		"/api/v1/tasks/tid1234567890", // 参数路径
+	} {
+		route, params, found := trie.Search(pattern)
+		if !found {
+			t.Logf("not found %s", pattern)
+		} else {
+			t.Logf("found %s %v", route, params)
+		}
+	}
+}
+
 // TestTrieInsertAndSearch 测试插入和搜索功能
 func TestTrieInsertAndSearch(t *testing.T) {
 	trie := NewTrie[string]()

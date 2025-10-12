@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"gitee.com/leminewx/leego/middleware/metric"
+	"gitee.com/leminewx/leego/middleware/monitor"
 )
 
 const (
@@ -55,14 +55,14 @@ func (own *Engine) GetServiceName() string {
 	return own.name
 }
 
-// GetCollectors 获取接口的指标采集数据
-func (own *Engine) GetCollectors() []*metric.Collector {
-	collectors := make([]*metric.Collector, 0, len(own.handlers))
+// GetAllRouteMonitors 获取所有路由的监控器
+func (own *Engine) GetAllRouteMonitors() []*monitor.Monitor {
+	monitors := make([]*monitor.Monitor, 0, len(own.handlers))
 	for _, handler := range own.handlers {
-		collectors = append(collectors, handler.collector.Clone())
+		monitors = append(monitors, handler.monitor.Clone())
 	}
 
-	return collectors
+	return monitors
 }
 
 // WithURLBlacklist 添加 URL 黑名单
@@ -71,11 +71,24 @@ func (own *Engine) WithURLBlacklist(urls ...string) *Engine {
 	return own
 }
 
-// WithEnableHandler 启用或禁用指定路由处理器
-func (own *Engine) WithEnableHandler(method, path string, enable bool) *Engine {
+// EnableRoute 启用指定路由
+func (own *Engine) EnableRoute(method, path string) *Engine {
 	key := method + " " + path
 	if handler, ok := own.handlers[key]; ok {
-		handler.WithEnable(enable)
+		handler.Enable()
+	}
+
+	return own
+}
+
+/*
+DisenableRoute 禁用指定路由
+  - 禁用指定路由后，也不会调用该路由上的任一中间件，且响应状态码为 423
+*/
+func (own *Engine) DisenableRoute(method, path string) *Engine {
+	key := method + " " + path
+	if handler, ok := own.handlers[key]; ok {
+		handler.Disnable()
 	}
 
 	return own

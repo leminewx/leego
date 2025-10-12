@@ -1,12 +1,17 @@
 package middleware
 
 import (
+	"net/http"
+
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/response"
-	"net/http"
 )
 
-// Limit 请求限流（最好在 Recover 中间件之前调用）
+/*
+Limit 请求限流
+  - limit：令牌桶大小
+  - 最好在 Recover 中间件之前调用，以防请求 panic 时，令牌未释放
+*/
 func Limit(limit uint) leego.MiddlewareFunc {
 	// 创建令牌桶，使用缓冲通道实现
 	tokens := make(chan struct{}, limit)

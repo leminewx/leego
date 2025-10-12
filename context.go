@@ -151,7 +151,7 @@ func (own *Context) GetPostFormValue(key string) string {
 // GetFormFile 获取上传的文件信息
 func (own *Context) GetFormFile(filename string) (multipart.File, *multipart.FileHeader, error) {
 	if own.Request.MultipartForm == nil {
-		_ = own.Request.ParseMultipartForm(maxMultipartMemory)
+		_ = own.Request.ParseMultipartForm(atomic.LoadInt64(&maxMultipartMemory))
 	}
 
 	return own.Request.FormFile(filename)
@@ -160,7 +160,7 @@ func (own *Context) GetFormFile(filename string) (multipart.File, *multipart.Fil
 // GetMultipartFormValue 仅支持查询 multipart/form-data 格式的 body
 func (own *Context) GetMultipartFormValue(key string) string {
 	if own.Request.MultipartForm == nil {
-		_ = own.Request.ParseMultipartForm(maxMultipartMemory)
+		_ = own.Request.ParseMultipartForm(atomic.LoadInt64(&maxMultipartMemory))
 	}
 
 	if params := own.Request.MultipartForm.Value[key]; len(params) > 0 {

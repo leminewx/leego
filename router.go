@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/trie"
@@ -81,15 +82,20 @@ func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// 创建上下文，采集数据
+	handler.monitor.Increase()
+	ctx := newContext(own.engine, resp, req, params)
+
 	// 检查处理器是否禁用
 	if !handler.IsEnable() {
-		http.Error(resp, response.STATUS_423_LOCKED, http.StatusLocked)
+		ctx.ResponseError(http.StatusLocked, response.STATUS_423_LOCKED)
+		handler.monitor.Decrease(http.StatusLocked, time.Since(ctx.GetStartTime()))
 		return
 	}
 
-	// 创建上下文，处理路由
-	ctx := newContext(own.engine, resp, req, params)
+	// 处理请求，采集数据
 	handler.Handle(ctx)
+	handler.monitor.Decrease(ctx.GetStatusCode(), time.Since(ctx.GetStartTime()))
 }
 
 // extractSegmentNames 从路径中提取所有的参数名称（:param 或 *param 或 *）

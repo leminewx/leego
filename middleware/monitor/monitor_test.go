@@ -1,4 +1,4 @@
-package metric
+package monitor
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestCollector(t *testing.T) {
-	c := NewCollector("获取用户信息", http.MethodGet, "/api/v1/users/:id")
+	c := New(http.MethodGet, "/api/v1/users/:id", "获取用户信息", "tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9", "tag10", "tag11")
 
 	var wg sync.WaitGroup
 	wg.Go(func() {
@@ -47,7 +47,7 @@ func TestCollector(t *testing.T) {
 // cpu: Intel(R) Core(TM) i5-14600KF 						20    	24746859	        49.05 ns/op	       0 B/op	       0 allocs/op
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		17951575	        64.34 ns/op	       0 B/op	       0 allocs/op
 func BenchmarkCollector(b *testing.B) {
-	c := NewCollector("获取用户信息", http.MethodGet, "/api/v1/users/:id")
+	c := New(http.MethodGet, "/api/v1/users/:id", "获取用户信息")
 
 	b.ResetTimer()
 	b.ReportAllocs()

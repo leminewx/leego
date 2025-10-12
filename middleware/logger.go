@@ -19,8 +19,11 @@ const (
 	_FORMAT_5XX = "\033[35mERROR\033[0m -  %s  -  \"%s  %s  %v\"  |\033[45m\033[30m %d \033[0m|\033[45m\033[30m %v \033[0m|\n" // 红色
 )
 
-// Log 打印请求日志
-func Log() leego.MiddlewareFunc {
+/*
+Log 打印请求日志
+  - record：用于记录日志信息，可设为 nil
+*/
+func Log(record func(ctx *leego.Context)) leego.MiddlewareFunc {
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
 			// 处理请求
@@ -51,6 +54,11 @@ func Log() leego.MiddlewareFunc {
 			// 500 ~
 			default:
 				fmt.Printf(_FORMAT_5XX, start.Format(_FORMAT_DATETIME), ctx.GetProtocol(), ctx.GetMethod(), ctx.GetPath(), status, time.Since(start))
+			}
+
+			// 记录请求响应信息
+			if record != nil {
+				record(ctx)
 			}
 		}
 	}

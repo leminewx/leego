@@ -1,4 +1,4 @@
-package metric
+package monitor
 
 import (
 	"sync"
@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// Response 定义响应指标的数据结构
-type Response struct {
+// response 定义响应指标的数据结构
+type response struct {
 	Code      int    `json:"code" xml:"code"`             // 响应状态码
 	Total     uint64 `json:"total" xml:"total"`           // 总处理数量
 	MaxCost   uint64 `json:"max_cost" xml:"max_cost"`     // 响应最大耗时（单位：微秒）
@@ -17,13 +17,8 @@ type Response struct {
 	lock sync.RWMutex
 }
 
-// NewResponse 新建一个响应指标
-func NewResponse(code int) *Response {
-	return &Response{Code: code}
-}
-
 // Decrease 响应时调用
-func (own *Response) Decrease(cost time.Duration) {
+func (own *response) Decrease(cost time.Duration) {
 	// 完成响应
 	atomic.AddUint64(&own.Total, 1)
 
@@ -43,8 +38,8 @@ func (own *Response) Decrease(cost time.Duration) {
 }
 
 // Clone 克隆一个响应指标
-func (own *Response) Clone() *Response {
-	return &Response{
+func (own *response) Clone() *response {
+	return &response{
 		Code:      own.Code,
 		Total:     atomic.LoadUint64(&own.Total),
 		MaxCost:   atomic.LoadUint64(&own.MaxCost),
