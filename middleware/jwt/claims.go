@@ -1,25 +1,44 @@
 package jwt
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 )
 
-var _ Claims = NewClaims()
+var (
+	errTokenExpired      = errors.New("leego: jwt: token is expired")
+	errTokenNotValidYet  = errors.New("leego: jwt: token is not valid yet")
+	errTokenIssuedFuture = errors.New("leego: jwt: token issued in the future")
+)
 
-// Claims 定义 JWT 载荷的接口
+// Claims 定义验证 JWT 令牌的接口类型
 type Claims interface {
+	Validate() error
+}
+
+var _ Claims = &StandardClaims{}
+
+// StandardClaims 定义 JWT 标准声明的数据结构
+type StandardClaims struct {
 	/*
-		WithJwtId 设置令牌的受众（jti）
+		Id 令牌的唯一标识（jti）
 
 		使用：
 		  - 重放攻击防护的核心
 		  - 每个令牌的唯一标识符
 		  - 配合服务端存储实现一次性使用检查
+		  - 若你在服务端维护了一个已使用的 JWT ID 列表（或者使用黑名单/白名单），那你需要验证这个 jti 是否已经被使用过。如果使用过，则拒绝该令牌；如果没有使用过，则将其记录，并在有效期内不再接受相同的 jti
+
+		注意：
+		  - 使用jti防重放会增加服务端的存储和检查开销，因此需要根据安全需求权衡
 	*/
-	WithJwtId(aud string) Claims
+	Id string `json:"jti,omitempty"`
 
 	/*
-		WithIssuer 设置令牌的签发者（iss）
+		Issuer 令牌的签发者（iss）
 
 		使用：
 		  - 用于在多租户或分布式系统中识别令牌的签发源
@@ -30,19 +49,61 @@ type Claims interface {
 		  - 严格匹配：验证时应进行精确字符串匹配，包括协议和路径
 		  - 防止混淆：避免使用过于简单的标识符，如 "app"、"server"
 	*/
-	WithIssuer(iss string) Claims
+	Issuer string `json:"iss,omitempty"`
 
 	/*
-		WithIssuedAt 设置令牌的签发时间（idt）
+		Subject 令牌的主题（sub）
+
+		使用：
+		  - 主题标识符应该是持久、不可变的
+		  - 一旦确定，在整个系统生命周期内不应更改
+		  - sub 通常是可选验证的，因为通常我们通过其他方式（如数据库）来验证用户的存在和状态
+
+		注意：
+		  - 不要使用易变信息：如邮箱、用户名，这些可能改变
+		  - 保持唯一性：在整个用户池中必须唯一
+		  - 隐私考虑：避免使用有意义的标识符（如身份证号）
+
+		示例：
+			// 推荐格式
+				"sub": "user_12345"                                // 带前缀的ID
+				"sub": "auth0|5e7a8b9c0d1e2f3a4b5c6d7e"            // 提供商格式
+				"sub": "uuid:550e8400-e29b-41d4-a716-446655440000" // UUID格式
+	*/
+	Subject string `json:"sub,omitempty"`
+
+	/*
+		Audiences 令牌的受众（aud）
+
+		使用：
+		  - 指定令牌的合法消费者
+		  - 可以是单个值或数组，表示令牌可被多个服务使用
+		  - 每个服务在验证 JWT 时，都必须检查 aud 是否包含自己（即服务的标识）。如果令牌的受众不包含当前服务，就必须拒绝该令牌
+
+		示例：
+			// 单一服务
+				"aud": "https://api.example.com"
+
+			// 微服务架构 - 多个受众
+				"aud": [
+					"https://api.userservice.com",
+					"https://api.orderservice.com",
+					"https://api.notificationservice.com"
+				]
+	*/
+	Audiences []string `json:"aud,omitempty"`
+
+	/*
+		IssuedAt 令牌的签发时间（idt）
 
 		使用：
 		  - 用于计算令牌年龄和检测异常
 		  - 辅助实现令牌撤销列表
 	*/
-	WithIssuedAt(iat int64) Claims
+	IssuedAt int64 `json:"iat,omitempty"`
 
 	/*
-		WithNotBefore 设置令牌的生效时间（nbf）
+		NotBefore 令牌的生效时间（nbf）
 
 		使用：
 		  - 提供令牌激活的时间控制
@@ -63,10 +124,10 @@ type Claims interface {
 				"sub": "premium_user_456",
 				"access": "early_bird"
 	*/
-	WithNotBefore(nbf int64) Claims
+	NotBefore int64 `json:"nbf,omitempty"`
 
 	/*
-		WithExpiration 设置令牌的过期时间（exp）
+		ExpiresAt 令牌的过期时间（exp）
 
 		使用：
 		  - 使用 Unix 时间戳（秒级，不是毫秒）
@@ -86,147 +147,47 @@ type Claims interface {
 				"sub": "user_123",
 				"purpose": "refresh"
 	*/
-	WithExpiration(exp int64) Claims
-
-	/*
-		WithSubject 设置令牌的主题（sub）
-
-		使用：
-		  - 主题标识符应该是持久、不可变的
-		  - 一旦确定，在整个系统生命周期内不应更改
-
-		注意：
-		  - 不要使用易变信息：如邮箱、用户名，这些可能改变
-		  - 保持唯一性：在整个用户池中必须唯一
-		  - 隐私考虑：避免使用有意义的标识符（如身份证号）
-
-		示例：
-			// 推荐格式
-				"sub": "user_12345"                                // 带前缀的ID
-				"sub": "auth0|5e7a8b9c0d1e2f3a4b5c6d7e"            // 提供商格式
-				"sub": "uuid:550e8400-e29b-41d4-a716-446655440000" // UUID格式
-	*/
-	WithSubject(sub string) Claims
-
-	/*
-		WithAudience 设置令牌的受众（aud）
-
-		使用：
-		  - 指定令牌的合法消费者
-		  - 可以是单个值或数组，表示令牌可被多个服务使用
-
-		示例：
-			// 单一服务
-				"aud": "https://api.example.com"
-
-			// 微服务架构 - 多个受众
-				"aud": [
-					"https://api.userservice.com",
-					"https://api.orderservice.com",
-					"https://api.notificationservice.com"
-				]
-	*/
-	WithAudience(aud string) Claims
-
-	// Get 获取指定字段
-	Get(key string) (any, bool)
-	// With 添加自定义字段
-	With(key string, value any) Claims
-	// Delete 删除指定字段
-	Delete(key string)
-	// Validate 校验令牌是否有效
-	Validate() error
+	ExpiresAt int64 `json:"exp,omitempty"`
 }
 
-// claims 定义 JWT Claims 的数据结构
-type claims map[string]any
-
-// NewClaims 新建一个 JWT Claims
-func NewClaims() claims { return make(claims) }
-
-// WithNotBefore 设置令牌的生效时间，生效之前不可用
-func (own claims) WithNotBefore(nbf int64) Claims {
-	own["nbf"] = nbf
-	return own
-}
-
-// WithExpiration 设置令牌的过期时间，过期之后将失效
-func (own claims) WithExpiration(exp int64) Claims {
-	own["exp"] = exp
-	return own
-}
-
-// WithIssuedAt 设置令牌的签发时间
-func (own claims) WithIssuedAt(iat int64) Claims {
-	own["iat"] = iat
-	return own
-}
-
-// WithIssuer 设置令牌的签发者
-func (own claims) WithIssuer(iss string) Claims {
-	own["iss"] = iss
-	return own
-}
-
-// WithSubject 设置令牌的主体，用来表示该令牌所代表的主要对象，通常是唯一标识符
-func (own claims) WithSubject(sub string) Claims {
-	own["sub"] = sub
-	return own
-}
-
-// WithAudience 设置令牌的受众，通常是一个服务或应用程序的标识符
-func (own claims) WithAudience(aud string) Claims {
-	own["aud"] = aud
-	return own
-}
-
-// With 添加自定义字段
-func (own claims) With(key string, value any) Claims {
-	if key != "iat" {
-		own[key] = value
+func (own *StandardClaims) Encode() (string, error) {
+	bytes, err := json.Marshal(own)
+	if err != nil {
+		return "", fmt.Errorf("leego: jwt: failed to marshal standard claims: %v", err)
 	}
 
-	return own
+	return EncodeBase64(bytes), nil
 }
 
-// Get 获取指定字段
-func (own claims) Get(key string) (any, bool) {
-	val, ok := own[key]
-	return val, ok
-}
-
-// Delete 删除指定字段
-func (own claims) Delete(key string) {
-	delete(own, key)
-}
-
-// Validate 验证令牌是否有效
-func (own claims) Validate() error {
+// Validate 验证标准声明中的所有时间字段
+func (own *StandardClaims) Validate() error {
 	now := time.Now().Unix()
 
-	// 检查是否过期
-	if exp, ok := own["exp"]; ok {
-		if e, ok := exp.(float64); ok {
-			if int64(e) < now {
-				return errExpiredToken
-			}
-		} else {
-			return errInvalidToken
-		}
-	} else {
-		return errInvalidToken
+	// 检查过期时间
+	if own.ExpiresAt > 0 && own.ExpiresAt <= now {
+		return errTokenExpired
 	}
 
-	// 检查是否生效
-	if nbf, ok := own["nbf"]; ok {
-		if n, ok := nbf.(float64); ok {
-			if int64(n) > now {
-				return errIneffectiveToken
-			}
-		} else {
-			return errInvalidToken
-		}
+	// 检查生效时间
+	if own.NotBefore > 0 && own.NotBefore > now {
+		return errTokenNotValidYet
+	}
+
+	// 检查签发时间（如果签发时间在未来，视为无效）
+	// 允许1分钟时钟偏差
+	if own.IssuedAt > 0 && own.IssuedAt > now+60 {
+		return errTokenIssuedFuture
 	}
 
 	return nil
+}
+
+// EncodeBase64 对数据进行 Base64 URL 编码
+func EncodeBase64(data []byte) string {
+	return base64.RawURLEncoding.EncodeToString(data)
+}
+
+// DecodeBase64 解码 Base64 URL 编码的数据
+func DecodeBase64(s string) ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(s)
 }
