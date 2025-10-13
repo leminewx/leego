@@ -54,39 +54,6 @@ func (own *Token) WithClaim(key string, value any) *Token {
 	return own
 }
 
-// ValidateStandardClaims 验证令牌的标准声明
-func (own *Token) ValidateStandardClaims(expectedIssuer, expectedAudience string) error {
-	// 验证标准声明中的所有时间字段
-	if err := own.stdClaims.Validate(); err != nil {
-		return err
-	}
-
-	// 验证 JWT 签发者
-	if expectedIssuer != "" && own.stdClaims.Issuer != expectedIssuer {
-		return errTokenInvalidIssuer
-	}
-
-	// 验证 JWT 接收者
-	if expectedAudience == "" {
-		return nil
-	}
-
-	switch len(own.stdClaims.Audiences) {
-	case 0:
-		return errTokenInvalidAudience
-	case 1:
-		if own.stdClaims.Audiences[0] != expectedAudience {
-			return errTokenInvalidAudience
-		}
-	default:
-		if !slices.Contains(own.stdClaims.Audiences, expectedAudience) {
-			return errTokenInvalidAudience
-		}
-	}
-
-	return nil
-}
-
 // Sign 对令牌进行签名
 func (own *Token) Sign(signer Signer) (string, error) {
 	// 设置算法
@@ -171,4 +138,37 @@ func (own *Token) syncClaims() {
 	if claims.Id != "" {
 		own.claims["jti"] = claims.Id
 	}
+}
+
+// ValidateStandardClaims 验证令牌的标准声明
+func (own *Token) ValidateStandardClaims(expectedIssuer, expectedAudience string) error {
+	// 验证标准声明中的所有时间字段
+	if err := own.stdClaims.Validate(); err != nil {
+		return err
+	}
+
+	// 验证 JWT 签发者
+	if expectedIssuer != "" && own.stdClaims.Issuer != expectedIssuer {
+		return errTokenInvalidIssuer
+	}
+
+	// 验证 JWT 接收者
+	if expectedAudience == "" {
+		return nil
+	}
+
+	switch len(own.stdClaims.Audiences) {
+	case 0:
+		return errTokenInvalidAudience
+	case 1:
+		if own.stdClaims.Audiences[0] != expectedAudience {
+			return errTokenInvalidAudience
+		}
+	default:
+		if !slices.Contains(own.stdClaims.Audiences, expectedAudience) {
+			return errTokenInvalidAudience
+		}
+	}
+
+	return nil
 }
