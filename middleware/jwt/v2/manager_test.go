@@ -38,17 +38,16 @@ func TestManager(t *testing.T) {
 		}
 		t.Log(signature)
 
-		token, err = manager.Verify(signature)
-		if err != nil {
+		if token, err = manager.Verify(signature); err != nil {
 			t.Fatal(err)
 		}
 		t.Log(*token.stdClaims, token.claims)
 
-		token, err = manager.VerifyWithClaims(signature, "test", "leego")
-		if err != nil {
-			t.Error(err)
+		if token, err = manager.VerifyWithStandardClaims(signature, "test", "leego"); err == nil || token == nil {
+			t.Error("leego: jwt: token verification failed")
+		} else {
+			t.Log(*token.stdClaims, token.claims)
 		}
-		t.Log(*token.stdClaims, token.claims)
 	}
 }
 

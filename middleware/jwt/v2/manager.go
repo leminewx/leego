@@ -104,10 +104,10 @@ func (own *Manager) Verify(token string) (*Token, error) {
 	return own.parser.Parse(own.signer, token)
 }
 
-func (own *Manager) VerifyWithClaims(token, exceptedIssuer, exceptedAudience string) (*Token, error) {
+func (own *Manager) VerifyWithStandardClaims(token, exceptedIssuer, exceptedAudience string) (*Token, error) {
 	if len(token) == 0 {
 		return nil, fmt.Errorf("leego: jwt: token is empty")
 	}
 
-	return own.parser.ParseWithClaims(own.signer, token, exceptedIssuer, exceptedAudience)
+	return own.parser.ParseAndValidateStandardClaims(own.signer, token, exceptedIssuer, exceptedAudience)
 }
