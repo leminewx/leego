@@ -83,7 +83,7 @@ func TestParser_ParseWithClaims(t *testing.T) {
 	// 验签
 	parser := NewParser(HS256)
 
-	tokenDst, err := parser.ParseWithClaims(signer, tokenString, "test", "test")
+	tokenDst, err := parser.ParseAndValidateStandardClaims(signer, tokenString, "test", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestParser_ParseWithClaims(t *testing.T) {
 	t.Log(tokenString)
 
 	//	重新验签
-	if tokenDst, err = parser.ParseWithClaims(signer, tokenString, "test", "test"); err != nil {
+	if tokenDst, err = parser.ParseAndValidateStandardClaims(signer, tokenString, "test", "test"); err != nil {
 		t.Fatal(err)
 	}
 	t.Log(tokenDst.GetClaim("uid"))
@@ -177,7 +177,7 @@ func BenchmarkParser_ParseWithClaims(b *testing.B) {
 
 	// 压测
 	for range b.N {
-		if _, err := parser.ParseWithClaims(signer, tokenString, "test", "test"); err != nil {
+		if _, err := parser.ParseAndValidateStandardClaims(signer, tokenString, "test", "test"); err != nil {
 			b.Fatal(err)
 		}
 	}

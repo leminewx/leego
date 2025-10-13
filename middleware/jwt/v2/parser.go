@@ -11,8 +11,8 @@ import (
 type Parser interface {
 	// Parse 解析 JWT
 	Parse(signer Signer, tokenString string) (*Token, error)
-	// ParseWithClaims 解析 JWT 并验证特定声明
-	ParseWithClaims(signer Signer, tokenString string, expectedIssuer, expectedAudience string) (*Token, error)
+	// ParseAndValidateStandardClaims 解析 JWT 并验证标准声明
+	ParseAndValidateStandardClaims(signer Signer, tokenString string, expectedIssuer, expectedAudience string) (*Token, error)
 }
 
 // parser 定义用于解析和验证 JWT 的解析器的数据结构
@@ -94,8 +94,8 @@ func (own *parser) Parse(signer Signer, tokenString string) (*Token, error) {
 	}, nil
 }
 
-// ParseWithClaims 解析 JWT 并验证特定声明
-func (own *parser) ParseWithClaims(signer Signer, tokenString string, expectedIssuer, expectedAudience string) (*Token, error) {
+// ParseAndValidateStandardClaims 解析 JWT 并验证标准声明
+func (own *parser) ParseAndValidateStandardClaims(signer Signer, tokenString string, expectedIssuer, expectedAudience string) (*Token, error) {
 	token, err := own.Parse(signer, tokenString)
 	if err != nil {
 		return nil, err

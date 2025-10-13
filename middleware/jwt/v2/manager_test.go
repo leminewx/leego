@@ -43,6 +43,12 @@ func TestManager(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Log(*token.stdClaims, token.claims)
+
+		token, err = manager.VerifyWithClaims(signature, "test", "leego")
+		if err != nil {
+			t.Error(err)
+		}
+		t.Log(*token.stdClaims, token.claims)
 	}
 }
 
