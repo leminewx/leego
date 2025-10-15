@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +13,8 @@ import (
 
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/middleware"
+	"gitee.com/leminewx/leego/middleware/authorizator"
+	"gitee.com/leminewx/leego/middleware/authorizator/jwt"
 	"gitee.com/leminewx/leego/middleware/cors"
 	"gitee.com/leminewx/leego/response/sse"
 )
@@ -30,6 +33,27 @@ func main() {
 		middleware.GenerateRequestId(headers.X_REQUEST_ID, func(req *http.Request) string {
 			return fmt.Sprintf("rid_%d", time.Now().UnixNano())
 		}),
+	)
+
+	parser := jwt.NewParser()
+	signer := jwt.NewHMACSigner(jwt.HS256, []byte("secret"))
+	auth := authorizator.NewAuthorizator(signer, parser).
+		WithSkipPaths(
+			"/v1/*",
+			"/v2/login/*",
+		).
+		WithExceptedIssuer("leego").
+		WithExceptedAudience("leego").
+		WithNotBeforeDuration(30 * time.Second).
+		WithExpiresAfterDuration(50 * time.Second).
+		WithValidateStandardClaims(true)
+
+	auth.ErrorHandler = func(_ *leego.Context, err error) {
+		log.Printf("Faild to authorizate: %v", err)
+	}
+
+	engine.WithMiddlewares(
+		middleware.Authorize(auth),
 	)
 
 	// 路由组1
@@ -111,6 +135,13 @@ func main() {
 			group3.POST("/:name", func(ctx *leego.Context) {
 				fmt.Println("*********ready response login*********")
 				fmt.Printf("%s is logged in\n", ctx.GetPathValue("name"))
+
+				signature, err := auth.GenerateToken(&jwt.StandardClaims{}).WithClaim("username", "tester").Sign(signer)
+				if err != nil {
+					fmt.Println("sign error: ", err)
+				}
+
+				ctx.WithResponseHeader("Authorization", "Bearer "+signature)
 				_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 			}, "登录接口", "v2", "登录")
 
@@ -159,5 +190,7 @@ func main() {
 		})
 	}()
 
-	engine.Shutdown(5 * time.Second)
+	if err := engine.Shutdown(5 * time.Second); err != nil {
+		log.Printf("Faild to shutdown: %v", err)
+	}
 }

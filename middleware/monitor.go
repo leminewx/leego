@@ -14,7 +14,7 @@ func Collect(monitor *monitor.Monitor) leego.MiddlewareFunc {
 			// 采集请求数据
 			monitor.Increase()
 
-			// 处理请求
+			// 调用下一个处理器
 			handle(ctx)
 
 			// 采集响应数据

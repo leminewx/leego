@@ -15,11 +15,12 @@ import (
 //go:embed views
 var adminFS embed.FS
 
-// Admin 管理系统结构体
+// Admin 定义管理系统的数据结构
 type Admin struct {
-	addr   string
-	start  time.Time
-	engine *leego.Engine
+	addr    string        // 服务监听地址
+	start   time.Time     // 服务启动时间
+	admin   *leego.Engine // 后台管理服务
+	service *leego.Engine // 用户业务服务
 }
 
 // New 创建一个新的管理系统实例

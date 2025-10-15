@@ -19,7 +19,7 @@ func GenerateRequestId(key string, generate func(req *http.Request) string) leeg
 				ctx.WithRequestHeader(key, generate(ctx.Request))
 			}
 
-			// 处理请求
+			// 调用下一个处理器
 			handle(ctx)
 		}
 	}

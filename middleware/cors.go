@@ -17,7 +17,7 @@ func Cors(cors *cors.CORS) leego.MiddlewareFunc {
 			// 处理普通请求，设置 CORS 头
 			cors.SetResponseHeader(ctx.Response, ctx.Request)
 
-			// 处理请求
+			// 调用下一个处理器
 			handle(ctx)
 		}
 	}

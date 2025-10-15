@@ -2,8 +2,10 @@ package sse
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	"gitee.com/leminewx/leego/response"
 )
@@ -12,6 +14,13 @@ import (
 var bufferPool = &sync.Pool{
 	New: func() any { return &bytes.Buffer{} },
 }
+
+const (
+	_MSG_CONNECTED       = `{"time": "%s", "message": "Welcome to connect server", "client_id": "%s"}`
+	_MSG_HEARTBEAT       = `{"time": "%s", "message": "Ping"}`
+	_MSG_DISCONNECTED    = `{"time": "%s", "message": "Connection is closed"}`
+	_MSG_SERVER_SHUTDOWN = `{"time": "%s", "message": "Server is shutting down"}`
+)
 
 // Message 定义 SSE 消息的数据结构
 type Message struct {
@@ -29,12 +38,27 @@ type Message struct {
 	Data []byte
 }
 
+// NewConnectedMessage 创建一个连接消息
+func NewConnectedMessage(clientId string) *Message {
+	return &Message{
+		Event: "connect",
+		Data:  []byte(fmt.Sprintf(_MSG_CONNECTED, time.Now().Format(time.DateTime), clientId)),
+	}
+}
+
+// NewHeartbeatMessage 创建一个连接消息
+func NewHeartbeatMessage() *Message {
+	return &Message{
+		Event: "heartbeat",
+		Data:  []byte(fmt.Sprintf(_MSG_HEARTBEAT, time.Now().Format(time.DateTime))),
+	}
+}
+
 // NewClosedMessage 创建一个关闭消息
-func NewClosedMessage(id string) *Message {
+func NewClosedMessage() *Message {
 	return &Message{
 		Event: "close",
-		Id:    id,
-		Data:  []byte("[CLOSED]"),
+		Data:  []byte(fmt.Sprintf(_MSG_DISCONNECTED, time.Now().Format(time.DateTime))),
 	}
 }
 

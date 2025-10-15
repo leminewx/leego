@@ -19,6 +19,7 @@ import (
 	"text/template"
 	"time"
 
+	"gitee.com/leminewx/leego/middleware/authorizator/jwt"
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/response/sse"
 )
@@ -44,6 +45,7 @@ type Context struct {
 	query    url.Values        // 查询参数
 	values   map[string]string // 路由参数
 	engine   *Engine           // 绑定引擎
+	token    *jwt.Token        // JWT 令牌
 	Request  *http.Request     // 原始请求
 	Response response.Writer   // 原始响应
 }
@@ -105,6 +107,15 @@ func (own *Context) GetContextValue(key any) (any, bool) {
 
 	if val := ctx.Value(key); val != nil {
 		return val, true
+	}
+
+	return nil, false
+}
+
+// GetJWT 获取 JWT 令牌
+func (own *Context) GetJWT(key string) (*jwt.Token, bool) {
+	if own.token != nil {
+		return own.token, true
 	}
 
 	return nil, false
@@ -189,6 +200,12 @@ func (own *Context) WithRequestHeader(key, value string) *Context {
 // WithContext 设置请求上下文
 func (own *Context) WithContext(ctx context.Context) *Context {
 	own.Request = own.Request.WithContext(ctx)
+	return own
+}
+
+// WithJWT 绑定 JWT 令牌
+func (own *Context) WithJWT(token *jwt.Token) *Context {
+	own.token = token
 	return own
 }
 
@@ -369,50 +386,6 @@ func (own *Context) executeTemplate(tmpl *template.Template, tmplName string, da
 }
 
 // ResponseSSE 发起 SSE 事件响应
-func (own *Context) ResponseSSE(sseMessages func(ctx context.Context) <-chan *sse.Message) (err error) {
-	// 设置 SSE 响应头
-	sse.SetResponseHeader(own.Response)
-
-	// 调用 SSE 处理函数
-	ctx := own.Request.Context()
-	messages := sseMessages(ctx)
-
-	for {
-		select {
-		// 正常接收数据
-		case msg, ok := <-messages:
-			// 通道关闭
-			if !ok {
-				// 关闭前发送数据
-				if msg != nil && len(msg.Data) > 0 {
-					if err = msg.Write(own.Response); err != nil {
-						return err
-					}
-				}
-
-				// 尝试获取事件 ID
-				var id string
-				if msg != nil {
-					id = msg.Id
-				}
-
-				// 发送关闭事件
-				return sse.NewClosedMessage(id).Write(own.Response)
-			}
-
-			// 跳过空数据
-			if msg == nil || len(msg.Data) == 0 {
-				continue
-			}
-
-			// 发送事件数据
-			if err := msg.Write(own.Response); err != nil {
-				return err
-			}
-
-		// 客户端断开连接
-		case <-ctx.Done():
-			return nil
-		}
-	}
+func (own *Context) ResponseSSE(handle func(ctx context.Context) <-chan *sse.Message) error {
+	return sse.ServeHTTP(own.Response, own.Request, handle)
 }

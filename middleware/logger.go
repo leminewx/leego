@@ -26,7 +26,7 @@ Log 打印请求日志
 func Log(record func(ctx *leego.Context)) leego.MiddlewareFunc {
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
-			// 处理请求
+			// 调用下一个处理器
 			handle(ctx)
 
 			// 获取响应信息

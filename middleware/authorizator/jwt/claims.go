@@ -159,7 +159,7 @@ func (own *StandardClaims) Encode() (string, error) {
 	return EncodeBase64(bytes), nil
 }
 
-// Validate 验证标准声明中的所有时间字段
+// Validate 验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）
 func (own *StandardClaims) Validate() error {
 	now := time.Now().Unix()
 

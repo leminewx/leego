@@ -7,6 +7,8 @@ import (
 
 func TestToken_Sign(t *testing.T) {
 	now := time.Now()
+	signer := NewHMACSigner(HS256, []byte("test"))
+
 	token := NewToken(&StandardClaims{
 		Id:        "test",
 		Issuer:    "test",
@@ -16,11 +18,6 @@ func TestToken_Sign(t *testing.T) {
 		NotBefore: now.Add(-time.Hour).Unix(),
 		ExpiresAt: now.Add(+time.Hour).Unix(),
 	})
-
-	signer, err := NewHMACSigner(HS256, []byte("test"))
-	if err != nil {
-		t.Error(err)
-	}
 
 	data, err := token.Sign(signer)
 	if err != nil {
@@ -59,6 +56,8 @@ func TestToken_ValidateStandardClaims(t *testing.T) {
 // cpu: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz		8		mix claims			 346509	      3498 ns/op	    2081 B/op	      36 allocs/op
 func BenchmarkToken_Sign(b *testing.B) {
 	now := time.Now()
+	signer := NewHMACSigner(HS256, []byte("test"))
+
 	token := NewToken(&StandardClaims{
 		Id:        "test",
 		Issuer:    "test",
@@ -68,11 +67,6 @@ func BenchmarkToken_Sign(b *testing.B) {
 		NotBefore: now.Add(-time.Hour).Unix(),
 		ExpiresAt: now.Add(+time.Hour).Unix(),
 	})
-
-	signer, err := NewHMACSigner(HS256, []byte("test"))
-	if err != nil {
-		b.Error(err)
-	}
 
 	b.Run("使用标准声明", func(b *testing.B) {
 		b.ReportAllocs()

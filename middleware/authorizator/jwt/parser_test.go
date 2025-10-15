@@ -18,11 +18,7 @@ func TestParser_Parse(t *testing.T) {
 	})
 
 	// 签名
-	signer, err := NewHMACSigner(HS256, []byte("test"))
-	if err != nil {
-		t.Error(err)
-	}
-
+	signer := NewHMACSigner(HS256, []byte("test"))
 	tokenString, err := tokenSrc.Sign(signer)
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +27,6 @@ func TestParser_Parse(t *testing.T) {
 
 	// 验签
 	parser := NewParser(HS256)
-
 	tokenDst, err := parser.Parse(signer, tokenString)
 	if err != nil {
 		t.Fatal(err)
@@ -69,11 +64,7 @@ func TestParser_ParseWithClaims(t *testing.T) {
 	})
 
 	// 签名
-	signer, err := NewHMACSigner(HS256, []byte("test"))
-	if err != nil {
-		t.Error(err)
-	}
-
+	signer := NewHMACSigner(HS256, []byte("test"))
 	tokenString, err := tokenSrc.Sign(signer)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +73,6 @@ func TestParser_ParseWithClaims(t *testing.T) {
 
 	// 验签
 	parser := NewParser(HS256)
-
 	tokenDst, err := parser.ParseAndValidateStandardClaims(signer, tokenString, "test", "test")
 	if err != nil {
 		t.Fatal(err)
@@ -121,11 +111,7 @@ func BenchmarkParser_Parse(b *testing.B) {
 	})
 
 	// 签名
-	signer, err := NewHMACSigner(HS256, []byte("test"))
-	if err != nil {
-		b.Error(err)
-	}
-
+	signer := NewHMACSigner(HS256, []byte("test"))
 	tokenString, err := tokenSrc.Sign(signer)
 	if err != nil {
 		b.Fatal(err)
@@ -159,11 +145,7 @@ func BenchmarkParser_ParseWithClaims(b *testing.B) {
 	})
 
 	// 签名
-	signer, err := NewHMACSigner(HS256, []byte("test"))
-	if err != nil {
-		b.Error(err)
-	}
-
+	signer := NewHMACSigner(HS256, []byte("test"))
 	tokenString, err := tokenSrc.Sign(signer)
 	if err != nil {
 		b.Fatal(err)

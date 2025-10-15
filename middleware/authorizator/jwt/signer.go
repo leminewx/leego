@@ -24,22 +24,23 @@ type hmacSigner struct {
 	algorithm Algorithm
 }
 
-// NewHMACSigner 创建 HMAC 签名器
-func NewHMACSigner(alg Algorithm, key []byte) (Signer, error) {
+/*
+NewHMACSigner 创建 HMAC 签名器
+  - alg：签名算法（仅支持：HS256, HS384, HS512），若算法不支持，则默认使用 HS256
+*/
+func NewHMACSigner(alg Algorithm, key []byte) Signer {
 	signer := &hmacSigner{algorithm: alg}
-
 	switch alg {
-	case HS512:
-		signer.pool = &sync.Pool{New: func() any { return hmac.New(crypto.SHA512.New, key) }}
 	case HS384:
 		signer.pool = &sync.Pool{New: func() any { return hmac.New(crypto.SHA384.New, key) }}
-	case HS256:
-		signer.pool = &sync.Pool{New: func() any { return hmac.New(crypto.SHA256.New, key) }}
+	case HS512:
+		signer.pool = &sync.Pool{New: func() any { return hmac.New(crypto.SHA512.New, key) }}
 	default:
-		return nil, fmt.Errorf("leego: jwt: HMAC signer not unsupported algorithm: %v", alg)
+		signer.algorithm = HS256
+		signer.pool = &sync.Pool{New: func() any { return hmac.New(crypto.SHA256.New, key) }}
 	}
 
-	return signer, nil
+	return signer
 }
 
 // Sign 对数据进行签名

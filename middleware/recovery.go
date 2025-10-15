@@ -38,7 +38,7 @@ func Recover(notify func(req *http.Request, traceback string)) leego.MiddlewareF
 				}
 			}()
 
-			// 处理请求
+			// 调用下一个处理器
 			handle(ctx)
 		}
 	}

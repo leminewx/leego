@@ -33,10 +33,23 @@ func NewToken(claims *StandardClaims) *Token {
 	}
 }
 
+// NewTokenWithHeader 创建新的 JWT
+func NewTokenWithHeader(claims *StandardClaims, header *Header) *Token {
+	return &Token{
+		header:    header,
+		stdClaims: claims,
+	}
+}
+
 // GetClaim 获取指定声明
 func (own *Token) GetClaim(key string) (any, bool) {
 	val, ok := own.claims[key]
 	return val, ok
+}
+
+// GetAlgorithm 获取签名算法
+func (own *Token) GetAlgorithm() Algorithm {
+	return own.header.Algorithm
 }
 
 // GetStandardClaims 获取标准声明字段
@@ -140,7 +153,7 @@ func (own *Token) syncClaims() {
 	}
 }
 
-// ValidateStandardClaims 验证令牌的标准声明
+// ValidateStandardClaims 验证令牌的标准声明（签发时间允许1分钟时间偏差）
 func (own *Token) ValidateStandardClaims(expectedIssuer, expectedAudience string) error {
 	// 验证标准声明中的所有时间字段
 	if err := own.stdClaims.Validate(); err != nil {
