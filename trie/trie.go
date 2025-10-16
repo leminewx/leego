@@ -14,7 +14,7 @@ func NewTrie[T any]() *Trie[T] {
 }
 
 // Insert 插入路由
-func (own *Trie[T]) Insert(method, pattern string, route T) {
+func (own *Trie[T]) Insert(pattern string, route T) {
 	segments := SplitPattern(pattern)
 	own.insert((*Node[T])(own), segments, route, 0)
 }
@@ -23,6 +23,7 @@ func (own *Trie[T]) Insert(method, pattern string, route T) {
 func (own *Trie[T]) insert(node *Node[T], segments []string, route T, depth int) {
 	// 如果到达路径末端，设置路由处理器
 	if depth == len(segments) {
+		node.isRoute = true
 		node.route = route
 		return
 	}
@@ -69,7 +70,7 @@ func (own *Trie[T]) Search(path string) (T, map[string]string, bool) {
 func (own *Trie[T]) search(node *Node[T], segments []string, params map[string]string, depth int) (*Node[T], bool) {
 	// 当前深度与路径深度匹配，则返回当前节点
 	if depth == len(segments) {
-		return node, true
+		return node, node.isRoute
 	}
 
 	segment := segments[depth]
@@ -87,7 +88,7 @@ func (own *Trie[T]) search(node *Node[T], segments []string, params map[string]s
 
 			// 匹配成功，进入下一轮递归搜索
 			if n, ok := own.search(child, segments, params, depth+1); ok {
-				return n, true
+				return n, n.isRoute
 			}
 		}
 
@@ -95,7 +96,7 @@ func (own *Trie[T]) search(node *Node[T], segments []string, params map[string]s
 		if child.GetPriority() == 2 {
 			params[child.paramName] = segment
 			if n, ok := own.search(child, segments, params, depth+1); ok {
-				return n, true
+				return n, n.isRoute
 			}
 
 			// 回溯时删除参数
@@ -111,7 +112,7 @@ func (own *Trie[T]) search(node *Node[T], segments []string, params map[string]s
 				params[child.paramName] = remaining
 			}
 
-			return child, true
+			return child, child.isRoute
 		}
 	}
 

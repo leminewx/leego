@@ -105,7 +105,7 @@ func (own *Message) Write(resp response.Writer) error {
 
 	// 发送数据
 	if _, err := resp.Write(buffer.Bytes()); err != nil {
-		return err
+		return fmt.Errorf("leego: sse: write message to response error: %w", err)
 	}
 
 	resp.Flush()

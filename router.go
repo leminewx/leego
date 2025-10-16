@@ -50,7 +50,7 @@ func (own *router) Insert(method, pattern string, _handler *handler) {
 	}
 
 	// 插入路由
-	root.Insert(method, pattern, _handler)
+	root.Insert(pattern, _handler)
 }
 
 // Search 搜索匹配的路由

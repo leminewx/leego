@@ -12,6 +12,7 @@ type Node[T any] struct {
 	paramName  string     // 参数名（如果是通配符）
 	priority   int        // 优先级（用于路由匹配顺序）
 	isWildcard bool       // 是否是通配符段 (:param 或 *param 或 *)
+	isRoute    bool       // 是否是一个路由节点
 	route      T          // 路由信息
 	children   []*Node[T] // 子节点
 }
