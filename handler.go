@@ -14,6 +14,11 @@ type (
 
 	// MiddlewareFunc 定义中间件函数的类型
 	MiddlewareFunc func(HandleFunc) HandleFunc
+
+	// MiddlewareScopeSetter 定义设置中间件作用域的接口类型
+	MiddlewareScopeSetter interface {
+		WithScope(scope string)
+	}
 )
 
 // handler 定义处理器的数据结构
@@ -45,8 +50,8 @@ func (own *handler) Enable() *handler {
 	return own
 }
 
-// Disnable 禁用
-func (own *handler) Disnable() *handler {
+// Disenable 禁用
+func (own *handler) Disenable() *handler {
 	atomic.StoreInt32(&own.monitor.Enabled, 0)
 	return own
 }
@@ -75,6 +80,12 @@ func (own *handler) initialize() {
 	}
 
 	own.initializedMutex.Lock()
+	defer own.initializedMutex.Unlock()
+
+	// 如果已经初始化，则返回
+	if own.initialized {
+		return
+	}
 
 	// 获取所有中间件
 	own.middlewares = make([]MiddlewareFunc, 0, 30)
@@ -87,5 +98,4 @@ func (own *handler) initialize() {
 
 	// 标记已初始化
 	own.initialized = true
-	own.initializedMutex.Unlock()
 }

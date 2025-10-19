@@ -13,8 +13,8 @@ import (
 
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/middleware"
-	"gitee.com/leminewx/leego/middleware/authorizator"
-	"gitee.com/leminewx/leego/middleware/authorizator/jwt"
+	"gitee.com/leminewx/leego/middleware/authenticator"
+	"gitee.com/leminewx/leego/middleware/authenticator/jwt"
 	"gitee.com/leminewx/leego/middleware/cors"
 	"gitee.com/leminewx/leego/response/sse"
 )
@@ -37,15 +37,18 @@ func main() {
 
 	parser := jwt.NewParser()
 	signer := jwt.NewHMACSigner(jwt.HS256, []byte("secret"))
-	auth := authorizator.NewAuthorizator(signer, parser).
-		WithSkipPaths(
-			"/v1/*",
-			"/v2/login/*",
-		).
+	auth := authenticator.NewAuthenticator(
+		authenticator.NewDefaultConfig("JWT 认证管理器"),
+		signer,
+		parser,
+	).WithSkipPaths(
+		"/v1/*",
+		"/v2/login/*",
+	).
 		WithExceptedIssuer("leego").
 		WithExceptedAudience("leego").
-		WithNotBeforeDuration(30 * time.Second).
-		WithExpiresAfterDuration(50 * time.Second).
+		WithNotBeforeDuration(30).
+		WithExpiresAfterDuration(50).
 		WithValidateStandardClaims(true)
 
 	auth.ErrorHandler = func(_ *leego.Context, err error) {

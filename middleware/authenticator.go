@@ -4,18 +4,18 @@ import (
 	"net/http"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/middleware/authorizator"
-	"gitee.com/leminewx/leego/middleware/authorizator/jwt"
+	"gitee.com/leminewx/leego/middleware/authenticator"
+	"gitee.com/leminewx/leego/middleware/authenticator/jwt"
 	"gitee.com/leminewx/leego/response"
 )
 
 // Authorize 创建 JWT 鉴权中间件
-func Authorize(auth *authorizator.Authorizator) leego.MiddlewareFunc {
-	return func(hanle leego.HandleFunc) leego.HandleFunc {
+func Authorize(auth *authenticator.Authenticator) leego.MiddlewareFunc {
+	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
 			// 检查是否跳过当前路径
 			if auth.ShouldSkip(ctx.GetPath()) {
-				hanle(ctx)
+				handle(ctx)
 				return
 			}
 
@@ -60,7 +60,7 @@ func Authorize(auth *authorizator.Authorizator) leego.MiddlewareFunc {
 
 			// 将令牌和声明存储在请求中，然后调用下一个处理器
 			ctx.WithJWT(token)
-			hanle(ctx)
+			handle(ctx)
 		}
 	}
 }

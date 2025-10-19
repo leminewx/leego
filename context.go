@@ -19,7 +19,7 @@ import (
 	"text/template"
 	"time"
 
-	"gitee.com/leminewx/leego/middleware/authorizator/jwt"
+	"gitee.com/leminewx/leego/middleware/authenticator/jwt"
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/response/sse"
 )

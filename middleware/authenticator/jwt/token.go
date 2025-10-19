@@ -10,6 +10,7 @@ import (
 var (
 	errTokenInvalidIssuer   = errors.New("leego: jwt: invalid issuer")
 	errTokenInvalidAudience = errors.New("leego: jwt: invalid audience")
+	errTokenNoAnyClaims     = errors.New("leego: jwt: token has no any claims")
 )
 
 // Token 定义一个 JWT 令牌的数据结构
@@ -103,7 +104,7 @@ func (own *Token) Sign(signer Signer) (string, error) {
 func (own *Token) encodeClaims() (string, error) {
 	if len(own.claims) == 0 {
 		if own.stdClaims == nil {
-			return "", fmt.Errorf("leego: jwt: token has no any claims")
+			return "", errTokenNoAnyClaims
 		}
 
 		return own.stdClaims.Encode()

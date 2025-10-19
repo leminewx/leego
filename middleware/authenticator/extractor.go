@@ -1,4 +1,4 @@
-package authorizator
+package authenticator
 
 import (
 	"errors"
@@ -13,11 +13,11 @@ var (
 	errAuthorizationHeaderRequired = errors.New("leego: jwt: authorization header is required")
 	errAuthorizationHeaderFormat   = errors.New("leego: jwt: authorization header format must be 'Bearer {token}'")
 	errTokenQueryParameterRequired = errors.New("leego: jwt: token query parameter is required")
-	errTokenNotFoundInAnyExtrator  = errors.New("leego: jwt: not found token in any extractor")
+	errTokenNotFoundInAnyExtractor = errors.New("leego: jwt: not found token in any extractor")
 )
 
-// TokenExtractor 定义 JWT 令牌提取器的接口类型
-type TokenExtractor interface {
+// Extractor 定义 JWT 令牌提取器的接口类型
+type Extractor interface {
 	// Extract 从请求中提取令牌
 	Extract(req *http.Request) (string, error)
 }
@@ -28,7 +28,7 @@ type TokenExtractor interface {
 type bearerExtractor struct{}
 
 // NewBearerExtractor 创建一个 Bearer 令牌提取器
-func NewBearerExtractor() TokenExtractor {
+func NewBearerExtractor() Extractor {
 	return &bearerExtractor{}
 }
 
@@ -58,7 +58,7 @@ type queryExtractor struct {
 }
 
 // NewQueryExtractor 创建一个从 URL 查询参数提取令牌的提取器
-func NewQueryExtractor(name string) TokenExtractor {
+func NewQueryExtractor(name string) Extractor {
 	return &queryExtractor{name: name}
 }
 
@@ -88,7 +88,7 @@ type cookieExtractor struct {
 }
 
 // NewCookieExtractor 创建一个从 Cookie 提取令牌的提取器
-func NewCookieExtractor(name string) TokenExtractor {
+func NewCookieExtractor(name string) Extractor {
 	return &cookieExtractor{name: name}
 }
 
@@ -112,11 +112,11 @@ func (own *cookieExtractor) Extract(req *http.Request) (string, error) {
 
 // multiExtractor 组合多个提取器
 type multiExtractor struct {
-	Extractors []TokenExtractor
+	Extractors []Extractor
 }
 
 // NewMultiExtractor 创建一个组合多个提取器的提取器
-func NewMultiExtractor(extractors ...TokenExtractor) TokenExtractor {
+func NewMultiExtractor(extractors ...Extractor) Extractor {
 	return &multiExtractor{Extractors: extractors}
 }
 
@@ -133,5 +133,5 @@ func (own *multiExtractor) Extract(req *http.Request) (string, error) {
 		}
 	}
 
-	return "", errTokenNotFoundInAnyExtrator
+	return "", errTokenNotFoundInAnyExtractor
 }

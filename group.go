@@ -41,7 +41,12 @@ func (own *group) Group(prefix string) *group {
 
 // WithMiddlewares 添加路由组中间件
 func (own *group) WithMiddlewares(middlewares ...MiddlewareFunc) *group {
-	own.middlewares = append(own.middlewares, middlewares...)
+	for _, middleware := range middlewares {
+		if middleware != nil {
+			own.middlewares = append(own.middlewares, middleware)
+		}
+	}
+
 	return own
 }
 

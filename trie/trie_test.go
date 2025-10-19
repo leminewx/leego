@@ -17,8 +17,8 @@ func TestTrie(t *testing.T) {
 	for _, pattern := range []string{
 		"/",                           // 静态路径
 		"/users",                      // 静态路径
-		"/users/testuer",              // 参数路径
-		"/users/testuser/posts",       // 参数路径
+		"/users/test_uer",             // 参数路径
+		"/users/test_uer/posts",       // 参数路径
 		"/files/*",                    // 通配符路径
 		"/api/v1/tasks/tid1234567890", // 参数路径
 	} {
