@@ -12,8 +12,7 @@ import (
 
 // Authorizator 定义 JWT 管理器的数据结构
 type Authorizator struct {
-	id    int
-	group string // 作用路由组
+	config *Config
 
 	// 管理器组件
 	signer jwt.Signer  // 签名器
@@ -47,12 +46,6 @@ func NewAuthorizator(signer jwt.Signer, parser jwt.Parser) *Authorizator {
 		skipPaths:       []string{},
 		tokenExtractors: []TokenExtractor{NewBearerExtractor()},
 	}
-}
-
-// WithGroup 指定中间件作用的路由组
-func (own *Authorizator) WithGroup(group string) *Authorizator {
-	own.group = group
-	return own
 }
 
 // WithValidateStandardClaims 设置是否验证标准声明
