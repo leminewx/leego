@@ -88,7 +88,7 @@ DisenableRoute 禁用指定路由
 func (own *Engine) DisenableRoute(method, path string) *Engine {
 	key := method + " " + path
 	if handler, ok := own.handlers[key]; ok {
-		handler.Disnable()
+		handler.Disenable()
 	}
 
 	return own

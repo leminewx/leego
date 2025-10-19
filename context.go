@@ -113,7 +113,7 @@ func (own *Context) GetContextValue(key any) (any, bool) {
 }
 
 // GetJWT 获取 JWT 令牌
-func (own *Context) GetJWT(key string) (*jwt.Token, bool) {
+func (own *Context) GetJWT() (*jwt.Token, bool) {
 	if own.token != nil {
 		return own.token, true
 	}
