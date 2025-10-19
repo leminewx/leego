@@ -164,7 +164,7 @@ func (own *Client) WriteResponseHeader(resp response.Writer) {
 // WriteMessage 写入事件消息
 func (own *Client) WriteMessage(msg *Message) error {
 	// 若消息无效，则直接返回
-	if msg == nil || len(msg.Data) == 0 {
+	if msg == nil || !msg.format() {
 		return nil
 	}
 
@@ -172,8 +172,6 @@ func (own *Client) WriteMessage(msg *Message) error {
 	if own.IsClosed() {
 		return fmt.Errorf("leego: sse: client is closed: %s", own.Id)
 	}
-
-	// 读取写超时时间
 
 	// 发送消息给消息通道
 	select {

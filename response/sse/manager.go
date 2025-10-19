@@ -106,20 +106,25 @@ func (own *Manager) Unregister(clientId string) error {
 }
 
 // SendTo 向指定客户端发送消息
-func (own *Manager) SendTo(clientId string, message *Message) error {
+func (own *Manager) SendTo(clientId string, msg *Message) error {
 	if own.IsClosed() {
 		return errors.New("leego: sse: server is closed")
 	}
 
 	if client, ok := own.clients.Load(clientId); ok {
-		return client.(*Client).WriteMessage(message)
+		return client.(*Client).WriteMessage(msg)
 	}
 
 	return fmt.Errorf("leego: sse: not found client: %s", clientId)
 }
 
 // Broadcast 向所有客户端广播消息
-func (own *Manager) Broadcast(message *Message) error {
+func (own *Manager) Broadcast(msg *Message) error {
+	// 若消息无效，则直接返回
+	if msg == nil || !msg.format() {
+		return nil
+	}
+
 	if own.IsClosed() {
 		return errors.New("leego: sse: server is closed")
 	}
@@ -131,7 +136,7 @@ func (own *Manager) Broadcast(message *Message) error {
 			client := value.(*Client)
 
 			// 如果广播失败，可能是客户端已断开
-			if err := client.WriteMessage(message); err != nil {
+			if err := client.WriteMessage(msg); err != nil {
 				own.sendError(err)
 
 				// 尝试注销该客户端
@@ -149,7 +154,12 @@ func (own *Manager) Broadcast(message *Message) error {
 }
 
 // BroadcastTo 向指定客户端组广播消息
-func (own *Manager) BroadcastTo(clientIds []string, message *Message) error {
+func (own *Manager) BroadcastTo(clientIds []string, msg *Message) error {
+	// 若消息无效，则直接返回
+	if msg == nil || !msg.format() {
+		return nil
+	}
+
 	if own.IsClosed() {
 		return errors.New("leego: sse: server is closed")
 	}
@@ -166,7 +176,7 @@ func (own *Manager) BroadcastTo(clientIds []string, message *Message) error {
 			c := client.(*Client)
 
 			// 如果广播失败，可能是客户端已断开
-			if err := c.WriteMessage(message); err != nil {
+			if err := c.WriteMessage(msg); err != nil {
 				own.sendError(err)
 
 				// 尝试注销该客户端

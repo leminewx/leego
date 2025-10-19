@@ -22,7 +22,7 @@ const (
 	_MSG_SERVER_SHUTDOWN = `{"time": "%s", "message": "Server is shutting down"}`
 )
 
-// Message 定义 SSE 消息的数据结构
+// Message 定义 SSE 消息的数据结构（消息发送之后更新就无效了，但可以复用）
 type Message struct {
 	/*
 		Event 表示事件类型，可自定义
@@ -36,6 +36,8 @@ type Message struct {
 	Retry int64
 	// Data 表示消息的数据，可以有多行，且每行都会作为一个数据片段，最终将所有数据用换行符连接起来作为完整数据
 	Data []byte
+
+	formatted []byte // 格式化数据，提高复用性
 }
 
 // NewConnectedMessage 创建一个连接消息
@@ -64,12 +66,31 @@ func NewClosedMessage() *Message {
 
 // Send 写入格式化的 SSE 消息到响应
 func (own *Message) Write(resp response.Writer) error {
-	// 获取 bytes.Buffer
+	// 若格式化数据无效，则直接返回
+	if !own.format() {
+		return nil
+	}
+
+	// 发送格式化后的数据
+	if _, err := resp.Write(own.formatted); err != nil {
+		return fmt.Errorf("leego: sse: write message to response error: %w", err)
+	}
+	resp.Flush()
+
+	return nil
+}
+
+// format 格式化数据
+func (own *Message) format() bool {
+	if len(own.formatted) > 0 {
+		return true
+	}
+
+	if own.Id == "" && own.Event == "" && own.Retry <= 0 && len(own.Data) == 0 {
+		return false
+	}
+
 	buffer := bufferPool.Get().(*bytes.Buffer)
-	defer func() {
-		buffer.Reset()
-		bufferPool.Put(buffer)
-	}()
 
 	// 事件ID
 	if own.Id != "" {
@@ -103,11 +124,12 @@ func (own *Message) Write(resp response.Writer) error {
 	// 消息结束换行
 	buffer.WriteByte('\n')
 
-	// 发送数据
-	if _, err := resp.Write(buffer.Bytes()); err != nil {
-		return fmt.Errorf("leego: sse: write message to response error: %w", err)
-	}
+	// 更新格式化数据
+	own.formatted = make([]byte, buffer.Len())
+	copy(own.formatted, buffer.Bytes())
 
-	resp.Flush()
-	return nil
+	buffer.Reset()
+	bufferPool.Put(buffer)
+
+	return true
 }
