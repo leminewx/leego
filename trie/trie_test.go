@@ -7,12 +7,12 @@ import (
 
 func TestTrie(t *testing.T) {
 	trie := NewTrie[string]()
-	trie.Insert("GET", "/", "root")
-	trie.Insert("GET", "/users", "users")
-	trie.Insert("PUT", "/users/:id", "user_detail")
-	trie.Insert("GET", "/users/:id/posts", "user_posts")
-	trie.Insert("GET", "/files/*", "file_server")
-	trie.Insert("GET", "/api/v1/:service/*", "api_handler")
+	trie.Insert("/", "root")
+	trie.Insert("/users", "users")
+	trie.Insert("/users/:id", "user_detail")
+	trie.Insert("/users/:id/posts", "user_posts")
+	trie.Insert("/files/*", "file_server")
+	trie.Insert("/api/v1/:service/*", "api_handler")
 
 	for _, pattern := range []string{
 		"/",                           // 静态路径
@@ -47,7 +47,7 @@ func TestTrieInsertAndSearch(t *testing.T) {
 
 	// 插入路由
 	for pattern, handler := range routes {
-		trie.Insert("GET", pattern, handler)
+		trie.Insert(pattern, handler)
 	}
 
 	// 测试用例
@@ -143,9 +143,9 @@ func TestTriePriority(t *testing.T) {
 	trie := NewTrie[string]()
 
 	// 插入路由，故意打乱顺序
-	trie.Insert("GET", "/users/:id", "param_route")
-	trie.Insert("GET", "/users/static", "static_route")
-	trie.Insert("GET", "/users/*", "wildcard_route")
+	trie.Insert("/users/:id", "param_route")
+	trie.Insert("/users/static", "static_route")
+	trie.Insert("/users/*", "wildcard_route")
 
 	tests := []struct {
 		path     string
@@ -175,7 +175,7 @@ func TestTrieEdgeCases(t *testing.T) {
 	trie := NewTrie[string]()
 
 	t.Run("空路径", func(t *testing.T) {
-		trie.Insert("GET", "", "empty_handler")
+		trie.Insert("", "empty_handler")
 		handler, _, found := trie.Search("")
 		if !found || handler != "empty_handler" {
 			t.Errorf("Empty path search failed")
@@ -183,7 +183,7 @@ func TestTrieEdgeCases(t *testing.T) {
 	})
 
 	t.Run("只有通配符的路径", func(t *testing.T) {
-		trie.Insert("GET", "*", "catch_all")
+		trie.Insert("*", "catch_all")
 		handler, params, found := trie.Search("any/path")
 		if !found || handler != "catch_all" {
 			t.Errorf("Catch-all search failed")
@@ -194,7 +194,7 @@ func TestTrieEdgeCases(t *testing.T) {
 	})
 
 	t.Run("多重参数", func(t *testing.T) {
-		trie.Insert("GET", "/:a/:b/:c", "multi_param")
+		trie.Insert("/:a/:b/:c", "multi_param")
 		_, params, found := trie.Search("/1/2/3")
 		if !found {
 			t.Errorf("Multi-param search failed")
@@ -249,7 +249,7 @@ func TestTrieComplexPatterns(t *testing.T) {
 	}
 
 	for pattern, value := range patterns {
-		trie.Insert("GET", pattern, value)
+		trie.Insert(pattern, value)
 	}
 
 	tests := []struct {
@@ -315,7 +315,7 @@ func BenchmarkTrieInsert(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			for _, pattern := range patterns {
-				trie.Insert("GET", pattern, "handler_"+pattern)
+				trie.Insert(pattern, "handler_"+pattern)
 			}
 		}
 	})
@@ -327,7 +327,7 @@ func BenchmarkTrieInsert(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			for _, pattern := range patterns {
-				trie.Insert("GET", pattern, "handler_"+pattern)
+				trie.Insert(pattern, "handler_"+pattern)
 			}
 		}
 	})
@@ -340,7 +340,7 @@ func BenchmarkTrieInsert(b *testing.B) {
 			// 每轮插入1000个路由
 			for j := 0; j < 1000; j++ {
 				pattern := "/api/v" + strconv.Itoa(j%10) + "/resource/" + strconv.Itoa(j)
-				trie.Insert("GET", pattern, j)
+				trie.Insert(pattern, j)
 			}
 		}
 	})
@@ -432,26 +432,26 @@ func prepareTestTrie(size int) *Trie[string] {
 	trie := NewTrie[string]()
 
 	// 插入静态路由
-	trie.Insert("GET", "/", "root")
-	trie.Insert("GET", "/users", "users")
-	trie.Insert("GET", "/api/v1", "api_v1")
-	trie.Insert("GET", "/deep/nested/path", "deep_path")
+	trie.Insert("/", "root")
+	trie.Insert("/users", "users")
+	trie.Insert("/api/v1", "api_v1")
+	trie.Insert("/deep/nested/path", "deep_path")
 
 	// 插入参数路由
 	for i := 0; i < size/2; i++ {
 		pattern := "/users/:id" + strconv.Itoa(i)
-		trie.Insert("GET", pattern, "user_handler_"+strconv.Itoa(i))
+		trie.Insert(pattern, "user_handler_"+strconv.Itoa(i))
 	}
 
 	// 插入通配符路由
-	trie.Insert("GET", "/files/*", "file_server")
-	trie.Insert("GET", "/static/*", "static_server")
-	trie.Insert("GET", "/api/*", "api_catch_all")
+	trie.Insert("/files/*", "file_server")
+	trie.Insert("/static/*", "static_server")
+	trie.Insert("/api/*", "api_catch_all")
 
 	// 插入复杂模式
 	for i := 0; i < size/4; i++ {
 		pattern := "/api/v:version/resource/:id"
-		trie.Insert("GET", pattern, "api_resource_"+strconv.Itoa(i))
+		trie.Insert(pattern, "api_resource_"+strconv.Itoa(i))
 	}
 
 	return trie
