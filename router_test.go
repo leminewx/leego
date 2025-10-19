@@ -273,7 +273,7 @@ func BenchmarkRouterServeHTTP(b *testing.B) {
 	// 注册测试处理器
 	testHandler := &handler{
 		handle: func(ctx *Context) {
-			ctx.ResponseString(200, "OK")
+			_ = ctx.ResponseString(200, "OK")
 		},
 	}
 

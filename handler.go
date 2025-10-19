@@ -14,11 +14,6 @@ type (
 
 	// MiddlewareFunc 定义中间件函数的类型
 	MiddlewareFunc func(HandleFunc) HandleFunc
-
-	// MiddlewareScopeSetter 定义设置中间件作用域的接口类型
-	MiddlewareScopeSetter interface {
-		WithScope(scope string)
-	}
 )
 
 // handler 定义处理器的数据结构
