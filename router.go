@@ -15,8 +15,9 @@ type router struct {
 	engine *Engine
 
 	roots    map[string]*trie.Trie[*handler] // 不同方法对应不同的路由树
-	mutex    sync.Mutex                      // 路由写安全锁
 	backlist sync.Map                        // 路由黑名单
+
+	insertLock sync.Mutex
 }
 
 // newRouter 创建一个新的路由器
@@ -39,8 +40,8 @@ func (own *router) WithURLBlacklist(urls ...string) *router {
 
 // Insert 插入新增的路由
 func (own *router) Insert(method, pattern string, _handler *handler) {
-	own.mutex.Lock()
-	defer own.mutex.Unlock()
+	own.insertLock.Lock()
+	defer own.insertLock.Unlock()
 
 	// 若方法对应的路由树不存在，则创建
 	root, ok := own.roots[method]

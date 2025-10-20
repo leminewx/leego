@@ -88,7 +88,7 @@ func NewGID() GID {
 
 	// 处理时钟回拨
 	if currentTime < lastTimestamp {
-		currentTime = handleClockDrift(currentTime)
+		currentTime = handleClockDrift(currentTime, lastTimestamp)
 	}
 
 	// 同一毫秒内的序列号递增
@@ -130,17 +130,6 @@ func NewGID() GID {
 // 从纪元开始的时间戳（毫秒）
 func timeSinceEpoch() int64 {
 	return time.Since(epoch).Milliseconds()
-}
-
-// 处理时钟回拨
-func handleClockDrift(currentTime int64) int64 {
-	// 简单的时钟回拨处理：等待时钟追上
-	// 在生产环境中可以使用更复杂的策略
-	for currentTime <= lastTimestamp {
-		time.Sleep(time.Millisecond)
-		currentTime = timeSinceEpoch()
-	}
-	return currentTime
 }
 
 // 等待下一毫秒
@@ -192,4 +181,81 @@ func (g GID) Timestamp() time.Time {
 // MachineID 提取机器标识
 func (g GID) MachineID() uint16 {
 	return binary.BigEndian.Uint16(g[6:8])
+}
+
+// 初始化函数
+func init() {
+	var err error
+
+	// 初始化64位ID的纪元时间
+	shortEpoch, err = time.Parse(time.RFC3339, "2023-01-01T00:00:00Z")
+	if err != nil {
+		panic(err)
+	}
+
+	// 初始化32位ID的纪元时间
+	tinyEpoch, err = time.Parse(time.RFC3339, "2024-01-01T00:00:00Z")
+	if err != nil {
+		panic(err)
+	}
+
+	// 初始化节点ID
+	initNodeID()
+	initTinyNodeID()
+}
+
+// initNodeID 初始化64位ID的节点ID
+func initNodeID() {
+	// 尝试使用IP地址后16位
+	if interfaces, err := net.Interfaces(); err == nil {
+		for _, iface := range interfaces {
+			if iface.Flags&net.FlagUp == 0 {
+				continue // 接口未启用
+			}
+			if addrs, err := iface.Addrs(); err == nil {
+				for _, addr := range addrs {
+					if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+						if ip := ipnet.IP.To4(); ip != nil {
+							// 使用IP地址的后16位
+							nodeID = binary.BigEndian.Uint16(ip[2:4])
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 后备方案：使用随机数
+	buf := make([]byte, 2)
+	rand.Read(buf)
+	nodeID = binary.BigEndian.Uint16(buf)
+}
+
+// initTinyNodeID 初始化32位ID的节点ID
+func initTinyNodeID() {
+	// 32位ID使用更短的节点ID（6位）
+	buf := make([]byte, 1)
+	rand.Read(buf)
+	tinyNodeID = buf[0] & 0x3F // 只取6位
+}
+
+// generateRandom24Bits 生成24位随机数
+func generateRandom24Bits() uint32 {
+	buf := make([]byte, 3)
+	rand.Read(buf)
+
+	// 将3字节转换为uint32
+	return uint32(buf[0])<<16 | uint32(buf[1])<<8 | uint32(buf[2])
+}
+
+// 处理时钟回拨的通用函数
+func handleClockDrift(currentTime, lastTime int64) int64 {
+	if currentTime > lastTime {
+		return currentTime
+	}
+
+	// 简单的时钟回拨处理：使用最后时间+1
+	// 在实际生产环境中可能需要更复杂的策略
+	return lastTime + 1
 }

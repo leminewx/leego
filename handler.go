@@ -14,6 +14,14 @@ type (
 
 	// MiddlewareFunc 定义中间件函数的类型
 	MiddlewareFunc func(HandleFunc) HandleFunc
+
+	// Middleware 定义中间件的接口类型
+	Middleware interface {
+		// SetScope 设置中间件的作用域
+		SetScope(scope string)
+		// Handle 处理函数
+		Handle(handle HandleFunc) HandleFunc
+	}
 )
 
 // handler 定义处理器的数据结构
@@ -25,8 +33,8 @@ type handler struct {
 	paramNames  []string         // 模式中的参数名列表
 	middlewares []MiddlewareFunc // 中间件函数
 
-	initialized      bool // 标记是否已经初始化
-	initializedMutex sync.Mutex
+	initialized     bool // 标记是否已经初始化
+	initializedLock sync.Mutex
 }
 
 // newHandler 新建一个处理器
@@ -74,8 +82,8 @@ func (own *handler) initialize() {
 		return
 	}
 
-	own.initializedMutex.Lock()
-	defer own.initializedMutex.Unlock()
+	own.initializedLock.Lock()
+	defer own.initializedLock.Unlock()
 
 	// 如果已经初始化，则返回
 	if own.initialized {

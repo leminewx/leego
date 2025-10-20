@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	errTokenNil          = errors.New("leego: jwt: token is nil")
 	errTokenExpired      = errors.New("leego: jwt: token is expired")
 	errTokenNotValidYet  = errors.New("leego: jwt: token is not valid yet")
 	errTokenIssuedFuture = errors.New("leego: jwt: token issued in the future")

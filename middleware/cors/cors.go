@@ -3,30 +3,27 @@ package cors
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
+	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/headers"
 )
 
 const (
-	_DEFAULT_MAX_AGE       = 86400                             // 默认预检请求缓存时间（24小时）
-	_DEFAULT_ALLOW_HEADERS = "Content-Type, Authorization"     // 默认允许的 HTTP 头字段
-	_DEFAULT_ALLOW_METHODS = "GET, PUT, POST, DELETE, OPTIONS" // 默认允许的 HTTP 方法
+	_DEFAULT_MAX_AGE       = 86400                                    // 默认预检请求缓存时间（24小时）
+	_DEFAULT_ALLOW_METHODS = "GET, PUT, POST, DELETE, OPTIONS, PATCH" // 默认允许的 HTTP 方法
 )
 
 // CORS 定义跨域处理器的数据结构
 type CORS struct {
+	*Config
+
 	// 表示可以缓存 Access-Control-Allow-Methods 和 Access-Control-Allow-Headers 提供的信息多长时间，单位秒，一般为24小时（86400）
-	maxAge       int
 	maxAgeString string
 
-	// 是否需要携带 Origin，设置为 true 时，Access-Control-Allow-Origin 不能设置为 *
-	allowCredentials bool
-
-	// 允许跨域的域
-	allowAllOrigins bool                // 是否允许所有源
-	allowOriginList []string            // 缓存允许源列表，用于快速检查
-	allowOrigins    map[string]struct{} // 具体的允许源列表
+	// 允许访问的源
+	allowCredentials bool                // 是否需要指定源，设置为 true 时，Access-Control-Allow-Origin 不能设置为 *
+	allowAllOrigins  bool                // 是否允许所有源
+	allowOrigins     map[string]struct{} // 具体的允许源列表
 
 	// 允许访问的方法
 	allowMethods      map[string]struct{}
@@ -49,161 +46,70 @@ type CORS struct {
 	exposeHeaderString string
 }
 
-// New 新建一个跨域处理器
-func New() *CORS {
-	c := &CORS{
-		maxAge:          _DEFAULT_MAX_AGE, // 24小时
-		maxAgeString:    strconv.Itoa(_DEFAULT_MAX_AGE),
-		allowOriginList: make([]string, 0),
-		allowOrigins:    make(map[string]struct{}),
-		allowMethods:    make(map[string]struct{}),
-		allowHeaders:    make(map[string]struct{}),
-		exposeHeaders:   make(map[string]struct{}),
-	}
-
-	// 设置默认允许的方法
-	return c.WithAllowMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-}
-
-// NewDefault 创建默认配置的CORS中间件（允许所有源，常用方法）
-func NewDefault() *CORS {
-	return New().
+// NewDefaultCORS 创建一个带默认配置的 CORS 中间件（允许所有源、所有请求头和常用方法）
+func NewDefaultCORS(name string) *CORS {
+	return NewCORS(NewDefaultConfig(name)).
 		WithAllowOrigins().
-		WithAllowMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH").
-		WithAllowHeaders("Content-Type", "Authorization", "X-Requested-With").
-		WithExposeHeaders("Content-Length", "Content-Type")
+		WithAllowMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
 }
 
-// WithMaxAge 设置最大可以缓存 Access-Control-Allow-Methods 和 Access-Control-Allow-Headers 信息的时间
-func (own *CORS) WithMaxAge(age int) *CORS {
-	if age < 0 {
-		age = 0
+// NewCORS 新建一个 CORS 中间件
+func NewCORS(config *Config) *CORS {
+	return &CORS{
+		Config:        config,
+		maxAgeString:  strconv.Itoa(int(config.MaxAge)),
+		allowOrigins:  make(map[string]struct{}),
+		allowMethods:  make(map[string]struct{}),
+		allowHeaders:  make(map[string]struct{}),
+		exposeHeaders: make(map[string]struct{}),
 	}
-
-	own.maxAge = age
-	own.maxAgeString = strconv.Itoa(own.maxAge)
-	return own
 }
 
-// WithAllowOrigins 指定可跨域访问的源，若不指定，则允许所有源访问
-func (own *CORS) WithAllowOrigins(origins ...string) *CORS {
-	if len(origins) == 0 {
-		own.allowAllOrigins = true   // 允许所有源
-		own.allowCredentials = false // 通配符源不能使用凭证
-		own.allowOrigins = make(map[string]struct{})
-		own.allowOriginList = make([]string, 0)
-		return own
-	}
-
-	for _, origin := range origins {
-		if origin == "" {
-			continue
+// Handle 创建一个处理函数
+func (own *CORS) Handle(handle leego.HandleFunc) leego.HandleFunc {
+	return func(ctx *leego.Context) {
+		// 处理预检请求
+		if own.handlePreflight(ctx) {
+			return
 		}
 
-		if origin == "*" {
-			own.allowAllOrigins = true
-			own.allowCredentials = false
-			own.allowOrigins = make(map[string]struct{})
-			own.allowOriginList = make([]string, 0)
-			return own
-		}
+		// 处理普通请求
+		own.writeResponseHeader(ctx)
 
-		if _, ok := own.allowOrigins[origin]; !ok {
-			own.allowOrigins[origin] = struct{}{}
-			own.allowOriginList = append(own.allowOriginList, origin)
-
-		}
+		// 调用下一个处理器
+		handle(ctx)
 	}
-
-	// 如果有具体源，默认需要凭证
-	if len(own.allowOrigins) > 0 {
-		own.allowCredentials = true
-	}
-
-	return own
 }
 
-// WithAllowMethods 指定可跨域访问的请求方法
-func (own *CORS) WithAllowMethods(methods ...string) *CORS {
-	for _, method := range methods {
-		if method != "" {
-			own.allowMethods[method] = struct{}{}
-		}
-	}
-
-	if len(own.allowMethods) > 0 {
-		own.allowMethodString = strings.Join(getMapKeys(own.allowMethods), ", ")
-	}
-
-	return own
-}
-
-// WithAllowHeaders 指定可跨域访问的请求头字段
-func (own *CORS) WithAllowHeaders(headers ...string) *CORS {
-	for _, header := range headers {
-		if header != "" {
-			own.allowHeaders[header] = struct{}{}
-		}
-	}
-
-	if len(own.allowHeaders) > 0 {
-		own.allowHeaderString = strings.Join(getMapKeys(own.allowHeaders), ", ")
-	}
-
-	return own
-}
-
-// WithExposeHeaders 指定响应跨域请求的额外响应头字段
-func (own *CORS) WithExposeHeaders(headers ...string) *CORS {
-	for _, header := range headers {
-		if header != "" {
-			own.exposeHeaders[header] = struct{}{}
-		}
-	}
-
-	if len(own.exposeHeaders) > 0 {
-		own.exposeHeaderString = strings.Join(getMapKeys(own.exposeHeaders), ", ")
-	}
-
-	return own
-}
-
-// getMapKeys 获取 map 的 key
-func getMapKeys(data map[string]struct{}) []string {
-	keys := make([]string, 0, len(data))
-	for key := range data {
-		keys = append(keys, key)
-	}
-
-	return keys
-}
-
-// HandlePreflight 处理预检请求
-func (own *CORS) HandlePreflight(resp http.ResponseWriter, req *http.Request) bool {
+// handlePreflight 处理预检请求
+func (own *CORS) handlePreflight(ctx *leego.Context) bool {
 	// 检查请求方法
-	if req.Method != http.MethodOptions {
+	if ctx.GetMethod() != http.MethodOptions {
 		return false
 	}
 
 	// 检查是否有预检请求相关的头
-	if method := req.Header.Get(headers.ACCESS_CONTROL_REQUEST_METHOD); method == "" {
+	if method := ctx.GetRequestHeader(headers.ACCESS_CONTROL_REQUEST_METHOD); method == "" {
 		return false
 	}
 
 	// 设置预检响应头
-	own.SetResponseHeader(resp, req)
+	own.writeResponseHeader(ctx)
 
 	// 设置状态码
-	resp.WriteHeader(http.StatusNoContent)
+	ctx.WithStatusCode(http.StatusNoContent)
 	return true
 }
 
-// SetResponseHeader 设置响应头
-func (own *CORS) SetResponseHeader(resp http.ResponseWriter, req *http.Request) {
-	header := resp.Header()
+// writeResponseHeader 写入响应头
+func (own *CORS) writeResponseHeader(ctx *leego.Context) {
+	own.lock.RLock()
+	defer own.lock.RUnlock()
+
+	header := ctx.Response.Header()
 
 	// 设置 Access-Control-Allow-Origin
-	allowedOrigin := own.getAllowedOrigin(req)
+	allowedOrigin := own.getAllowedOrigin(ctx.Request)
 	if allowedOrigin != "" {
 		header.Set(headers.ACCESS_CONTROL_ALLOW_ORIGIN, allowedOrigin)
 	}
@@ -227,11 +133,11 @@ func (own *CORS) SetResponseHeader(resp http.ResponseWriter, req *http.Request) 
 	if own.allowHeaderString != "" {
 		header.Set(headers.ACCESS_CONTROL_ALLOW_HEADERS, own.allowHeaderString)
 	} else {
-		header.Set(headers.ACCESS_CONTROL_ALLOW_HEADERS, _DEFAULT_ALLOW_HEADERS)
+		header.Set(headers.ACCESS_CONTROL_ALLOW_HEADERS, "*")
 	}
 
 	// 设置 Access-Control-Max-Age
-	if own.maxAge > 0 {
+	if own.MaxAge > 0 {
 		header.Set(headers.ACCESS_CONTROL_MAX_AGE, own.maxAgeString)
 	}
 

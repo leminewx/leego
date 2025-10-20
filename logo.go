@@ -25,8 +25,12 @@ var logoTemplate = `
 ---------------------------------------------------------------
 `
 
-// 初始化 logo
-func init() {
+// ShowLogo 显示 logo
+func ShowLogo() {
+	show()
+}
+
+func show() {
 	// 解析模板
 	tmpl, err := template.New("logo").Parse(logoTemplate)
 	if err != nil {

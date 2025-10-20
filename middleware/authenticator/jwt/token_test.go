@@ -7,7 +7,10 @@ import (
 
 func TestToken_Sign(t *testing.T) {
 	now := time.Now()
-	signer := NewHMACSigner(HS256, []byte("test"))
+	signer, err := NewHMACSigner(NewHeader(HS256), []byte("test"))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	token := NewToken(&StandardClaims{
 		Id:        "test",
@@ -19,7 +22,7 @@ func TestToken_Sign(t *testing.T) {
 		ExpiresAt: now.Add(+time.Hour).Unix(),
 	})
 
-	data, err := token.Sign(signer)
+	data, err := signer.Sign(token)
 	if err != nil {
 		t.Error(err)
 	}
@@ -49,14 +52,17 @@ func TestToken_ValidateStandardClaims(t *testing.T) {
 	}
 }
 
-// cpu: Intel(R) Core(TM) i5-14600KF					20		standard claims	    1413406	      839.1 ns/op	    1266 B/op	      12 allocs/op
-// cpu: Intel(R) Core(TM) i5-14600KF					20		mix claims			 633018	      1857 ns/op	    2083 B/op	      36 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF					20		standard claims	    1666219	       703.8 ns/op	    1138 B/op	       9 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF					20		mix claims			 704564	        1760 ns/op	    1955 B/op	      33 allocs/op
 
 // cpu: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz		8		standard claims		 737779	      1561 ns/op	    1265 B/op	      12 allocs/op
 // cpu: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz		8		mix claims			 346509	      3498 ns/op	    2081 B/op	      36 allocs/op
 func BenchmarkToken_Sign(b *testing.B) {
 	now := time.Now()
-	signer := NewHMACSigner(HS256, []byte("test"))
+	signer, err := NewHMACSigner(NewHeader(HS256), []byte("test"))
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	token := NewToken(&StandardClaims{
 		Id:        "test",
@@ -73,7 +79,7 @@ func BenchmarkToken_Sign(b *testing.B) {
 		b.ResetTimer()
 
 		for range b.N {
-			if _, err := token.Sign(signer); err != nil {
+			if _, err := signer.Sign(token); err != nil {
 				b.Error(err)
 			}
 		}
@@ -86,7 +92,7 @@ func BenchmarkToken_Sign(b *testing.B) {
 		b.ResetTimer()
 
 		for range b.N {
-			if _, err := token.Sign(signer); err != nil {
+			if _, err := signer.Sign(token); err != nil {
 				b.Error(err)
 			}
 		}

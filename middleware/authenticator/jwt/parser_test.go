@@ -18,16 +18,21 @@ func TestParser_Parse(t *testing.T) {
 	})
 
 	// 签名
-	signer := NewHMACSigner(HS256, []byte("test"))
-	tokenString, err := tokenSrc.Sign(signer)
+	signer, err := NewHMACSigner(NewHeader(HS256), []byte("test"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log(tokenString)
+
+	signature, err := signer.Sign(tokenSrc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signatureString := string(signature)
+	t.Log(signatureString)
 
 	// 验签
-	parser := NewParser(HS256)
-	tokenDst, err := parser.Parse(signer, tokenString)
+	parser := NewParser()
+	tokenDst, err := parser.Parse(signer, signatureString)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,13 +43,14 @@ func TestParser_Parse(t *testing.T) {
 	tokenSrc.WithClaim("uid", "test")
 
 	// 重新签名
-	if tokenString, err = tokenSrc.Sign(signer); err != nil {
+	if signature, err = signer.Sign(tokenSrc); err != nil {
 		t.Fatal(err)
 	}
-	t.Log(tokenString)
+	signatureString = string(signature)
+	t.Log(signatureString)
 
 	//	重新验签
-	if tokenDst, err = parser.Parse(signer, tokenString); err != nil {
+	if tokenDst, err = parser.Parse(signer, signatureString); err != nil {
 		t.Fatal(err)
 	}
 	t.Log(tokenDst.GetClaim("uid"))
@@ -64,16 +70,20 @@ func TestParser_ParseWithClaims(t *testing.T) {
 	})
 
 	// 签名
-	signer := NewHMACSigner(HS256, []byte("test"))
-	tokenString, err := tokenSrc.Sign(signer)
+	signer, err := NewHMACSigner(NewHeader(HS256), []byte("test"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log(tokenString)
+	signature, err := signer.Sign(tokenSrc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signatureString := string(signature)
+	t.Log(signatureString)
 
 	// 验签
-	parser := NewParser(HS256)
-	tokenDst, err := parser.ParseAndValidateStandardClaims(signer, tokenString, "test", "test")
+	parser := NewParser()
+	tokenDst, err := parser.ParseAndValidateStandardClaims(signer, signatureString, "test", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,13 +94,14 @@ func TestParser_ParseWithClaims(t *testing.T) {
 	tokenSrc.WithClaim("uid", "test")
 
 	// 重新签名
-	if tokenString, err = tokenSrc.Sign(signer); err != nil {
+	if signature, err = signer.Sign(tokenSrc); err != nil {
 		t.Fatal(err)
 	}
-	t.Log(tokenString)
+	signatureString = string(signature)
+	t.Log(signatureString)
 
 	//	重新验签
-	if tokenDst, err = parser.ParseAndValidateStandardClaims(signer, tokenString, "test", "test"); err != nil {
+	if tokenDst, err = parser.ParseAndValidateStandardClaims(signer, signatureString, "test", "test"); err != nil {
 		t.Fatal(err)
 	}
 	t.Log(tokenDst.GetClaim("uid"))
@@ -111,27 +122,30 @@ func BenchmarkParser_Parse(b *testing.B) {
 	})
 
 	// 签名
-	signer := NewHMACSigner(HS256, []byte("test"))
-	tokenString, err := tokenSrc.Sign(signer)
+	signer, err := NewHMACSigner(NewHeader(HS256), []byte("test"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	tokenString, err := signer.Sign(tokenSrc)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	// 验签
-	parser := NewParser(HS256)
+	parser := NewParser()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	// 压测
 	for range b.N {
-		if _, err := parser.Parse(signer, tokenString); err != nil {
+		if _, err := parser.Parse(signer, string(tokenString)); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
-// cpu: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz		20		380750	      2893 ns/op	    1769 B/op	      54 allocs/op
+// cpu: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz		20		413990	      2923 ns/op	    1937 B/op	      55 allocs/op
 func BenchmarkParser_ParseWithClaims(b *testing.B) {
 	now := time.Now()
 	tokenSrc := NewToken(&StandardClaims{
@@ -145,21 +159,24 @@ func BenchmarkParser_ParseWithClaims(b *testing.B) {
 	})
 
 	// 签名
-	signer := NewHMACSigner(HS256, []byte("test"))
-	tokenString, err := tokenSrc.Sign(signer)
+	signer, err := NewHMACSigner(NewHeader(HS256), []byte("test"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	tokenString, err := signer.Sign(tokenSrc)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	// 验签
-	parser := NewParser(HS256)
+	parser := NewParser()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	// 压测
 	for range b.N {
-		if _, err := parser.ParseAndValidateStandardClaims(signer, tokenString, "test", "test"); err != nil {
+		if _, err := parser.ParseAndValidateStandardClaims(signer, string(tokenString), "test", "test"); err != nil {
 			b.Fatal(err)
 		}
 	}

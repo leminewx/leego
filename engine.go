@@ -31,18 +31,20 @@ type Options struct {
 type Engine struct {
 	*group // 继承路由组，所以引擎本身也是一个路由组
 
-	name     string              // 服务名
-	router   *router             // 路由器
-	config   *Options            // 配置项
-	server   *http.Server        // 服务器
-	handlers map[string]*handler // 处理器
+	name        string                // 服务名
+	config      *Options              // 配置项
+	router      *router               // 路由器
+	server      *http.Server          // 服务器
+	handlers    map[string]*handler   // 处理器
+	middlewares map[string]Middleware // 中间件
 }
 
 // NewEngine 新建一个引擎
 func NewEngine(service string) *Engine {
 	engine := &Engine{
-		name:     service,
-		handlers: make(map[string]*handler),
+		name:        service,
+		handlers:    make(map[string]*handler),
+		middlewares: make(map[string]Middleware),
 	}
 
 	engine.group = &group{engine: engine, parent: nil}
@@ -53,6 +55,22 @@ func NewEngine(service string) *Engine {
 // GetServiceName 获取当前服务的名称
 func (own *Engine) GetServiceName() string {
 	return own.name
+}
+
+// GetMiddleware 获取指定的中间件
+func (own *Engine) GetMiddleware(id string) (Middleware, bool) {
+	middleware, ok := own.middlewares[id]
+	return middleware, ok
+}
+
+// GetAllMiddlewares 获取所有中间件
+func (own *Engine) GetAllMiddlewares() []Middleware {
+	middlewares := make([]Middleware, 0, len(own.middlewares))
+	for _, middleware := range own.middlewares {
+		middlewares = append(middlewares, middleware)
+	}
+
+	return middlewares
 }
 
 // GetAllRouteMonitors 获取所有路由的监控器

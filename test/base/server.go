@@ -20,48 +20,43 @@ import (
 )
 
 func main() {
-	// 创建服务
-	engine := leego.NewEngine("test").
-		WithURLBlacklist("/.well-known/appspecific/com.chrome.devtools.json")
+	// JWT 认证中间件
+	middlewareAuth := authenticator.NewHS256Authenticator("JWT 认证中间件", []byte("secret")).
+		WithSkipPaths("/v1/*").
+		WithExceptedIssuer("leego").
+		WithExceptedAudience("leego").
+		WithNotBeforeSeconds(30).
+		WithExpiresAfterSeconds(50).
+		WithValidateStandardClaims(true).
+		WithErrorHandler(func(_ *leego.Context, err error) {
+			log.Printf("Faild to authorizate: %v", err)
+		})
 
-	// 中间件
-	engine.WithMiddlewares(
+	// CORS 跨域中间件
+	middlewareCORS := cors.NewDefaultCORS("CORS 配置中间件").
+		WithMaxAge(100).
+		WithAllowOrigins("*")
+
+	// 创建 HTTP 引擎
+	engine := leego.NewEngine("test")
+
+	// 注册中间件
+	engine.WithMiddlewareFuncs(
 		middleware.Log(nil),
-		middleware.Limit(1),
+		middleware.Limit(3),
 		middleware.Recover(nil),
-		middleware.Cors(cors.NewDefault()),
+	).WithMiddlewares(
+		middlewareCORS,
+		middlewareAuth,
+	).WithMiddlewareFuncs(
 		middleware.GenerateRequestId(headers.X_REQUEST_ID, func(req *http.Request) string {
 			return fmt.Sprintf("rid_%d", time.Now().UnixNano())
 		}),
 	)
 
-	parser := jwt.NewParser()
-	signer := jwt.NewHMACSigner(jwt.HS256, []byte("secret"))
-	auth := authenticator.NewAuthenticator(
-		authenticator.NewDefaultConfig("JWT 认证管理器"),
-		signer,
-		parser,
-	).WithSkipPaths(
-		"/v1/*",
-		"/v2/login/*",
-	).
-		WithExceptedIssuer("leego").
-		WithExceptedAudience("leego").
-		WithNotBeforeDuration(30).
-		WithExpiresAfterDuration(50).
-		WithValidateStandardClaims(true)
-
-	auth.ErrorHandler = func(_ *leego.Context, err error) {
-		log.Printf("Faild to authorizate: %v", err)
-	}
-
-	engine.WithMiddlewares(
-		middleware.Authorize(auth),
-	)
-
 	// 路由组1
 	{
-		group1 := engine.Group("/v1").WithMiddlewares(
+		group1 := engine.Group("/v1").WithMiddlewareFuncs(
 			func(handle leego.HandleFunc) leego.HandleFunc {
 				return func(ctx *leego.Context) {
 					fmt.Println("/v1 1 start")
@@ -101,7 +96,7 @@ func main() {
 
 	// 路由组2
 	{
-		group2 := engine.Group("/v2").WithMiddlewares(
+		group2 := engine.Group("/v2").WithMiddlewareFuncs(
 			func(handle leego.HandleFunc) leego.HandleFunc {
 				return func(ctx *leego.Context) {
 					fmt.Println("/v2 1 start")
@@ -125,7 +120,7 @@ func main() {
 
 		// 路由组3，继承于路由组2
 		{
-			group3 := group2.Group("/login").WithMiddlewares(
+			group3 := group2.Group("/login").WithMiddlewareFuncs(
 				func(handle leego.HandleFunc) leego.HandleFunc {
 					return func(ctx *leego.Context) {
 						fmt.Println("/v2/login 1 start")
@@ -139,12 +134,13 @@ func main() {
 				fmt.Println("*********ready response login*********")
 				fmt.Printf("%s is logged in\n", ctx.GetPathValue("name"))
 
-				signature, err := auth.GenerateToken(&jwt.StandardClaims{}).WithClaim("username", "tester").Sign(signer)
+				token := middlewareAuth.GenerateToken(&jwt.StandardClaims{}).WithClaim("username", "tester")
+				signature, err := middlewareAuth.Sign(token)
 				if err != nil {
 					fmt.Println("sign error: ", err)
 				}
 
-				ctx.WithResponseHeader("Authorization", "Bearer "+signature)
+				ctx.WithResponseHeader("Authorization", "Bearer "+string(signature))
 				_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 			}, "登录接口", "v2", "登录")
 

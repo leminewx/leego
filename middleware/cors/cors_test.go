@@ -1,19 +1,10 @@
 package cors
 
 import (
-	"sync"
 	"testing"
 )
 
 func TestCors(t *testing.T) {
-	cors := New()
+	cors := NewDefaultCORS("跨域中间件")
 	t.Log(cors)
-}
-
-func BenchmarkCORS(b *testing.B) {
-	lock := &sync.RWMutex{}
-	for range b.N {
-		lock.Lock()
-		lock.Unlock()
-	}
 }

@@ -3,6 +3,7 @@ package authenticator
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"gitee.com/leminewx/leego/middleware/authenticator/jwt"
 	"gitee.com/leminewx/leego/utils/ggid"
@@ -47,36 +48,34 @@ func NewDefaultConfig(name string) *Config {
 		SkipAbsolutePathMap:   make(map[string]struct{}),
 		SkipWildcardPathSlice: make([]string, 0),
 
-		// 默认启用 JWT 认证
+		// JWT 配置
 		JWTStandardClaimsConfig: &JWTStandardClaimsConfig{
-			Validation:          1,
+			Validation:          1,         // 默认启用 JWT 认证
 			ExpiresAfterSeconds: 24 * 3600, // 默认令牌1天有效
 		},
 	}
 }
 
-// WithScope 设置作用域
-func (own *Config) WithScope(scope string) *Config {
+// SetScope 设置作用域
+func (own *Authenticator) SetScope(scope string) {
 	own.lock.Lock()
 	own.Scope = scope
 	own.lock.Unlock()
-	return own
 }
 
 // WithValidateStandardClaims 设置是否验证标准声明
-func (own *Config) WithValidateStandardClaims(validation bool) *Config {
-	own.lock.Lock()
+func (own *Authenticator) WithValidateStandardClaims(validation bool) *Authenticator {
 	if validation {
-		own.Validation = 1
+		atomic.StoreInt32(&own.Validation, 1)
 	} else {
-		own.Validation = 0
+		atomic.StoreInt32(&own.Validation, 0)
 	}
-	own.lock.Unlock()
+
 	return own
 }
 
 // WithExceptedIssuer 设置期望的签发者
-func (own *Config) WithExceptedIssuer(issuer string) *Config {
+func (own *Authenticator) WithExceptedIssuer(issuer string) *Authenticator {
 	own.lock.Lock()
 	own.ExceptedIssuer = strings.TrimSpace(issuer)
 	own.lock.Unlock()
@@ -84,7 +83,7 @@ func (own *Config) WithExceptedIssuer(issuer string) *Config {
 }
 
 // WithExceptedAudience 设置期望的接收者
-func (own *Config) WithExceptedAudience(audience string) *Config {
+func (own *Authenticator) WithExceptedAudience(audience string) *Authenticator {
 	own.lock.Lock()
 	own.ExceptedAudience = strings.TrimSpace(audience)
 	own.lock.Unlock()
@@ -92,7 +91,7 @@ func (own *Config) WithExceptedAudience(audience string) *Config {
 }
 
 // WithNotBeforeSeconds 设置令牌在多少秒之后开始生效（签发时间之后）
-func (own *Config) WithNotBeforeSeconds(seconds int64) *Config {
+func (own *Authenticator) WithNotBeforeSeconds(seconds int64) *Authenticator {
 	if seconds > 0 {
 		own.lock.Lock()
 		own.NotBeforeSeconds = seconds
@@ -103,7 +102,7 @@ func (own *Config) WithNotBeforeSeconds(seconds int64) *Config {
 }
 
 // WithExpiresAfterSeconds 设置令牌在生效多少秒之后过期
-func (own *Config) WithExpiresAfterSeconds(seconds int64) *Config {
+func (own *Authenticator) WithExpiresAfterSeconds(seconds int64) *Authenticator {
 	if seconds > 0 {
 		own.lock.Lock()
 		own.ExpiresAfterSeconds = seconds
@@ -114,7 +113,7 @@ func (own *Config) WithExpiresAfterSeconds(seconds int64) *Config {
 }
 
 // WithSkipPaths 设置跳过路径（白名单）
-func (own *Config) WithSkipPaths(paths ...string) *Config {
+func (own *Authenticator) WithSkipPaths(paths ...string) *Authenticator {
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
@@ -135,7 +134,7 @@ func (own *Config) WithSkipPaths(paths ...string) *Config {
 }
 
 // Sync 同步配置文件
-func (own *Config) Sync(config *Config) {
+func (own *Authenticator) Sync(config *Config) {
 	own.lock.Lock()
 	defer own.lock.Unlock()
 

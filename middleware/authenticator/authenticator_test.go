@@ -1,6 +1,7 @@
 package authenticator
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -8,20 +9,26 @@ import (
 )
 
 func TestAuthenticator_GenerateToken(t *testing.T) {
-	parser := jwt.NewParser()
-	signer := jwt.NewHMACSigner(jwt.HS256, []byte("secret"))
-	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, parser)
+	signer, err := jwt.NewHMACSigner(jwt.NewHeader(jwt.HS256), []byte("test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, jwt.NewParser())
 
 	for i := range 10 {
 		t.Log(*authenticator.GenerateToken(&jwt.StandardClaims{Id: strconv.Itoa(i)}).GetStandardClaims())
 	}
 }
 
-// cpu: Intel(R) Core(TM) i5-14600KF		20    	19991403	        60.73 ns/op	     192 B/op	       3 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF		20    	22280605	        52.82 ns/op	     136 B/op	       3 allocs/op
 func BenchmarkAuthenticator_GenerateToken(b *testing.B) {
-	parser := jwt.NewParser()
-	signer := jwt.NewHMACSigner(jwt.HS256, []byte("secret"))
-	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, parser)
+	signer, err := jwt.NewHMACSigner(jwt.NewHeader(jwt.HS256), []byte("test"))
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, jwt.NewParser())
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -32,20 +39,28 @@ func BenchmarkAuthenticator_GenerateToken(b *testing.B) {
 }
 
 func TestAuthenticator_Sign(t *testing.T) {
-	parser := jwt.NewParser()
-	signer := jwt.NewHMACSigner(jwt.HS256, []byte("secret"))
-	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, parser)
+	signer, err := jwt.NewHMACSigner(jwt.NewHeader(jwt.HS256), []byte("test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, jwt.NewParser())
 
 	for i := range 10 {
-		t.Log(authenticator.GenerateToken(&jwt.StandardClaims{Id: strconv.Itoa(i)}).Sign(signer))
+		token := authenticator.GenerateToken(&jwt.StandardClaims{Id: strconv.Itoa(i)})
+		signature, _ := authenticator.Sign(token)
+		fmt.Println(string(signature))
 	}
 }
 
-// cpu: Intel(R) Core(TM) i5-14600KF		20    	1596573	       748.2 ns/op	     961 B/op	      12 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF		20    	1990297	       598.1 ns/op	     833 B/op	       9 allocs/op
 func BenchmarkAuthenticator_Sign(b *testing.B) {
-	parser := jwt.NewParser()
-	signer := jwt.NewHMACSigner(jwt.HS256, []byte("secret"))
-	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, parser)
+	signer, err := jwt.NewHMACSigner(jwt.NewHeader(jwt.HS256), []byte("test"))
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, jwt.NewParser())
 
 	token := authenticator.GenerateToken(&jwt.StandardClaims{Id: "0123456789"})
 
@@ -60,39 +75,48 @@ func BenchmarkAuthenticator_Sign(b *testing.B) {
 }
 
 func TestAuthenticator_Verify(t *testing.T) {
-	parser := jwt.NewParser()
-	signer := jwt.NewHMACSigner(jwt.HS256, []byte("secret"))
-	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, parser)
-
-	signature, err := authenticator.GenerateToken(&jwt.StandardClaims{Id: "0123456789"}).Sign(signer)
+	signer, err := jwt.NewHMACSigner(jwt.NewHeader(jwt.HS256), []byte("test"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	token, err := authenticator.Verify(signature)
+	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, jwt.NewParser())
+
+	tokenSrc := authenticator.GenerateToken(&jwt.StandardClaims{Id: "0123456789"})
+	signature, err := authenticator.Sign(tokenSrc)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	t.Log(*token.GetStandardClaims())
+	tokenDst, err := authenticator.Verify(string(signature))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log(*tokenDst.GetStandardClaims())
 }
 
-// cpu: Intel(R) Core(TM) i5-14600KF		20    	524584	      2128 ns/op	    1545 B/op	      40 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF		20    	531808	      2137 ns/op	    1489 B/op	      40 allocs/op
 func BenchmarkAuthenticator_Verify(b *testing.B) {
-	parser := jwt.NewParser()
-	signer := jwt.NewHMACSigner(jwt.HS256, []byte("secret"))
-	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, parser)
-
-	signature, err := authenticator.GenerateToken(&jwt.StandardClaims{Id: "0123456789"}).Sign(signer)
+	signer, err := jwt.NewHMACSigner(jwt.NewHeader(jwt.HS256), []byte("test"))
 	if err != nil {
 		b.Fatal(err)
 	}
+
+	authenticator := NewAuthenticator(NewDefaultConfig("JWT 认证管理器"), signer, jwt.NewParser())
+
+	token := authenticator.GenerateToken(&jwt.StandardClaims{Id: "0123456789"})
+	signature, err := authenticator.Sign(token)
+	if err != nil {
+		b.Fatal(err)
+	}
+	tokenString := string(signature)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for range b.N {
-		if _, err := authenticator.Verify(signature); err != nil {
+		if _, err := authenticator.Verify(tokenString); err != nil {
 			b.Fatal(err)
 		}
 	}

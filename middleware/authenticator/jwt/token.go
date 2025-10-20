@@ -8,49 +8,31 @@ import (
 )
 
 var (
-	errTokenInvalidIssuer   = errors.New("leego: jwt: invalid issuer")
-	errTokenInvalidAudience = errors.New("leego: jwt: invalid audience")
 	errTokenNoAnyClaims     = errors.New("leego: jwt: token has no any claims")
+	errTokenInvalidIssuer   = errors.New("leego: jwt: token has no invalid issuer")
+	errTokenInvalidAudience = errors.New("leego: jwt: token has no invalid audience")
 )
 
 // Token 定义一个 JWT 令牌的数据结构
 type Token struct {
-	source    string          // 原始令牌字符串
-	header    *Header         // 头部信息
-	stdClaims *StandardClaims // 标准声明信息
 	claims    map[string]any  // 所有声明信息
-	signature []byte          // 签名
+	stdClaims *StandardClaims // 标准声明信息
 	isValid   bool            // 是否验证通过
 }
 
 // NewToken 创建新的 JWT
 func NewToken(claims *StandardClaims) *Token {
-	return &Token{
-		header: &Header{
-			Type:      "JWT",
-			Algorithm: HS256, // 默认算法
-		},
-		stdClaims: claims,
-	}
-}
-
-// NewTokenWithHeader 创建新的 JWT
-func NewTokenWithHeader(claims *StandardClaims, header *Header) *Token {
-	return &Token{
-		header:    header,
-		stdClaims: claims,
-	}
+	return &Token{stdClaims: claims}
 }
 
 // GetClaim 获取指定声明
 func (own *Token) GetClaim(key string) (any, bool) {
-	val, ok := own.claims[key]
-	return val, ok
-}
+	if len(own.claims) > 0 {
+		val, ok := own.claims[key]
+		return val, ok
+	}
 
-// GetAlgorithm 获取签名算法
-func (own *Token) GetAlgorithm() Algorithm {
-	return own.header.Algorithm
+	return nil, false
 }
 
 // GetStandardClaims 获取标准声明字段
@@ -66,38 +48,6 @@ func (own *Token) WithClaim(key string, value any) *Token {
 
 	own.claims[key] = value
 	return own
-}
-
-// Sign 对令牌进行签名
-func (own *Token) Sign(signer Signer) (string, error) {
-	// 设置算法
-	own.header.Algorithm = signer.GetAlgorithm()
-	// 编码头部
-	headerEncoded, err := own.header.Encode()
-	if err != nil {
-		return "", err
-	}
-
-	// 同步声明
-	own.syncClaims()
-	// 编码声明
-	claimsEncoded, err := own.encodeClaims()
-	if err != nil {
-		return "", err
-	}
-
-	// 拼接前缀
-	signingInput := headerEncoded + "." + claimsEncoded
-	// 生成签名
-	if own.signature, err = signer.Sign([]byte(signingInput)); err != nil {
-		return "", fmt.Errorf("leego: jwt: failed to sign token: %v", err)
-	}
-	signatureEncoded := EncodeBase64(own.signature)
-
-	// 构建完整的 JWT 字符串
-	own.source = signingInput + "." + signatureEncoded
-
-	return own.source, nil
 }
 
 // encodeClaims 编码声明

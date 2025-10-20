@@ -3,7 +3,6 @@ package jwt
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 )
 
@@ -16,21 +15,11 @@ type Parser interface {
 }
 
 // parser 定义用于解析和验证 JWT 的解析器的数据结构
-type parser struct {
-	ValidAlgorithms []Algorithm // 可接受的签名算法
-}
+type parser struct{}
 
-/*
-NewParser 新建一个 JWT 解析器
-  - algorithms: 解析器可接受的签名算法
-  - 默认支持的签名算法包含：HS256、HS384、HS512
-*/
-func NewParser(algorithms ...Algorithm) Parser {
-	if len(algorithms) == 0 {
-		return &parser{ValidAlgorithms: []Algorithm{HS256, HS384, HS512}}
-	}
-
-	return &parser{ValidAlgorithms: algorithms}
+// NewParser 新建一个 JWT 解析器
+func NewParser() Parser {
+	return &parser{}
 }
 
 // Parse 解析 JWT 字符串
@@ -53,7 +42,7 @@ func (own *parser) Parse(signer Signer, tokenString string) (*Token, error) {
 	}
 
 	// 验证算法
-	if !slices.Contains(own.ValidAlgorithms, header.Algorithm) {
+	if signer.GetAlgorithm() != header.Algorithm {
 		return nil, fmt.Errorf("leego: jwt: invalid signing algorithm: %s", header.Algorithm)
 	}
 
@@ -85,11 +74,8 @@ func (own *parser) Parse(signer Signer, tokenString string) (*Token, error) {
 	}
 
 	return &Token{
-		source:    tokenString,
-		header:    header,
 		claims:    claims,
 		stdClaims: extractStandardClaims(claims),
-		signature: signature,
 		isValid:   true,
 	}, nil
 }

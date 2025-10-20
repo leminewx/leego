@@ -37,7 +37,8 @@ type Message struct {
 	// Data 表示消息的数据，可以有多行，且每行都会作为一个数据片段，最终将所有数据用换行符连接起来作为完整数据
 	Data []byte
 
-	formatted []byte // 格式化数据，提高复用性
+	formatted     []byte // 格式化数据，提高复用性
+	formattedLock sync.Mutex
 }
 
 // NewConnectedMessage 创建一个连接消息
@@ -82,6 +83,13 @@ func (own *Message) Write(resp response.Writer) error {
 
 // format 格式化数据
 func (own *Message) format() bool {
+	if len(own.formatted) > 0 {
+		return true
+	}
+
+	own.formattedLock.Lock()
+	defer own.formattedLock.Unlock()
+
 	if len(own.formatted) > 0 {
 		return true
 	}

@@ -40,8 +40,20 @@ func (own *group) Group(prefix string) *group {
 }
 
 // WithMiddlewares 添加路由组中间件
-func (own *group) WithMiddlewares(middlewares ...MiddlewareFunc) *group {
+func (own *group) WithMiddlewares(middlewares ...Middleware) *group {
 	for _, middleware := range middlewares {
+		if middleware != nil {
+			middleware.SetScope(own.prefix)
+			own.middlewares = append(own.middlewares, middleware.Handle)
+		}
+	}
+
+	return own
+}
+
+// WithMiddlewareFuncs 添加路由组中间件处理函数
+func (own *group) WithMiddlewareFuncs(funcs ...MiddlewareFunc) *group {
+	for _, middleware := range funcs {
 		if middleware != nil {
 			own.middlewares = append(own.middlewares, middleware)
 		}
