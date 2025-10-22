@@ -84,7 +84,7 @@ func (own *CORS) Handle(handle leego.HandleFunc) leego.HandleFunc {
 // handlePreflight 处理预检请求
 func (own *CORS) handlePreflight(ctx *leego.Context) bool {
 	// 检查请求方法
-	if ctx.GetMethod() != http.MethodOptions {
+	if ctx.Request.Method != http.MethodOptions {
 		return false
 	}
 

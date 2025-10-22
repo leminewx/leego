@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"gitee.com/leminewx/gokit/ggid"
 	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/response/sse"
-	"gitee.com/leminewx/leego/utils/ggid"
 
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/middleware"
@@ -21,15 +21,16 @@ import (
 
 func main() {
 	// 创建服务
-	engine := leego.NewEngine("test").
-		WithURLBlacklist("/.well-known/appspecific/com.chrome.devtools.json")
+	engine := leego.NewEngine("test")
 
 	// 中间件
-	engine.WithMiddlewares(
+	engine.WithMiddlewareFuncs(
 		middleware.Log(nil),
-		middleware.Limit(10),
+		middleware.Limit(3),
 		middleware.Recover(nil),
-		middleware.Cors(cors.NewDefault()),
+	).WithMiddlewares(
+		cors.NewDefaultCORS("CORS 配置中间件"),
+	).WithMiddlewareFuncs(
 		middleware.GenerateRequestId(headers.X_REQUEST_ID, func(req *http.Request) string {
 			return fmt.Sprintf("rid_%d", time.Now().UnixNano())
 		}),
@@ -46,7 +47,7 @@ func main() {
 	})
 
 	wg.Go(func() {
-		id := ggid.NewGID().String()
+		id := ggid.New().GetShort()
 		for {
 			if sseManager.IsClosed() {
 				return
@@ -68,7 +69,7 @@ func main() {
 			log.Println(err)
 		}
 
-		id := ggid.NewGID().String()
+		id := ggid.New().GetShort()
 		for range 10 {
 			data, _ := json.Marshal(&leego.JSON{"username": username, "desc": "hello", "time": time.Now().Format(time.DateTime)})
 			_ = sseManager.SendTo(client.Id, &sse.Message{

@@ -64,29 +64,13 @@ func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request, val
 
 /**************************************************** HTTP Request ****************************************************/
 
-// GetURL 获取 RUL 信息
-func (own *Context) GetURL() *url.URL {
-	return own.Request.URL
-}
+// GetJWT 获取 JWT 令牌
+func (own *Context) GetJWT() (*jwt.Token, bool) {
+	if own.token != nil {
+		return own.token, true
+	}
 
-// GetPath 获取请求路径
-func (own *Context) GetPath() string {
-	return own.Request.URL.Path
-}
-
-// GetHost 获取主机信息
-func (own *Context) GetHost() string {
-	return own.Request.Host
-}
-
-// GetMethod 获取请求方法
-func (own *Context) GetMethod() string {
-	return own.Request.Method
-}
-
-// GetProtocol 获取请求协议
-func (own *Context) GetProtocol() string {
-	return own.Request.Proto
+	return nil, false
 }
 
 // GetPathValue 获取动态路由参数
@@ -107,15 +91,6 @@ func (own *Context) GetContextValue(key any) (any, bool) {
 
 	if val := ctx.Value(key); val != nil {
 		return val, true
-	}
-
-	return nil, false
-}
-
-// GetJWT 获取 JWT 令牌
-func (own *Context) GetJWT() (*jwt.Token, bool) {
-	if own.token != nil {
-		return own.token, true
 	}
 
 	return nil, false
@@ -191,9 +166,9 @@ func (own *Context) GetRequestHeader(key string) string {
 	return own.Request.Header.Get(key)
 }
 
-// WithRequestHeader 设置请求头
-func (own *Context) WithRequestHeader(key, value string) *Context {
-	own.Request.Header.Set(key, value)
+// WithJWT 绑定 JWT 令牌
+func (own *Context) WithJWT(token *jwt.Token) *Context {
+	own.token = token
 	return own
 }
 
@@ -203,9 +178,9 @@ func (own *Context) WithContext(ctx context.Context) *Context {
 	return own
 }
 
-// WithJWT 绑定 JWT 令牌
-func (own *Context) WithJWT(token *jwt.Token) *Context {
-	own.token = token
+// WithRequestHeader 设置请求头
+func (own *Context) WithRequestHeader(key, value string) *Context {
+	own.Request.Header.Set(key, value)
 	return own
 }
 
@@ -240,15 +215,15 @@ func (own *Context) GetResponseHeader(key string) string {
 	return own.Response.Header().Get(key)
 }
 
-// WithResponseHeader 设置响应头
-func (own *Context) WithResponseHeader(key, value string) *Context {
-	own.Response.Header().Set(key, value)
-	return own
-}
-
 // WithStatusCode 设置响应状态码
 func (own *Context) WithStatusCode(code int) *Context {
 	own.Response.WriteHeader(code)
+	return own
+}
+
+// WithResponseHeader 设置响应头
+func (own *Context) WithResponseHeader(key, value string) *Context {
+	own.Response.Header().Set(key, value)
 	return own
 }
 
@@ -259,27 +234,27 @@ func (own *Context) ResponseError(code int, error string) {
 
 // ResponseXML 响应 XML 格式的数据
 func (own *Context) ResponseXML(code int, data any) error {
-	own.WithStatusCode(code)
+	own.Response.WriteHeader(code)
 	return xml.NewEncoder(own.Response).Encode(data)
 }
 
 // ResponseJSON 响应 JSON 格式的数据
 func (own *Context) ResponseJSON(code int, data any) error {
 	own.WithResponseHeader("Content-Type", "application/json")
-	own.WithStatusCode(code)
+	own.Response.WriteHeader(code)
 	return json.NewEncoder(own.Response).Encode(&data)
 }
 
 // ResponseBytes 响应字节数据
 func (own *Context) ResponseBytes(code int, data []byte) error {
-	own.WithStatusCode(code)
+	own.Response.WriteHeader(code)
 	_, err := own.Response.Write(data)
 	return err
 }
 
 // ResponseString 响应字符串
 func (own *Context) ResponseString(code int, data string) error {
-	own.WithStatusCode(code)
+	own.Response.WriteHeader(code)
 	_, err := own.Response.Write([]byte(data))
 	return err
 }

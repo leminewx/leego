@@ -121,7 +121,7 @@ func (own *Authenticator) GenerateToken(claims *jwt.StandardClaims) *jwt.Token {
 func (own *Authenticator) Handle(handle leego.HandleFunc) leego.HandleFunc {
 	return func(ctx *leego.Context) {
 		// 检查是否跳过当前路径
-		if own.shouldSkip(ctx.GetPath()) {
+		if own.shouldSkip(ctx.Request.URL.Path) {
 			handle(ctx)
 			return
 		}

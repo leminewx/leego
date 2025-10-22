@@ -5,8 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"gitee.com/leminewx/gokit/ggid"
 	"gitee.com/leminewx/leego/middleware/authenticator/jwt"
-	"gitee.com/leminewx/leego/utils/ggid"
 )
 
 type (
@@ -41,7 +41,7 @@ type (
 func NewDefaultConfig(name string) *Config {
 	return &Config{
 		// 元数据
-		Id:   ggid.NewGID().String(),
+		Id:   ggid.New().GetShort(),
 		Name: name,
 
 		// 跳过路径

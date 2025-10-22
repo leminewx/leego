@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"gitee.com/leminewx/leego/utils/ggid"
+	"gitee.com/leminewx/gokit/ggid"
 )
 
 type Config struct {
@@ -31,7 +31,7 @@ type Config struct {
 // NewDefaultConfig 创建默认跨域中间件配置
 func NewDefaultConfig(name string) *Config {
 	return &Config{
-		Id:            ggid.NewGID().String(),
+		Id:            ggid.New().GetShort(),
 		Name:          name,
 		MaxAge:        _DEFAULT_MAX_AGE,
 		AllowOrigins:  make([]string, 0),
