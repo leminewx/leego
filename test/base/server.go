@@ -9,9 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"gitee.com/leminewx/leego/headers"
-
 	"gitee.com/leminewx/leego"
+	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/middleware"
 	"gitee.com/leminewx/leego/middleware/authenticator"
 	"gitee.com/leminewx/leego/middleware/authenticator/jwt"
@@ -22,7 +21,7 @@ import (
 func main() {
 	// JWT 认证中间件
 	middlewareAuth := authenticator.NewHS256Authenticator("JWT 认证中间件", []byte("secret")).
-		WithSkipPaths("/v1/*").
+		WithSkipPaths("/v1/*", "/admin/*").
 		WithExceptedIssuer("leego").
 		WithExceptedAudience("leego").
 		WithNotBeforeSeconds(30).
@@ -180,6 +179,11 @@ func main() {
 				}
 			}, "显示文件", "v2", "文件", "前端显示")
 		}
+	}
+
+	group4 := engine.Group("/admin")
+	if err := group4.SetStatics("views", "../../admin/views", false, "后台管理静态文件服务", "admin"); err != nil {
+		panic(err)
 	}
 
 	// 启动服务

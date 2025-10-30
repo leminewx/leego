@@ -117,17 +117,27 @@ func (own *Authenticator) GenerateToken(claims *jwt.StandardClaims) *jwt.Token {
 	return jwt.NewToken(claims)
 }
 
+// GenerateTokenString 生成 JWT 令牌字符串
+func (own *Authenticator) GenerateTokenString(claims *jwt.StandardClaims) (string, error) {
+	tokenBytes, err := own.Sign(own.GenerateToken(claims))
+	if err != nil {
+		return "", err
+	}
+
+	return string(tokenBytes), nil
+}
+
 // Handle 创建一个处理函数
 func (own *Authenticator) Handle(handle leego.HandleFunc) leego.HandleFunc {
 	return func(ctx *leego.Context) {
 		// 检查是否跳过当前路径
-		if own.shouldSkip(ctx.Request.URL.Path) {
+		if own.ShouldSkip(ctx.Request.URL.Path) {
 			handle(ctx)
 			return
 		}
 
 		// 提取令牌
-		tokenString, err := own.extractToken(ctx.Request)
+		tokenString, err := own.ExtractToken(ctx.Request)
 		if err != nil {
 			// 处理错误若存在，则处理错误
 			if own.errorHandler != nil {
@@ -150,7 +160,7 @@ func (own *Authenticator) Handle(handle leego.HandleFunc) leego.HandleFunc {
 			token, err = own.Verify(tokenString)
 		}
 
-		// 鉴权失败
+		// 认证失败
 		if err != nil {
 			// 处理错误若存在，则处理错误
 			if own.errorHandler != nil {
@@ -171,8 +181,8 @@ func (own *Authenticator) Handle(handle leego.HandleFunc) leego.HandleFunc {
 	}
 }
 
-// shouldSkip 检查是否应该跳过当前路径
-func (own *Authenticator) shouldSkip(path string) bool {
+// ShouldSkip 检查是否应该跳过当前路径
+func (own *Authenticator) ShouldSkip(path string) bool {
 	own.lock.RLock()
 	defer own.lock.RUnlock()
 
@@ -193,8 +203,8 @@ func (own *Authenticator) shouldSkip(path string) bool {
 	return false
 }
 
-// extractToken 提取取令牌
-func (own *Authenticator) extractToken(req *http.Request) (string, error) {
+// ExtractToken 提取取令牌
+func (own *Authenticator) ExtractToken(req *http.Request) (string, error) {
 	// 未指定令牌提取器，则使用默认令牌提取器
 	if len(own.extractors) == 0 {
 		return own.defaultExtractor.Extract(req)

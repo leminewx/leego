@@ -37,23 +37,23 @@ func Log(record func(ctx *leego.Context)) leego.MiddlewareFunc {
 			switch {
 			// 0 ~ 199
 			case status < http.StatusOK:
-				fmt.Printf(_FORMAT_1XX, start.Format(_FORMAT_DATETIME), ctx.Request.Proto, ctx.Request.Method, ctx.Request.URL.Path, status, time.Since(start))
+				fmt.Printf(_FORMAT_1XX, start.Format(_FORMAT_DATETIME), ctx.Request.Proto, ctx.Request.Method, ctx.GetURL().Path, status, time.Since(start))
 
 			// 200 ~ 299
 			case status < http.StatusMultipleChoices:
-				fmt.Printf(_FORMAT_2XX, start.Format(_FORMAT_DATETIME), ctx.Request.Proto, ctx.Request.Method, ctx.Request.URL.Path, status, time.Since(start))
+				fmt.Printf(_FORMAT_2XX, start.Format(_FORMAT_DATETIME), ctx.Request.Proto, ctx.Request.Method, ctx.GetURL().Path, status, time.Since(start))
 
 			// 300 ~ 399
 			case status < http.StatusBadRequest:
-				fmt.Printf(_FORMAT_3XX, start.Format(_FORMAT_DATETIME), ctx.Request.Proto, ctx.Request.Method, ctx.Request.URL.Path, status, time.Since(start))
+				fmt.Printf(_FORMAT_3XX, start.Format(_FORMAT_DATETIME), ctx.Request.Proto, ctx.Request.Method, ctx.GetURL().Path, status, time.Since(start))
 
 			// 400 ~ 499
 			case status < http.StatusInternalServerError:
-				fmt.Printf(_FORMAT_4XX, start.Format(_FORMAT_DATETIME), ctx.Request.Proto, ctx.Request.Method, ctx.Request.URL.Path, status, time.Since(start))
+				fmt.Printf(_FORMAT_4XX, start.Format(_FORMAT_DATETIME), ctx.Request.Proto, ctx.Request.Method, ctx.GetURL().Path, status, time.Since(start))
 
 			// 500 ~
 			default:
-				fmt.Printf(_FORMAT_5XX, start.Format(_FORMAT_DATETIME), ctx.Request.Proto, ctx.Request.Method, ctx.Request.URL.Path, status, time.Since(start))
+				fmt.Printf(_FORMAT_5XX, start.Format(_FORMAT_DATETIME), ctx.Request.Proto, ctx.Request.Method, ctx.GetURL().Path, status, time.Since(start))
 			}
 
 			// 记录请求响应信息

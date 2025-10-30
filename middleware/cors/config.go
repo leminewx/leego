@@ -11,6 +11,7 @@ import (
 type Config struct {
 	// 元数据
 	Id    string `json:"id" xml:"id"`
+	Type  string `json:"type" xml:"type"`
 	Name  string `json:"name" xml:"name"`
 	Scope string `json:"scope" xml:"scope"`
 
@@ -32,6 +33,7 @@ type Config struct {
 func NewDefaultConfig(name string) *Config {
 	return &Config{
 		Id:            ggid.New().GetShort(),
+		Type:          "cors",
 		Name:          name,
 		MaxAge:        _DEFAULT_MAX_AGE,
 		AllowOrigins:  make([]string, 0),
@@ -192,4 +194,40 @@ func (own *CORS) resetConfig() {
 	own.allowMethodString = ""
 	own.allowHeaderString = ""
 	own.exposeHeaderString = ""
+}
+
+// GetConfig 获取跨域配置
+func (own *CORS) GetConfig() *Config {
+	config := &Config{
+		Id:            own.Id,
+		Type:          "cors",
+		Name:          own.Name,
+		Scope:         own.Scope,
+		AllowOrigins:  make([]string, 0),
+		AllowMethods:  make([]string, 0),
+		AllowHeaders:  make([]string, 0),
+		ExposeHeaders: make([]string, 0),
+	}
+
+	own.lock.RLock()
+	config.MaxAge = own.MaxAge
+
+	for _, origin := range own.AllowOrigins {
+		config.AllowOrigins = append(config.AllowOrigins, origin)
+	}
+
+	for _, method := range own.AllowMethods {
+		config.AllowMethods = append(config.AllowMethods, method)
+	}
+
+	for _, header := range own.AllowHeaders {
+		config.AllowHeaders = append(config.AllowHeaders, header)
+	}
+
+	for _, header := range own.ExposeHeaders {
+		config.ExposeHeaders = append(config.ExposeHeaders, header)
+	}
+
+	own.lock.RUnlock()
+	return config
 }

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leego 管理系统 - 登录</title>
+    <!-- 引入外部资源 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+
+    <!-- Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#6C5CE7', // 主色调：紫色
+                        secondary: '#00D2D3', // 辅助色：青色
+                        accent: '#FF3E78',    // 强调色：亮红
+                        success: '#00B894',   // 成功色：绿色
+                        dark: {
+                            100: '#2D3436',
+                            200: '#212529',
+                            300: '#1A1A2E',
+                            400: '#16213E',
+                            500: '#0F3460'
+                        }
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'float': 'float 6s ease-in-out infinite',
+                        'glow': 'glow 2s ease-in-out infinite alternate',
+                        'flow': 'flow 20s linear infinite',
+                        'flicker': 'flicker 3s ease-in-out infinite alternate',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-10px)' },
+                        },
+                        glow: {
+                            '0%': { boxShadow: '0 0 10px rgba(108, 92, 231, 0.3)' },
+                            '100%': { boxShadow: '0 0 20px rgba(108, 92, 231, 0.7)' },
+                        },
+                        flow: {
+                            '0%': { backgroundPosition: '0% 0%' },
+                            '100%': { backgroundPosition: '100% 100%' },
+                        },
+                        flicker: {
+                            '0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100%': { opacity: '1' },
+                            '20%, 21.999%, 63%, 63.999%, 65%, 69.999%': { opacity: '0.4' },
+                        }
+                    }
+                },
+            }
+        }
+    </script>
+
+    <!-- 自定义样式 -->
+    <style type="text/tailwindcss">
+        @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .text-shadow {
+        text-shadow: 0 0 15px rgba(108, 92, 231, 0.7);
+      }
+      .text-shadow-lg {
+        text-shadow: 0 0 20px rgba(0, 210, 211, 0.8);
+      }
+      .bg-grid {
+        background-image: 
+          linear-gradient(rgba(108, 92, 231, 0.1) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(108, 92, 231, 0.1) 1px, transparent 1px);
+        background-size: 20px 20px;
+      }
+      .bg-grid-lg {
+        background-image: 
+          linear-gradient(rgba(0, 210, 211, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 210, 211, 0.05) 1px, transparent 1px);
+        background-size: 50px 50px;
+      }
+      .grid-animation {
+        animation: gridMove 15s linear infinite;
+      }
+      .grid-animation-reverse {
+        animation: gridMoveReverse 20s linear infinite;
+      }
+      @keyframes gridMove {
+        from { background-position: 0 0; }
+        to { background-position: 20px 20px; }
+      }
+      @keyframes gridMoveReverse {
+        from { background-position: 0 0; }
+        to { background-position: -50px -50px; }
+      }
+      .glass-effect {
+        backdrop-filter: blur(10px);
+        background: rgba(26, 26, 46, 0.6);
+        border: 1px solid rgba(108, 92, 231, 0.2);
+      }
+      .pulse-border {
+        position: relative;
+      }
+      .pulse-border::after {
+        content: '';
+        position: absolute;
+        top: -2px;
+        left: -2px;
+        right: -2px;
+        bottom: -2px;
+        border-radius: inherit;
+        border: 1px solid transparent;
+        background: linear-gradient(45deg, #6C5CE7, #00D2D3, #FF3E78) border-box;
+        -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        animation: rotate 6s linear infinite;
+      }
+      @keyframes rotate {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      .input-focus {
+        @apply focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none;
+      }
+      .btn-hover {
+        @apply hover:shadow-lg hover:shadow-primary/20 hover:-translate-y-0.5 transition-all duration-300;
+      }
+      .bg-gradient-dynamic {
+        background: linear-gradient(
+          135deg,
+          rgba(16, 23, 42, 0.9) 0%,
+          rgba(26, 26, 46, 0.95) 50%,
+          rgba(16, 23, 42, 0.9) 100%
+        );
+        background-size: 200% 200%;
+        animation: flow 15s ease infinite;
+      }
+      .connecting-dots {
+        background-image: radial-gradient(rgba(108, 92, 231, 0.3) 1px, transparent 1px);
+        background-size: 30px 30px;
+      }
+    }
+  </style>
+</head>
+
+<body class="font-inter bg-dark-300 text-gray-200 min-h-screen flex items-center justify-center p-4 overflow-hidden">
+    <!-- 多层动态背景 -->
+    <div class="fixed inset-0 -z-40 bg-gradient-dynamic"></div>
+    <div class="fixed inset-0 -z-30 bg-grid grid-animation opacity-70"></div>
+    <div class="fixed inset-0 -z-20 bg-grid-lg grid-animation-reverse opacity-50"></div>
+    <div class="fixed inset-0 -z-10 connecting-dots"></div>
+
+    <!-- 动态光晕和粒子效果 -->
+    <div class="fixed inset-0 -z-10 overflow-hidden">
+        <!-- 主光晕 - 随时间变换位置和大小 -->
+        <div class="absolute top-[10%] right-[20%] w-96 h-96 bg-primary/20 rounded-full filter blur-3xl animate-pulse-slow"
+            style="animation-duration: 8s;"></div>
+        <div class="absolute bottom-[15%] left-[15%] w-96 h-96 bg-secondary/20 rounded-full filter blur-3xl animate-pulse-slow"
+            style="animation-duration: 10s; animation-delay: 2s;"></div>
+        <div class="absolute top-[60%] right-[30%] w-64 h-64 bg-accent/15 rounded-full filter blur-3xl animate-pulse-slow"
+            style="animation-duration: 12s; animation-delay: 4s;"></div>
+
+        <!-- 粒子连接线容器 -->
+        <div id="particles" class="absolute inset-0"></div>
+    </div>
+
+    <div class="w-full max-w-6xl grid md:grid-cols-2 gap-8 items-center relative z-10">
+        <!-- 左侧品牌展示区 -->
+        <div class="hidden md:block">
+            <div class="relative p-8">
+                <!-- 科幻数据展示区：关键调整容器定位，确保与上方内容左对齐 -->
+                <div class="relative h-80 w-full rounded-xl overflow-hidden pulse-border animate-float">
+                    <!-- 网格覆盖层增强科幻感 -->
+                    <div class="absolute inset-0 bg-grid opacity-50 grid-animation"></div>
+
+                    <!-- 动态数据指标卡片：移除外层不必要的缩进，统一内边距 -->
+                    <div class="absolute inset-x-4 inset-y-0 pt-4 flex flex-col justify-between h-full">
+                        <p class="text-gray-300 text-lg mb-8 max-w-md">
+                            简洁、高效的企业级管理解决方案，助力业务腾飞
+                        </p>
+
+                        <!-- 第一行：系统状态、CPU负载、内存使用 -->
+                        <div class="flex justify-between gap-3 mb-2">
+                            <div
+                                class="glass-effect px-4 py-3 rounded-lg w-1/3 transform transition-transform hover:scale-105">
+                                <div class="text-xs text-gray-400 mb-1">系统状态</div>
+                                <div class="text-secondary font-mono text-shadow-lg animate-flicker">ONLINE</div>
+                            </div>
+                            <div
+                                class="glass-effect px-4 py-3 rounded-lg w-1/3 transform transition-transform hover:scale-105">
+                                <div class="text-xs text-gray-400 mb-1">CPU 负载</div>
+                                <div class="text-primary font-mono" id="cpuLoad">37.8%</div>
+                            </div>
+                            <div
+                                class="glass-effect px-4 py-3 rounded-lg w-1/3 transform transition-transform hover:scale-105">
+                                <div class="text-xs text-gray-400 mb-1">内存使用</div>
+                                <div class="text-accent font-mono" id="memoryUsage">62.4%</div>
+                            </div>
+                        </div>
+
+                        <!-- 第二行：请求总数、成功率、失败率 -->
+                        <div class="flex justify-between gap-3 mb-2">
+                            <div
+                                class="glass-effect px-4 py-3 rounded-lg w-1/3 transform transition-transform hover:scale-105">
+                                <div class="text-xs text-gray-400 mb-1">请求总数</div>
+                                <div class="text-white font-mono" id="totalRequests">184,291</div>
+                            </div>
+                            <div
+                                class="glass-effect px-4 py-3 rounded-lg w-1/3 transform transition-transform hover:scale-105">
+                                <div class="text-xs text-gray-400 mb-1">成功率</div>
+                                <div class="text-success font-mono" id="successRate">99.7%</div>
+                            </div>
+                            <div
+                                class="glass-effect px-4 py-3 rounded-lg w-1/3 transform transition-transform hover:scale-105">
+                                <div class="text-xs text-gray-400 mb-1">失败率</div>
+                                <div class="text-accent font-mono" id="failureRate">0.3%</div>
+                            </div>
+                        </div>
+
+                        <!-- 第三行：P50、P90、P99 -->
+                        <div class="flex justify-between gap-3 mb-2">
+                            <div
+                                class="glass-effect px-4 py-3 rounded-lg w-1/3 transform transition-transform hover:scale-105">
+                                <div class="text-xs text-gray-400 mb-1">P50 延迟</div>
+                                <div class="text-primary font-mono" id="p50Latency">42ms</div>
+                            </div>
+                            <div
+                                class="glass-effect px-4 py-3 rounded-lg w-1/3 transform transition-transform hover:scale-105">
+                                <div class="text-xs text-gray-400 mb-1">P90 延迟</div>
+                                <div class="text-primary font-mono" id="p90Latency">87ms</div>
+                            </div>
+                            <div
+                                class="glass-effect px-4 py-3 rounded-lg w-1/3 transform transition-transform hover:scale-105">
+                                <div class="text-xs text-gray-400 mb-1">P99 延迟</div>
+                                <div class="text-accent font-mono" id="p99Latency">156ms</div>
+                            </div>
+                        </div>
+
+                        <!-- 中部主要指标 - 动态变化的图表 -->
+                        <!-- <div class="glass-effect px-4 py-4 rounded-lg">
+                            <div class="text-xs text-gray-400 mb-2">实时请求流量</div>
+                            <div class="flex items-end justify-between h-16">
+                                <div class="w-1/6 h-1/4 bg-primary/60 rounded-t transition-all duration-1000"></div>
+                                <div class="w-1/6 h-3/4 bg-primary/60 rounded-t transition-all duration-1000 delay-100">
+                                </div>
+                                <div class="w-1/6 h-1/2 bg-primary/60 rounded-t transition-all duration-1000 delay-200">
+                                </div>
+                                <div
+                                    class="w-1/6 h-full bg-primary/60 rounded-t transition-all duration-1000 delay-300">
+                                </div>
+                                <div class="w-1/6 h-2/3 bg-primary/60 rounded-t transition-all duration-1000 delay-400">
+                                </div>
+                                <div class="w-1/6 h-1/3 bg-primary/60 rounded-t transition-all duration-1000 delay-500">
+                                </div>
+                            </div>
+                        </div> -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧登录表单区 -->
+        <div>
+            <div class="glass-effect rounded-2xl p-8 md:p-10 card-glow animate-float" style="animation-delay: 0.5s;">
+                <!-- 移动端 Logo -->
+                <div class="md:hidden flex items-center mb-8">
+                    <div class="w-10 h-10 rounded-lg bg-primary flex items-center justify-center mr-3">
+                        <i class="fa fa-cube text-white text-xl"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white">Leego 后台管理系统</h2>
+                </div>
+
+                <h2 class="text-2xl font-bold text-white mb-6 md:mb-8">欢迎使用 Leego 后台管理系统</h2>
+                <p class="text-gray-400 mb-8">请输入您的账号信息登录系统</p>
+
+                <form id="loginForm" class="space-y-6">
+                    <!-- 用户名输入 -->
+                    <div>
+                        <label for="username" class="block text-sm font-medium text-gray-300 mb-2">用户名</label>
+                        <div class="relative">
+                            <div
+                                class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500">
+                                <i class="fa fa-user"></i>
+                            </div>
+                            <input type="text" id="username" name="username"
+                                class="w-full pl-10 pr-4 py-3 bg-dark-300/70 border border-gray-700 rounded-lg text-gray-100 input-focus transition-all"
+                                placeholder="请输入用户名" required>
+                        </div>
+                    </div>
+
+                    <!-- 密码输入 -->
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <label for="password" class="block text-sm font-medium text-gray-300">密码</label>
+                            <a href="#" class="text-sm text-primary hover:text-primary/80 transition-colors">忘记密码?</a>
+                        </div>
+                        <div class="relative">
+                            <div
+                                class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500">
+                                <i class="fa fa-lock"></i>
+                            </div>
+                            <input type="password" id="password" name="password"
+                                class="w-full pl-10 pr-10 py-3 bg-dark-300/70 border border-gray-700 rounded-lg text-gray-100 input-focus transition-all"
+                                placeholder="请输入密码" required>
+                            <button type="button" id="togglePassword"
+                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-300 transition-colors">
+                                <i class="fa fa-eye-slash"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 记住我选项 -->
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <input id="remember" type="checkbox"
+                                class="h-4 w-4 bg-dark-300 border-gray-600 rounded text-primary focus:ring-primary/30">
+                            <label for="remember" class="ml-2 block text-sm text-gray-400">记住我</label>
+                        </div>
+                    </div>
+
+                    <!-- 登录按钮 -->
+                    <button type="submit"
+                        class="w-full bg-primary hover:bg-primary/90 text-white font-medium py-3 px-4 rounded-lg btn-hover flex items-center justify-center">
+                        <span>登录系统</span>
+                        <i class="fa fa-arrow-right ml-2"></i>
+                    </button>
+                </form>
+
+                <!-- 分隔线 -->
+                <div class="relative my-8">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-gray-700/50"></div>
+                    </div>
+                    <!-- <div class="relative flex justify-center text-sm">
+                        <span class="px-2 bg-dark-300/30 text-gray-500">其他登录方式</span>
+                    </div> -->
+                </div>
+
+                <!-- 第三方登录 -->
+                <!-- <div class="grid grid-cols-3 gap-4">
+                    <button
+                        class="flex items-center justify-center py-2.5 px-4 bg-dark-300/50 border border-gray-700/50 rounded-lg text-gray-300 hover:bg-dark-400 transition-colors">
+                        <i class="fa fa-qq text-blue-400"></i>
+                    </button>
+                    <button
+                        class="flex items-center justify-center py-2.5 px-4 bg-dark-300/50 border border-gray-700/50 rounded-lg text-gray-300 hover:bg-dark-400 transition-colors">
+                        <i class="fa fa-weixin text-green-400"></i>
+                    </button>
+                    <button
+                        class="flex items-center justify-center py-2.5 px-4 bg-dark-300/50 border border-gray-700/50 rounded-lg text-gray-300 hover:bg-dark-400 transition-colors">
+                        <i class="fa fa-github text-gray-300"></i>
+                    </button>
+                </div> -->
+
+                <!-- 底部版权信息 -->
+                <div class="mt-10 text-center text-sm text-gray-500">
+                    <p>&copy; 2025 Leego Leminewx. 保留所有权利.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        // 创建动态粒子和连接线效果
+        function createDynamicParticles() {
+            const particlesContainer = document.getElementById('particles');
+            const particleCount = 30;
+            const particles = [];
+
+            // 创建粒子
+            for (let i = 0; i < particleCount; i++) {
+                const particle = document.createElement('div');
+
+                // 随机属性
+                const size = Math.random() * 2 + 1;
+                const posX = Math.random() * 100;
+                const posY = Math.random() * 100;
+                const speedX = (Math.random() - 0.5) * 0.1;
+                const speedY = (Math.random() - 0.5) * 0.1;
+                const opacity = Math.random() * 0.6 + 0.2;
+
+                // 随机颜色
+                const colors = ['#6C5CE7', '#00D2D3', '#FF3E78'];
+                const color = colors[Math.floor(Math.random() * colors.length)];
+
+                // 设置样式
+                particle.style.cssText = `
+          position: absolute;
+          width: ${size}px;
+          height: ${size}px;
+          background: ${color};
+          opacity: ${opacity};
+          border-radius: 50%;
+          top: ${posY}%;
+          left: ${posX}%;
+          box-shadow: 0 0 ${size * 5}px ${color}80;
+          z-index: -1;
+        `;
+
+                particlesContainer.appendChild(particle);
+
+                // 存储粒子信息用于动画
+                particles.push({
+                    element: particle,
+                    x: posX,
+                    y: posY,
+                    speedX,
+                    speedY,
+                    size
+                });
+            }
+
+            // 粒子动画循环
+            function animateParticles() {
+                particles.forEach(particle => {
+                    // 更新位置
+                    particle.x += particle.speedX;
+                    particle.y += particle.speedY;
+
+                    // 边界检测
+                    if (particle.x < 0) particle.x = 100;
+                    if (particle.x > 100) particle.x = 0;
+                    if (particle.y < 0) particle.y = 100;
+                    if (particle.y > 100) particle.y = 0;
+
+                    // 应用位置
+                    particle.element.style.left = `${particle.x}%`;
+                    particle.element.style.top = `${particle.y}%`;
+                });
+
+                requestAnimationFrame(animateParticles);
+            }
+
+            // 启动动画
+            animateParticles();
+        }
+
+        // 动态更新数据指标
+        function updateMetrics() {
+            // CPU负载在30-50%之间波动
+            const cpuLoad = (30 + Math.random() * 20).toFixed(1);
+            document.getElementById('cpuLoad').textContent = `${cpuLoad}%`;
+
+            // 内存使用在50-70%之间波动
+            const memoryUsage = (50 + Math.random() * 20).toFixed(1);
+            document.getElementById('memoryUsage').textContent = `${memoryUsage}%`;
+
+            // 请求总数递增
+            const totalRequests = parseInt(document.getElementById('totalRequests').textContent.replace(',', '')) + Math.floor(Math.random() * 10);
+            document.getElementById('totalRequests').textContent = totalRequests.toLocaleString();
+
+            // 成功率在99.5-99.9%之间波动
+            const successRate = (99.5 + Math.random() * 0.4).toFixed(1);
+            document.getElementById('successRate').textContent = `${successRate}%`;
+
+            // 失败率 = 100 - 成功率
+            const failureRate = (100 - parseFloat(successRate)).toFixed(1);
+            document.getElementById('failureRate').textContent = `${failureRate}%`;
+
+            // 延迟指标小范围波动
+            const p50Base = 42;
+            const p50Latency = Math.floor(p50Base + (Math.random() * 10 - 5));
+            document.getElementById('p50Latency').textContent = `${p50Latency}ms`;
+
+            const p90Base = 87;
+            const p90Latency = Math.floor(p90Base + (Math.random() * 15 - 7));
+            document.getElementById('p90Latency').textContent = `${p90Latency}ms`;
+
+            const p99Base = 156;
+            const p99Latency = Math.floor(p99Base + (Math.random() * 20 - 10));
+            document.getElementById('p99Latency').textContent = `${p99Latency}ms`;
+
+            // 定期更新
+            setTimeout(updateMetrics, 3000);
+        }
+
+        // 动态更新数据图表高度
+        function animateChartBars() {
+            const bars = document.querySelectorAll('.h-16 > div');
+            bars.forEach(bar => {
+                const randomHeight = Math.floor(Math.random() * 4) + 1; // 1-4
+                bar.style.height = `${(randomHeight / 4) * 100}%`;
+            });
+
+            // 定期更新图表
+            setTimeout(animateChartBars, 2000);
+        }
+
+        // 密码显示/隐藏切换
+        const togglePassword = document.getElementById('togglePassword');
+        const password = document.getElementById('password');
+
+        togglePassword.addEventListener('click', () => {
+            const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+            password.setAttribute('type', type);
+
+            // 切换图标
+            togglePassword.querySelector('i').classList.toggle('fa-eye');
+            togglePassword.querySelector('i').classList.toggle('fa-eye-slash');
+        });
+
+        // 登录表单提交处理
+        const loginForm = document.getElementById('loginForm');
+
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            // 获取表单数据
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const remember = document.getElementById('remember').checked;
+
+            // 模拟登录过程
+            const submitButton = loginForm.querySelector('button[type="submit"]');
+            const originalText = submitButton.innerHTML;
+
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i> 登录中...';
+
+            // 模拟API请求延迟
+            setTimeout(() => {
+                // 模拟登录成功
+                submitButton.innerHTML = '<i class="fa fa-check mr-2"></i> 登录成功';
+                submitButton.classList.remove('bg-primary');
+                submitButton.classList.add('bg-green-500');
+
+                // 跳转到管理系统主页
+                setTimeout(() => {
+                    window.location.href = '#dashboard';
+                }, 1000);
+            }, 1500);
+        });
+
+        // 添加输入框动画效果
+        const inputs = document.querySelectorAll('input');
+        inputs.forEach(input => {
+            input.addEventListener('focus', () => {
+                input.parentElement.classList.add('scale-[1.01]');
+                input.parentElement.style.transition = 'transform 0.3s ease';
+            });
+
+            input.addEventListener('blur', () => {
+                input.parentElement.classList.remove('scale-[1.01]');
+            });
+        });
+
+        // 页面加载完成后初始化动态效果
+        window.addEventListener('load', () => {
+            createDynamicParticles();
+            animateChartBars();
+            updateMetrics();
+        });
+    </script>
+</body>
+
+</html>

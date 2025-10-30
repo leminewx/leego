@@ -143,6 +143,7 @@ func (own *Engine) initialize(opts *Options) {
 
 // Shutdown 优雅关闭服务
 func (own *Engine) Shutdown(timeout time.Duration) error {
+
 	// 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

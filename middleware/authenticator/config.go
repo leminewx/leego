@@ -13,6 +13,7 @@ type (
 	Config struct {
 		// 元数据
 		Id        string        `json:"id" xml:"id"`
+		Type      string        `json:"type" xml:"type"`
 		Name      string        `json:"name" xml:"name"`
 		Scope     string        `json:"scope" xml:"scope"`
 		Algorithm jwt.Algorithm `json:"algorithm" xml:"algorithm"`
@@ -42,6 +43,7 @@ func NewDefaultConfig(name string) *Config {
 	return &Config{
 		// 元数据
 		Id:   ggid.New().GetShort(),
+		Type: "authenticator",
 		Name: name,
 
 		// 跳过路径
@@ -159,4 +161,40 @@ func (own *Authenticator) Sync(config *Config) {
 	own.ExpiresAfterSeconds = config.ExpiresAfterSeconds
 	own.ExceptedIssuer = config.ExceptedIssuer
 	own.ExceptedAudience = config.ExceptedAudience
+}
+
+// GetConfig 获取认证器配置
+func (own *Authenticator) GetConfig() *Config {
+	config := &Config{
+		// 基本信息
+		Id:   own.Id,
+		Type: own.Type,
+		Name: own.Name,
+
+		// 跳过路径
+		SkipAbsolutePathMap:   make(map[string]struct{}),
+		SkipWildcardPathSlice: make([]string, 0),
+	}
+
+	own.lock.RLock()
+	config.Scope = own.Scope
+	
+	for _, path := range own.SkipWildcardPathSlice {
+		config.SkipWildcardPathSlice = append(config.SkipWildcardPathSlice, path)
+	}
+
+	for path := range own.SkipAbsolutePathMap {
+		config.SkipAbsolutePathMap[path] = struct{}{}
+	}
+
+	own.JWTStandardClaimsConfig = &JWTStandardClaimsConfig{
+		Validation:          own.Validation,
+		NotBeforeSeconds:    own.NotBeforeSeconds,
+		ExpiresAfterSeconds: own.ExpiresAfterSeconds,
+		ExceptedIssuer:      own.ExceptedIssuer,
+		ExceptedAudience:    own.ExceptedAudience,
+	}
+
+	own.lock.RUnlock()
+	return config
 }

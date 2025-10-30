@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/response"
 )
 
@@ -150,10 +151,10 @@ func (own *Client) WriteResponseHeader(resp response.Writer) {
 	if atomic.CompareAndSwapInt32(&own.isWrittenHeader, 0, 1) {
 		// 设置响应头
 		header := resp.Header()
-		header.Set("Content-Type", "text/event-stream")
-		header.Set("Cache-Control", "no-cache")
-		header.Set("Connection", "keep-alive")
-		header.Set("X-Accel-Buffering", "no") // 禁用代理缓冲
+		header.Set(headers.CONTENT_TYPE, "text/event-stream")
+		header.Set(headers.CACHE_CONTROL, "no-cache")
+		header.Set(headers.CONNECTION, "keep-alive")
+		header.Set("X-Accel-Buffering", "no") // 禁用 Ngix 代理缓冲
 
 		// 设置响应状态码
 		resp.WriteHeader(http.StatusOK)

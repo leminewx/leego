@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"mime"
 	"mime/multipart"
@@ -19,17 +18,15 @@ import (
 	"text/template"
 	"time"
 
+	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/middleware/authenticator/jwt"
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/response/sse"
 )
 
-var maxMultipartMemory int64 = 10 << 20 // 10M
+const _NOT_FOUND_QUERY_PARAMETER = "leego: context: not found query parameter '%s'"
 
-var (
-	errNotFoundPage  = errors.New("leego: context: not found query parameter 'page'")
-	errNotFoundLimit = errors.New("leego: context: not found query parameter 'limit'")
-)
+var maxMultipartMemory int64 = 10 << 20 // 10M
 
 // SetMaxMultipartMemory 设置解析 multipart/form-data 多部分表单时最大使用的内存
 func SetMaxMultipartMemory(size int64) {
@@ -41,19 +38,23 @@ type JSON map[string]any
 
 // Context 定义上下文的结构
 type Context struct {
-	time     time.Time         // 创建时间
-	query    url.Values        // 查询参数
-	values   map[string]string // 路由参数
-	engine   *Engine           // 绑定引擎
-	token    *jwt.Token        // JWT 令牌
-	Request  *http.Request     // 原始请求
-	Response response.Writer   // 原始响应
+	time   time.Time         // 创建时间
+	url    *url.URL          // URL 消息
+	query  url.Values        // 查询参数
+	values map[string]string // 路由参数
+	engine *Engine           // 绑定引擎
+	token  *jwt.Token        // JWT 令牌
+
+	// 原始请求何响应
+	Request  *http.Request   // 原始请求
+	Response response.Writer // 原始响应
 }
 
 // newContext 新建一个上下文
 func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request, values map[string]string) *Context {
 	return &Context{
 		time:     time.Now(),
+		url:      req.URL,
 		query:    req.URL.Query(),
 		values:   values,
 		engine:   engine,
@@ -63,6 +64,11 @@ func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request, val
 }
 
 /**************************************************** HTTP Request ****************************************************/
+
+// GetURL 获取 URL
+func (own *Context) GetURL() *url.URL {
+	return own.url
+}
 
 // GetJWT 获取 JWT 令牌
 func (own *Context) GetJWT() (*jwt.Token, bool) {
@@ -101,19 +107,28 @@ func (own *Context) QueryValue(key string) string {
 	return own.query.Get(key)
 }
 
-// QueryPageAndLimit 查询分页信息(仅支持 page 和 limit 字段)
-func (own *Context) QueryPageAndLimit() (page, limit int, err error) {
-	p, e := strconv.ParseInt(own.query.Get("page"), 10, 64)
-	if e != nil {
-		return 0, 0, errNotFoundPage
+/*
+QueryPageAndLimit 查询分页信息
+
+入参：
+  - page：页数参数名
+  - limit：数量参数名
+
+出参：
+  - p：页数
+  - l：数量
+  - e：错误
+*/
+func (own *Context) QueryPageAndLimit(page, limit string) (p, l int64, e error) {
+	if p, e = strconv.ParseInt(own.query.Get(page), 10, 64); e != nil {
+		return 0, 0, fmt.Errorf(_NOT_FOUND_QUERY_PARAMETER, page)
 	}
 
-	l, e := strconv.ParseInt(own.query.Get("limit"), 10, 64)
-	if e != nil {
-		return 0, 0, errNotFoundLimit
+	if l, e = strconv.ParseInt(own.query.Get(limit), 10, 64); e != nil {
+		return 0, 0, fmt.Errorf(_NOT_FOUND_QUERY_PARAMETER, limit)
 	}
 
-	return int(p), int(l), nil
+	return
 }
 
 // GetFormValue 获取表单信息, 可查询 URL 参数和 x-www-form-urlencoded 格式的 body
@@ -232,15 +247,21 @@ func (own *Context) ResponseError(code int, error string) {
 	http.Error(own.Response, error, code)
 }
 
+// ResponseSSE 发起 SSE 事件响应
+func (own *Context) ResponseSSE(handle func(ctx context.Context) <-chan *sse.Message) error {
+	return sse.ServeHTTP(own.Response, own.Request, handle)
+}
+
 // ResponseXML 响应 XML 格式的数据
 func (own *Context) ResponseXML(code int, data any) error {
+	own.WithResponseHeader(headers.CONTENT_TYPE, "text/xml; charset=utf-8")
 	own.Response.WriteHeader(code)
 	return xml.NewEncoder(own.Response).Encode(data)
 }
 
 // ResponseJSON 响应 JSON 格式的数据
 func (own *Context) ResponseJSON(code int, data any) error {
-	own.WithResponseHeader("Content-Type", "application/json")
+	own.WithResponseHeader(headers.CONTENT_TYPE, "application/json; charset=utf-8")
 	own.Response.WriteHeader(code)
 	return json.NewEncoder(own.Response).Encode(&data)
 }
@@ -254,6 +275,7 @@ func (own *Context) ResponseBytes(code int, data []byte) error {
 
 // ResponseString 响应字符串
 func (own *Context) ResponseString(code int, data string) error {
+	own.WithResponseHeader(headers.CONTENT_TYPE, "text/plain")
 	own.Response.WriteHeader(code)
 	_, err := own.Response.Write([]byte(data))
 	return err
@@ -287,12 +309,12 @@ func (own *Context) responseFile(filename, disposition string) error {
 	}
 
 	// 设置响应头
-	own.WithResponseHeader("Content-Disposition", fmt.Sprintf("%s; filename=\"%s\"", disposition, info.Name()))
-	own.WithResponseHeader("Content-Length", strconv.FormatInt(info.Size(), 10))
+	own.WithResponseHeader(headers.CONTENT_DISPOSITION, fmt.Sprintf("%s; filename=\"%s\"", disposition, info.Name()))
+	own.WithResponseHeader(headers.CONTENT_LENGTH, strconv.FormatInt(info.Size(), 10))
 
 	// 设置 Content-Type
 	if disposition == "inline" {
-		own.WithResponseHeader("Content-Type", own.detectContentType(filename, file))
+		own.WithResponseHeader(headers.CONTENT_TYPE, own.detectContentType(filename, file))
 	}
 
 	// 支持断点续传
@@ -319,37 +341,24 @@ func (own *Context) detectContentType(filename string, file *os.File) string {
 	return "application/octet-stream"
 }
 
-var (
-	templates     = make(map[string]*template.Template)
-	templatesLock sync.RWMutex
-)
+var templates = &sync.Map{}
 
 // ResponseHTML 响应 HTML 内容
 func (own *Context) ResponseHTML(filename, tmplName string, data any) error {
 	// 先尝试读锁
-	templatesLock.RLock()
-	tmpl, ok := templates[filename]
-	if templatesLock.RUnlock(); ok {
-		return own.executeTemplate(tmpl, tmplName, data)
-	}
-
-	// 不存在时需要写锁
-	templatesLock.Lock()
-	defer templatesLock.Unlock()
-
-	// 双重检查
-	if tmpl, exists := templates[filename]; exists {
-		return own.executeTemplate(tmpl, tmplName, data)
+	tmpl1, ok := templates.Load(filename)
+	if ok {
+		return own.executeTemplate(tmpl1.(*template.Template), tmplName, data)
 	}
 
 	// 解析模板
-	tmpl, err := template.ParseFiles(filename)
+	tmpl2, err := template.ParseFiles(filename)
 	if err != nil {
 		return fmt.Errorf("leego: context: failed to parse template: %w", err)
 	}
 
-	templates[filename] = tmpl
-	return own.executeTemplate(tmpl, tmplName, data)
+	templates.Store(filename, tmpl2)
+	return own.executeTemplate(tmpl2, tmplName, data)
 }
 
 func (own *Context) executeTemplate(tmpl *template.Template, tmplName string, data any) error {
@@ -358,9 +367,4 @@ func (own *Context) executeTemplate(tmpl *template.Template, tmplName string, da
 	}
 
 	return tmpl.ExecuteTemplate(own.Response, tmplName, data)
-}
-
-// ResponseSSE 发起 SSE 事件响应
-func (own *Context) ResponseSSE(handle func(ctx context.Context) <-chan *sse.Message) error {
-	return sse.ServeHTTP(own.Response, own.Request, handle)
 }
