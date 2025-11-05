@@ -2,7 +2,6 @@ package authenticator
 
 import (
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"gitee.com/leminewx/gokit/ggid"
@@ -14,7 +13,6 @@ type (
 		// 元数据
 		Id        string        `json:"id" xml:"id"`
 		Type      string        `json:"type" xml:"type"`
-		Name      string        `json:"name" xml:"name"`
 		Scope     string        `json:"scope" xml:"scope"`
 		Algorithm jwt.Algorithm `json:"algorithm" xml:"algorithm"`
 
@@ -25,8 +23,6 @@ type (
 
 		// JWTStandardClaimsConfig JWT 声明相关鉴权配置
 		*JWTStandardClaimsConfig `json:"jwt_standard_claims_config" xml:"jwt_standard_claims_config"`
-
-		lock sync.RWMutex
 	}
 
 	JWTStandardClaimsConfig struct {
@@ -39,12 +35,11 @@ type (
 )
 
 // NewDefaultConfig 新建一个 JWT 认证管理器的默认配置
-func NewDefaultConfig(name string) *Config {
+func NewDefaultConfig() *Config {
 	return &Config{
 		// 元数据
 		Id:   ggid.New().GetShort(),
 		Type: "authenticator",
-		Name: name,
 
 		// 跳过路径
 		SkipAbsolutePathMap:   make(map[string]struct{}),
@@ -61,16 +56,16 @@ func NewDefaultConfig(name string) *Config {
 // SetScope 设置作用域
 func (own *Authenticator) SetScope(scope string) {
 	own.lock.Lock()
-	own.Scope = scope
+	own.config.Scope = scope
 	own.lock.Unlock()
 }
 
 // WithValidateStandardClaims 设置是否验证标准声明
 func (own *Authenticator) WithValidateStandardClaims(validation bool) *Authenticator {
 	if validation {
-		atomic.StoreInt32(&own.Validation, 1)
+		atomic.StoreInt32(&own.config.Validation, 1)
 	} else {
-		atomic.StoreInt32(&own.Validation, 0)
+		atomic.StoreInt32(&own.config.Validation, 0)
 	}
 
 	return own
@@ -79,7 +74,7 @@ func (own *Authenticator) WithValidateStandardClaims(validation bool) *Authentic
 // WithExceptedIssuer 设置期望的签发者
 func (own *Authenticator) WithExceptedIssuer(issuer string) *Authenticator {
 	own.lock.Lock()
-	own.ExceptedIssuer = strings.TrimSpace(issuer)
+	own.config.ExceptedIssuer = strings.TrimSpace(issuer)
 	own.lock.Unlock()
 	return own
 }
@@ -87,7 +82,7 @@ func (own *Authenticator) WithExceptedIssuer(issuer string) *Authenticator {
 // WithExceptedAudience 设置期望的接收者
 func (own *Authenticator) WithExceptedAudience(audience string) *Authenticator {
 	own.lock.Lock()
-	own.ExceptedAudience = strings.TrimSpace(audience)
+	own.config.ExceptedAudience = strings.TrimSpace(audience)
 	own.lock.Unlock()
 	return own
 }
@@ -96,7 +91,7 @@ func (own *Authenticator) WithExceptedAudience(audience string) *Authenticator {
 func (own *Authenticator) WithNotBeforeSeconds(seconds int64) *Authenticator {
 	if seconds > 0 {
 		own.lock.Lock()
-		own.NotBeforeSeconds = seconds
+		own.config.NotBeforeSeconds = seconds
 		own.lock.Unlock()
 	}
 
@@ -107,7 +102,7 @@ func (own *Authenticator) WithNotBeforeSeconds(seconds int64) *Authenticator {
 func (own *Authenticator) WithExpiresAfterSeconds(seconds int64) *Authenticator {
 	if seconds > 0 {
 		own.lock.Lock()
-		own.ExpiresAfterSeconds = seconds
+		own.config.ExpiresAfterSeconds = seconds
 		own.lock.Unlock()
 	}
 
@@ -125,14 +120,48 @@ func (own *Authenticator) WithSkipPaths(paths ...string) *Authenticator {
 		}
 
 		if strings.HasSuffix(path, "/*") {
-			own.SkipWildcardPathSlice = append(own.SkipWildcardPathSlice, strings.TrimSuffix(path, "/*"))
+			own.config.SkipWildcardPathSlice = append(own.config.SkipWildcardPathSlice, strings.TrimSuffix(path, "/*"))
 			continue
 		}
 
-		own.SkipAbsolutePathMap[path] = struct{}{}
+		own.config.SkipAbsolutePathMap[path] = struct{}{}
 	}
 
 	return own
+}
+
+// GetConfig 获取认证器配置
+func (own *Authenticator) GetConfig() *Config {
+	config := &Config{
+		// 基本信息
+		Id:   own.config.Id,
+		Type: own.config.Type,
+
+		// 跳过路径
+		SkipAbsolutePathMap:   make(map[string]struct{}),
+		SkipWildcardPathSlice: make([]string, 0),
+	}
+
+	own.lock.RLock()
+	config.Scope = own.config.Scope
+	for _, path := range own.config.SkipWildcardPathSlice {
+		config.SkipWildcardPathSlice = append(config.SkipWildcardPathSlice, path)
+	}
+
+	for path := range own.config.SkipAbsolutePathMap {
+		config.SkipAbsolutePathMap[path] = struct{}{}
+	}
+
+	own.config.JWTStandardClaimsConfig = &JWTStandardClaimsConfig{
+		Validation:          own.config.Validation,
+		NotBeforeSeconds:    own.config.NotBeforeSeconds,
+		ExpiresAfterSeconds: own.config.ExpiresAfterSeconds,
+		ExceptedIssuer:      own.config.ExceptedIssuer,
+		ExceptedAudience:    own.config.ExceptedAudience,
+	}
+	own.lock.RUnlock()
+
+	return config
 }
 
 // Sync 同步配置文件
@@ -141,60 +170,24 @@ func (own *Authenticator) Sync(config *Config) {
 	defer own.lock.Unlock()
 
 	// 同步跳过路径参数
-	own.SkipAbsolutePathMap = config.SkipAbsolutePathMap
-	own.SkipWildcardPathSlice = config.SkipWildcardPathSlice
+	own.config.SkipAbsolutePathMap = config.SkipAbsolutePathMap
+	own.config.SkipWildcardPathSlice = config.SkipWildcardPathSlice
 
 	// config 没有 JWT 配置参数
 	if config.JWTStandardClaimsConfig == nil {
-		own.JWTStandardClaimsConfig = &JWTStandardClaimsConfig{}
+		own.config.JWTStandardClaimsConfig = &JWTStandardClaimsConfig{}
 		return
 	}
 
 	// config 有 JWT 配置参数
-	if own.JWTStandardClaimsConfig != nil {
-		own.JWTStandardClaimsConfig = &JWTStandardClaimsConfig{}
+	if own.config.JWTStandardClaimsConfig != nil {
+		own.config.JWTStandardClaimsConfig = &JWTStandardClaimsConfig{}
 	}
 
 	// 同步 JWT 配置参数
-	own.Validation = config.Validation
-	own.NotBeforeSeconds = config.NotBeforeSeconds
-	own.ExpiresAfterSeconds = config.ExpiresAfterSeconds
-	own.ExceptedIssuer = config.ExceptedIssuer
-	own.ExceptedAudience = config.ExceptedAudience
-}
-
-// GetConfig 获取认证器配置
-func (own *Authenticator) GetConfig() *Config {
-	config := &Config{
-		// 基本信息
-		Id:   own.Id,
-		Type: own.Type,
-		Name: own.Name,
-
-		// 跳过路径
-		SkipAbsolutePathMap:   make(map[string]struct{}),
-		SkipWildcardPathSlice: make([]string, 0),
-	}
-
-	own.lock.RLock()
-	config.Scope = own.Scope
-	
-	for _, path := range own.SkipWildcardPathSlice {
-		config.SkipWildcardPathSlice = append(config.SkipWildcardPathSlice, path)
-	}
-
-	for path := range own.SkipAbsolutePathMap {
-		config.SkipAbsolutePathMap[path] = struct{}{}
-	}
-
-	own.JWTStandardClaimsConfig = &JWTStandardClaimsConfig{
-		Validation:          own.Validation,
-		NotBeforeSeconds:    own.NotBeforeSeconds,
-		ExpiresAfterSeconds: own.ExpiresAfterSeconds,
-		ExceptedIssuer:      own.ExceptedIssuer,
-		ExceptedAudience:    own.ExceptedAudience,
-	}
-
-	own.lock.RUnlock()
-	return config
+	own.config.Validation = config.Validation
+	own.config.NotBeforeSeconds = config.NotBeforeSeconds
+	own.config.ExpiresAfterSeconds = config.ExpiresAfterSeconds
+	own.config.ExceptedIssuer = config.ExceptedIssuer
+	own.config.ExceptedAudience = config.ExceptedAudience
 }

@@ -3,7 +3,6 @@ package cors
 import (
 	"strconv"
 	"strings"
-	"sync"
 
 	"gitee.com/leminewx/gokit/ggid"
 )
@@ -12,7 +11,6 @@ type Config struct {
 	// 元数据
 	Id    string `json:"id" xml:"id"`
 	Type  string `json:"type" xml:"type"`
-	Name  string `json:"name" xml:"name"`
 	Scope string `json:"scope" xml:"scope"`
 
 	// MaxAge 表示资源缓存时间（一般为24小时：86400，单位：秒）
@@ -25,16 +23,13 @@ type Config struct {
 	AllowHeaders []string `json:"allow_headers" xml:"allow_headers"`
 	// ExposeHeaders 允许的响应头列表
 	ExposeHeaders []string `json:"expose_headers" xml:"expose_headers"`
-
-	lock sync.RWMutex
 }
 
 // NewDefaultConfig 创建默认跨域中间件配置
-func NewDefaultConfig(name string) *Config {
+func NewDefaultConfig() *Config {
 	return &Config{
 		Id:            ggid.New().GetShort(),
 		Type:          "cors",
-		Name:          name,
 		MaxAge:        _DEFAULT_MAX_AGE,
 		AllowOrigins:  make([]string, 0),
 		AllowMethods:  make([]string, 0),
@@ -46,7 +41,7 @@ func NewDefaultConfig(name string) *Config {
 // SetScope 设置作用域
 func (own *CORS) SetScope(scope string) {
 	own.lock.Lock()
-	own.Scope = scope
+	own.config.Scope = scope
 	own.lock.Unlock()
 }
 
@@ -57,8 +52,8 @@ func (own *CORS) WithMaxAge(seconds int64) *CORS {
 	}
 
 	own.lock.Lock()
-	own.MaxAge = seconds
-	own.maxAgeString = strconv.Itoa(int(own.MaxAge))
+	own.config.MaxAge = seconds
+	own.maxAgeString = strconv.Itoa(int(own.config.MaxAge))
 	own.lock.Unlock()
 
 	return own
@@ -73,7 +68,7 @@ func (own *CORS) WithAllowOrigins(origins ...string) *CORS {
 	if len(origins) == 0 {
 		own.allowAllOrigins = true   // 允许所有源
 		own.allowCredentials = false // 通配符源不能使用凭证
-		own.AllowOrigins = make([]string, 0)
+		own.config.AllowOrigins = make([]string, 0)
 		own.allowOrigins = make(map[string]struct{})
 		return own
 	}
@@ -87,13 +82,13 @@ func (own *CORS) WithAllowOrigins(origins ...string) *CORS {
 		if origin == "*" {
 			own.allowAllOrigins = true
 			own.allowCredentials = false
-			own.AllowOrigins = make([]string, 0)
+			own.config.AllowOrigins = make([]string, 0)
 			own.allowOrigins = make(map[string]struct{})
 			return own
 		}
 
 		if _, ok := own.allowOrigins[origin]; !ok {
-			own.AllowOrigins = append(own.AllowOrigins, origin)
+			own.config.AllowOrigins = append(own.config.AllowOrigins, origin)
 			own.allowOrigins[origin] = struct{}{}
 		}
 	}
@@ -113,13 +108,13 @@ func (own *CORS) WithAllowMethods(methods ...string) *CORS {
 
 	for _, method := range methods {
 		if method != "" {
-			own.AllowMethods = append(own.AllowMethods, method)
+			own.config.AllowMethods = append(own.config.AllowMethods, method)
 			own.allowMethods[method] = struct{}{}
 		}
 	}
 
-	if len(own.AllowMethods) > 0 {
-		own.allowMethodString = strings.Join(own.AllowMethods, ", ")
+	if len(own.config.AllowMethods) > 0 {
+		own.allowMethodString = strings.Join(own.config.AllowMethods, ", ")
 	}
 
 	return own
@@ -132,13 +127,13 @@ func (own *CORS) WithAllowHeaders(headers ...string) *CORS {
 
 	for _, header := range headers {
 		if header != "" {
-			own.AllowHeaders = append(own.AllowHeaders, header)
+			own.config.AllowHeaders = append(own.config.AllowHeaders, header)
 			own.allowHeaders[header] = struct{}{}
 		}
 	}
 
-	if len(own.AllowHeaders) > 0 {
-		own.allowHeaderString = strings.Join(own.AllowHeaders, ", ")
+	if len(own.config.AllowHeaders) > 0 {
+		own.allowHeaderString = strings.Join(own.config.AllowHeaders, ", ")
 	}
 
 	return own
@@ -151,13 +146,13 @@ func (own *CORS) WithExposeHeaders(headers ...string) *CORS {
 
 	for _, header := range headers {
 		if header != "" {
-			own.ExposeHeaders = append(own.ExposeHeaders, header)
+			own.config.ExposeHeaders = append(own.config.ExposeHeaders, header)
 			own.exposeHeaders[header] = struct{}{}
 		}
 	}
 
-	if len(own.ExposeHeaders) > 0 {
-		own.exposeHeaderString = strings.Join(own.ExposeHeaders, ", ")
+	if len(own.config.ExposeHeaders) > 0 {
+		own.exposeHeaderString = strings.Join(own.config.ExposeHeaders, ", ")
 	}
 
 	return own
@@ -174,16 +169,17 @@ func (own *CORS) Sync(config *Config) {
 	// 同步配置参数
 	own.WithMaxAge(config.MaxAge).
 		WithAllowOrigins(config.AllowOrigins...).
-		WithAllowMethods(config.AllowMethods...).
 		WithAllowHeaders(config.AllowHeaders...).
+		WithAllowMethods(config.AllowMethods...).
 		WithExposeHeaders(config.ExposeHeaders...)
 }
 
+// resetConfig 重置配置
 func (own *CORS) resetConfig() {
-	own.AllowOrigins = make([]string, 0)
-	own.AllowMethods = make([]string, 0)
-	own.AllowHeaders = make([]string, 0)
-	own.ExposeHeaders = make([]string, 0)
+	own.config.AllowOrigins = make([]string, 0)
+	own.config.AllowMethods = make([]string, 0)
+	own.config.AllowHeaders = make([]string, 0)
+	own.config.ExposeHeaders = make([]string, 0)
 
 	own.allowOrigins = make(map[string]struct{})
 	own.allowMethods = make(map[string]struct{})
@@ -199,10 +195,9 @@ func (own *CORS) resetConfig() {
 // GetConfig 获取跨域配置
 func (own *CORS) GetConfig() *Config {
 	config := &Config{
-		Id:            own.Id,
+		Id:            own.config.Id,
 		Type:          "cors",
-		Name:          own.Name,
-		Scope:         own.Scope,
+		Scope:         own.config.Scope,
 		AllowOrigins:  make([]string, 0),
 		AllowMethods:  make([]string, 0),
 		AllowHeaders:  make([]string, 0),
@@ -210,21 +205,21 @@ func (own *CORS) GetConfig() *Config {
 	}
 
 	own.lock.RLock()
-	config.MaxAge = own.MaxAge
+	config.MaxAge = own.config.MaxAge
 
-	for _, origin := range own.AllowOrigins {
+	for _, origin := range own.config.AllowOrigins {
 		config.AllowOrigins = append(config.AllowOrigins, origin)
 	}
 
-	for _, method := range own.AllowMethods {
+	for _, method := range own.config.AllowMethods {
 		config.AllowMethods = append(config.AllowMethods, method)
 	}
 
-	for _, header := range own.AllowHeaders {
+	for _, header := range own.config.AllowHeaders {
 		config.AllowHeaders = append(config.AllowHeaders, header)
 	}
 
-	for _, header := range own.ExposeHeaders {
+	for _, header := range own.config.ExposeHeaders {
 		config.ExposeHeaders = append(config.ExposeHeaders, header)
 	}
 

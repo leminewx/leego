@@ -2,7 +2,7 @@ package cors
 
 import (
 	"net/http"
-	"strconv"
+	"sync"
 
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/headers"
@@ -15,7 +15,7 @@ const (
 
 // CORS 定义跨域处理器的数据结构
 type CORS struct {
-	*Config
+	config *Config
 
 	// 表示可以缓存 Access-Control-Allow-Methods 和 Access-Control-Allow-Headers 提供的信息多长时间，单位秒，一般为24小时（86400）
 	maxAgeString string
@@ -44,25 +44,25 @@ type CORS struct {
 	*/
 	exposeHeaders      map[string]struct{}
 	exposeHeaderString string
+
+	lock sync.RWMutex
 }
 
+var _ leego.Middleware = &CORS{}
+
 // NewDefaultCORS 创建一个带默认配置的 CORS 中间件（允许所有源、所有请求头和常用方法）
-func NewDefaultCORS(name string) *CORS {
-	return NewCORS(NewDefaultConfig(name)).
+func NewDefaultCORS() *CORS {
+	return NewCORS(NewDefaultConfig()).
 		WithAllowOrigins().
 		WithAllowMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
 }
 
 // NewCORS 新建一个 CORS 中间件
 func NewCORS(config *Config) *CORS {
-	return &CORS{
-		Config:        config,
-		maxAgeString:  strconv.Itoa(int(config.MaxAge)),
-		allowOrigins:  make(map[string]struct{}),
-		allowMethods:  make(map[string]struct{}),
-		allowHeaders:  make(map[string]struct{}),
-		exposeHeaders: make(map[string]struct{}),
-	}
+	cors := &CORS{config: config}
+	cors.Sync(config) // 直接同步
+	return cors
+
 }
 
 // Handle 创建一个处理函数
@@ -137,7 +137,7 @@ func (own *CORS) writeResponseHeader(ctx *leego.Context) {
 	}
 
 	// 设置 Access-Control-Max-Age
-	if own.MaxAge > 0 {
+	if own.config.MaxAge > 0 {
 		header.Set(headers.ACCESS_CONTROL_MAX_AGE, own.maxAgeString)
 	}
 

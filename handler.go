@@ -17,10 +17,10 @@ type (
 
 	// Middleware 定义中间件的接口类型
 	Middleware interface {
-		// SetScope 设置中间件的作用域
-		SetScope(scope string)
 		// Handle 处理函数
 		Handle(handle HandleFunc) HandleFunc
+		// SetScope 设置中间件的作用域
+		SetScope(scope string)
 	}
 )
 
