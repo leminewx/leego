@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego/response"
-	"gitee.com/leminewx/leego/trie"
+	"gitee.com/leminewx/leego/tree"
 )
 
 const (
@@ -102,7 +102,7 @@ func (own *group) SetStatics(relativePath, rootPath string, cache bool, tags ...
 	relativePath = normalizePath(relativePath)
 	handler := own.createStaticHandler(path.Join(own.prefix, relativePath), http.Dir(rootPath), cache)
 
-	wildcardName := "*" + trie.WILDCARD_DEFAULT_NAME
+	wildcardName := "*" + tree.WILDCARD_DEFAULT_NAME
 	own.addRoute(http.MethodGet, path.Join(relativePath, wildcardName), rootPath, handler, tags...)
 	own.addRoute(http.MethodHead, path.Join(relativePath, wildcardName), rootPath, handler, tags...)
 	own.hasStatic = true
@@ -115,7 +115,7 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 	fileServer := http.StripPrefix(relativePath, http.FileServer(fileSystem))
 	return func(ctx *Context) {
 		// 获取请求的文件路径
-		requestedPath := ctx.GetPathValue(trie.WILDCARD_DEFAULT_NAME)
+		requestedPath := ctx.GetPathValue(tree.WILDCARD_DEFAULT_NAME)
 		if requestedPath == "" {
 			ctx.ResponseError(http.StatusNotFound, response.STATUS_404_NOT_FOUND)
 			return

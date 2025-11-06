@@ -1,4 +1,4 @@
-package trie
+package tree
 
 import (
 	"strconv"
@@ -205,37 +205,6 @@ func TestTrieEdgeCases(t *testing.T) {
 	})
 }
 
-// TestSplitPattern 测试路径分割函数
-func TestSplitPattern(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected []string
-	}{
-		{"/", []string{}},
-		{"/users", []string{"users"}},
-		{"/users/:id", []string{"users", ":id"}},
-		{"/users/:id/posts", []string{"users", ":id", "posts"}},
-		{"users/:id/", []string{"users", ":id"}},
-		{"//users//:id//", []string{"users", ":id"}},
-		{"", []string{}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := SplitPattern(tt.input)
-			if len(result) != len(tt.expected) {
-				t.Errorf("SplitPattern(%s) = %v, want %v", tt.input, result, tt.expected)
-				return
-			}
-			for i := range result {
-				if result[i] != tt.expected[i] {
-					t.Errorf("SplitPattern(%s)[%d] = %v, want %v", tt.input, i, result[i], tt.expected[i])
-				}
-			}
-		})
-	}
-}
-
 // TestTrieComplexPatterns 测试复杂模式
 func TestTrieComplexPatterns(t *testing.T) {
 	trie := NewTrie[int]()
@@ -304,6 +273,10 @@ func TestTrieComplexPatterns(t *testing.T) {
 }
 
 // BenchmarkTrieInsert 测试插入性能
+//cpu: Intel(R) Core(TM) i5-14600KF							static paths				20		 3817927	       310.9 ns/op	     280 B/op	      15 allocs/op
+//cpu: Intel(R) Core(TM) i5-14600KF							dynamic paths				20		 4929130	       230.0 ns/op	     296 B/op	       9 allocs/op
+//cpu: Intel(R) Core(TM) i5-14600KF							complex dynamic paths		20		    4640	      263776 ns/op	  154916 B/op	    3900 allocs/op
+
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		static paths				8		 2314869	       525.2 ns/op	     280 B/op	      15 allocs/op
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		dynamic paths				8		 3056307	       408.4 ns/op	     296 B/op	       9 allocs/op
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		complex dynamic paths		8		    2916	      404929 ns/op	  154937 B/op	    3901 allocs/op
@@ -311,8 +284,9 @@ func BenchmarkTrieInsert(b *testing.B) {
 	b.Run("简单路径插入", func(b *testing.B) {
 		trie := NewTrie[string]()
 		patterns := []string{"/", "/users", "/posts", "/comments", "/api/v1"}
-
+		b.ReportAllocs()
 		b.ResetTimer()
+
 		for i := 0; i < b.N; i++ {
 			for _, pattern := range patterns {
 				trie.Insert(pattern, "handler_"+pattern)
@@ -323,8 +297,9 @@ func BenchmarkTrieInsert(b *testing.B) {
 	b.Run("带参数路径插入", func(b *testing.B) {
 		trie := NewTrie[string]()
 		patterns := []string{"/users/:id", "/posts/:postId", "/:lang/users/:id"}
-
+		b.ReportAllocs()
 		b.ResetTimer()
+
 		for i := 0; i < b.N; i++ {
 			for _, pattern := range patterns {
 				trie.Insert(pattern, "handler_"+pattern)
@@ -334,6 +309,7 @@ func BenchmarkTrieInsert(b *testing.B) {
 
 	b.Run("大规模路径插入", func(b *testing.B) {
 		trie := NewTrie[int]()
+		b.ReportAllocs()
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
@@ -347,10 +323,10 @@ func BenchmarkTrieInsert(b *testing.B) {
 }
 
 // BenchmarkTrieSearch 测试搜索性能
-// cpu: Intel(R) Core(TM) i5-14600KF						static paths				8		18065649	       63.88 ns/op	     104 B/op	       3 allocs/op
-// cpu: Intel(R) Core(TM) i5-14600KF						dynamic param paths			8		 9671016	       127.9 ns/op	     330 B/op	       4 allocs/op
-// cpu: Intel(R) Core(TM) i5-14600KF						dynamic wildcard paths		8		 7430827	       164.9 ns/op	     448 B/op	       5 allocs/op
-// cpu: Intel(R) Core(TM) i5-14600KF						not found paths				8		11812418	       95.67 ns/op	     213 B/op	       3 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						static paths				20		18065649	       63.88 ns/op	     104 B/op	       3 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						dynamic param paths			20		 9671016	       127.9 ns/op	     330 B/op	       4 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						dynamic wildcard paths		20		 7430827	       164.9 ns/op	     448 B/op	       5 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						not found paths				10		11812418	       95.67 ns/op	     213 B/op	       3 allocs/op
 //
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		static paths				8		10413692	       117.4 ns/op	     104 B/op	       3 allocs/op
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		dynamic param paths			8		 5726457	       211.4 ns/op	     330 B/op	       4 allocs/op

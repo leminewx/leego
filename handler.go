@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 
 	"gitee.com/leminewx/leego/middleware/monitor"
-	"gitee.com/leminewx/leego/trie"
+	"gitee.com/leminewx/leego/tree"
 )
 
 type (
@@ -43,7 +43,7 @@ func newHandler(group *group, method, pattern string, handle HandleFunc, tags ..
 		group:      group,
 		handle:     handle,
 		monitor:    monitor.New(method, pattern, tags...),
-		paramNames: extractSegmentNames(trie.SplitPattern(pattern)),
+		paramNames: extractSegmentNames(tree.SplitPattern(pattern)),
 	}
 }
 

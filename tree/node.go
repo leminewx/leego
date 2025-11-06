@@ -1,4 +1,4 @@
-package trie
+package tree
 
 import (
 	"strings"
@@ -8,9 +8,9 @@ const WILDCARD_DEFAULT_NAME = "path"
 
 // Node 定义路由树节点的数据结构
 type Node[T any] struct {
-	segment    string     // 当前路径段
+	segment    string     // 节点路径（包含公共前缀）
 	paramName  string     // 参数名（如果是通配符）
-	priority   int        // 优先级（用于路由匹配顺序）
+	priority   int        // 优先级（1-通配符*  2-参数:  3-静态）
 	isWildcard bool       // 是否是通配符段 (:param 或 *param 或 *)
 	isRoute    bool       // 是否是一个路由节点
 	route      T          // 路由信息

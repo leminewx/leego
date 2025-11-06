@@ -7,15 +7,15 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego/response"
-	"gitee.com/leminewx/leego/trie"
+	"gitee.com/leminewx/leego/tree"
 )
 
 // router 定义路由器的数据结构
 type router struct {
 	engine *Engine
 
-	roots    map[string]*trie.Trie[*handler] // 不同方法对应不同的路由树
-	backlist sync.Map                        // 路由黑名单
+	roots    map[string]tree.Tree[*handler] // 不同方法对应不同的路由树
+	backlist sync.Map                       // 路由黑名单
 
 	insertLock sync.Mutex
 }
@@ -24,7 +24,7 @@ type router struct {
 func newRouter(engine *Engine) *router {
 	return &router{
 		engine:   engine,
-		roots:    make(map[string]*trie.Trie[*handler]),
+		roots:    make(map[string]tree.Tree[*handler]),
 		backlist: sync.Map{},
 	}
 }
@@ -46,7 +46,7 @@ func (own *router) Insert(method, pattern string, _handler *handler) {
 	// 若方法对应的路由树不存在，则创建
 	root, ok := own.roots[method]
 	if !ok {
-		root = trie.NewTrie[*handler]()
+		root = tree.NewTrie[*handler]()
 		own.roots[method] = root
 	}
 
@@ -105,7 +105,7 @@ func extractSegmentNames(segments []string) []string {
 	for _, seg := range segments {
 		switch {
 		case seg == "*":
-			params = append(params, trie.WILDCARD_DEFAULT_NAME)
+			params = append(params, tree.WILDCARD_DEFAULT_NAME)
 		case strings.HasPrefix(seg, ":"):
 			params = append(params, seg[1:])
 		case strings.HasPrefix(seg, "*"):

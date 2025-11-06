@@ -1,4 +1,4 @@
-package trie
+package tree
 
 import (
 	"sort"
@@ -7,6 +7,8 @@ import (
 
 // Trie 定义路由树的数据类型
 type Trie[T any] Node[T]
+
+var _ Tree[int] = &Trie[int]{}
 
 // NewTrie 新建一个路由树
 func NewTrie[T any]() *Trie[T] {
@@ -117,17 +119,4 @@ func (own *Trie[T]) search(node *Node[T], segments []string, params map[string]s
 	}
 
 	return nil, false
-}
-
-// SplitPattern 分割路由模式
-func SplitPattern(pattern string) []string {
-	segments := strings.Split(strings.Trim(pattern, "/"), "/")
-	result := make([]string, 0, len(segments))
-	for _, seg := range segments {
-		if seg != "" {
-			result = append(result, seg)
-		}
-	}
-
-	return result
 }

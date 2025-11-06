@@ -10,7 +10,7 @@ import (
 
 	"gitee.com/leminewx/leego/middleware/monitor"
 
-	"gitee.com/leminewx/leego/trie"
+	"gitee.com/leminewx/leego/tree"
 )
 
 func TestRouter(t *testing.T) {
@@ -401,7 +401,7 @@ func BenchmarkRouterPathExtraction(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		for _, path := range paths {
-			_ = trie.SplitPattern(path)
+			_ = tree.SplitPattern(path)
 		}
 	}
 }
