@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/tree"
 )
@@ -19,15 +20,31 @@ const (
 	_FORMAT_PRINT_CREATE_ROUTE_WITH_FILEPATH = "\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s  -  filepath: %s\n"
 )
 
-// group 定义路由组的数据结构
-type group struct {
-	engine *Engine
+type (
+	// Group 定义路由组的接口类型
+	Group interface {
+		// Group 路由分组
+		Group(prefix string) Group
+		// UseMiddlewares 使用路由中间件
+		UseMiddlewares(middlewares ...Middleware)
+		// UseMiddlewareFuncs 使用路由中间件函数
+		UseMiddlewareFuncs(fns ...MiddlewareFunc)
+		// SetStatic 设置静态文件服务
+		SetStatic(relativePath, rootPath string, cache bool, tags ...string) error
+		// SetStaticFS 通过 FS 设置静态文件服务
+		SetStaticFS(relativePath string, fs http.FileSystem, cache bool, tags ...string) error
+	}
 
-	prefix      string           // 路由组前缀
-	hasStatic   bool             // 是否是静态文件服务路由组
-	parent      *group           // 父级路由组
-	middlewares []MiddlewareFunc // 路由组中间件
-}
+	// group 定义路由组的实现类型
+	group struct {
+		engine *Engine
+
+		prefix      string           // 路由组前缀
+		hasStatic   bool             // 是否是静态文件服务路由组
+		parent      *group           // 父级路由组
+		middlewares []MiddlewareFunc // 路由组中间件
+	}
+)
 
 // Group 在当前路由组的基础上创建一个新的路由组
 func (own *group) Group(prefix string) *group {
@@ -39,30 +56,30 @@ func (own *group) Group(prefix string) *group {
 	}
 }
 
-// WithMiddlewares 添加路由组中间件
-func (own *group) WithMiddlewares(middlewares ...Middleware) *group {
+// UseMiddlewares 使用路由组中间件
+func (own *group) UseMiddlewares(middlewares ...Middleware) {
 	for _, middleware := range middlewares {
-		if middleware != nil {
-			middleware.SetScope(own.prefix)
-			own.middlewares = append(own.middlewares, middleware.Handle)
+		if middleware == nil {
+			continue
+		}
+
+		middleware.SetScope(own.prefix)
+		own.middlewares = append(own.middlewares, middleware.Handle)
+		own.engine.middlewares[middleware.GetID()] = middleware
+	}
+}
+
+// UseMiddlewareFuncs 使用路由组中间件处理函数
+func (own *group) UseMiddlewareFuncs(fns ...MiddlewareFunc) {
+	for _, fn := range fns {
+		if fn != nil {
+			own.middlewares = append(own.middlewares, fn)
 		}
 	}
 
-	return own
 }
 
-// WithMiddlewareFuncs 添加路由组中间件处理函数
-func (own *group) WithMiddlewareFuncs(funcs ...MiddlewareFunc) *group {
-	for _, middleware := range funcs {
-		if middleware != nil {
-			own.middlewares = append(own.middlewares, middleware)
-		}
-	}
-
-	return own
-}
-
-// getAllMiddlewares 获取所有中间件
+// getAllMiddlewares 获取链路上的所有中间件
 func (own *group) getAllMiddlewares(middlewares *[]MiddlewareFunc) {
 	// 先递归父组
 	if own.parent != nil {
@@ -74,13 +91,13 @@ func (own *group) getAllMiddlewares(middlewares *[]MiddlewareFunc) {
 }
 
 /*
-SetStatics 设置路由组的静态文件服务接口
+SetStatic 设置路由组的静态文件服务接口
   - relativePath：URI 中的相对路径
   - rootPath：静态文件服务的根目录
   - cache：是否允许前端缓存（最大缓存1小时）
   - tags：第1个参数为路由名称，后续参数为路由标签
 */
-func (own *group) SetStatics(relativePath, rootPath string, cache bool, tags ...string) (err error) {
+func (own *group) SetStatic(relativePath, rootPath string, cache bool, tags ...string) (err error) {
 	// 检查是否已经设置过静态文件服务
 	if own.hasStatic {
 		return fmt.Errorf("leego: static: exists a has a static file service in group '%s'", own.prefix)
@@ -98,10 +115,11 @@ func (own *group) SetStatics(relativePath, rootPath string, cache bool, tags ...
 		return fmt.Errorf("leego: static: static path is not a directory '%s'", rootPath)
 	}
 
-	// 创建静态文件服务的处理器，同时支持 GET 和 HEAD 方法
+	// 创建静态文件服务的处理器
 	relativePath = normalizePath(relativePath)
 	handler := own.createStaticHandler(path.Join(own.prefix, relativePath), http.Dir(rootPath), cache)
 
+	// 创建 GET 和 HEAD 服务接口
 	wildcardName := "*" + tree.WILDCARD_DEFAULT_NAME
 	own.addRoute(http.MethodGet, path.Join(relativePath, wildcardName), rootPath, handler, tags...)
 	own.addRoute(http.MethodHead, path.Join(relativePath, wildcardName), rootPath, handler, tags...)
@@ -141,9 +159,9 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 
 		// 设置缓存头
 		if !cache {
-			ctx.WithResponseHeader("Cache-Control", "no-store, no-cache, must-revalidate") // 不缓存
+			ctx.WithResponseHeader(headers.CACHE_CONTROL, "no-store, no-cache, must-revalidate") // 不缓存
 		} else {
-			ctx.WithResponseHeader("Cache-Control", "public, max-age=3600") // 缓存1小时
+			ctx.WithResponseHeader(headers.CACHE_CONTROL, "public, max-age=3600") // 缓存1小时
 		}
 
 		// 设置安全头

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,8 +25,6 @@ import (
 	"gitee.com/leminewx/leego/response/sse"
 )
 
-const _NOT_FOUND_QUERY_PARAMETER = "leego: context: not found query parameter '%s'"
-
 var maxMultipartMemory int64 = 10 << 20 // 10M
 
 // SetMaxMultipartMemory 设置解析 multipart/form-data 多部分表单时最大使用的内存
@@ -38,12 +37,14 @@ type JSON map[string]any
 
 // Context 定义上下文的结构
 type Context struct {
-	time   time.Time         // 创建时间
-	url    *url.URL          // URL 消息
-	query  url.Values        // 查询参数
-	values map[string]string // 路由参数
-	engine *Engine           // 绑定引擎
-	token  *jwt.Token        // JWT 令牌
+	clientIP    string            // 客户端 IP
+	startTime   time.Time         // 创建时间
+	queryValues url.Values        // 查询参数
+	pathValues  map[string]string // 路由参数
+
+	url    *url.URL   // URL 消息
+	engine *Engine    // 绑定引擎
+	token  *jwt.Token // JWT 令牌
 
 	// 原始请求何响应
 	Request  *http.Request   // 原始请求
@@ -51,15 +52,14 @@ type Context struct {
 }
 
 // newContext 新建一个上下文
-func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request, values map[string]string) *Context {
+func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request, pathValues map[string]string) *Context {
 	return &Context{
-		time:     time.Now(),
-		url:      req.URL,
-		query:    req.URL.Query(),
-		values:   values,
-		engine:   engine,
-		Request:  req,
-		Response: response.NewWriter(resp),
+		startTime:  time.Now(),
+		url:        req.URL,
+		pathValues: pathValues,
+		engine:     engine,
+		Request:    req,
+		Response:   response.NewWriter(resp),
 	}
 }
 
@@ -79,9 +79,37 @@ func (own *Context) GetJWT() (*jwt.Token, bool) {
 	return nil, false
 }
 
+// GetClientIP 获取客户端 IP
+func (own *Context) GetClientIP() string {
+	if own.clientIP != "" {
+		return own.clientIP
+	}
+
+	// 检查 X-Forwarded-For 头部
+	if forwarded := own.Request.Header.Get(headers.X_FORWARDED_FOR); forwarded != "" {
+		own.clientIP = strings.Split(forwarded, ",")[0]
+		return own.clientIP
+	}
+
+	// 检查 X-Real-IP 头部
+	if own.clientIP = own.Request.Header.Get(headers.X_REAL_IP); own.clientIP != "" {
+		return own.clientIP
+	}
+
+	// 使用 RemoteAddr
+	ip, _, err := net.SplitHostPort(own.Request.RemoteAddr)
+	if err != nil {
+		own.clientIP = own.Request.RemoteAddr
+		return own.clientIP
+	}
+
+	own.clientIP = ip
+	return ip
+}
+
 // GetPathValue 获取动态路由参数
 func (own *Context) GetPathValue(name string) string {
-	if val, ok := own.values[name]; ok {
+	if val, ok := own.pathValues[name]; ok {
 		return val
 	}
 
@@ -104,31 +132,12 @@ func (own *Context) GetContextValue(key any) (any, bool) {
 
 // QueryValue 获取查询参数
 func (own *Context) QueryValue(key string) string {
-	return own.query.Get(key)
-}
-
-/*
-QueryPageAndLimit 查询分页信息
-
-入参：
-  - page：页数参数名
-  - limit：数量参数名
-
-出参：
-  - p：页数
-  - l：数量
-  - e：错误
-*/
-func (own *Context) QueryPageAndLimit(page, limit string) (p, l int64, e error) {
-	if p, e = strconv.ParseInt(own.query.Get(page), 10, 64); e != nil {
-		return 0, 0, fmt.Errorf(_NOT_FOUND_QUERY_PARAMETER, page)
+	if own.queryValues != nil {
+		return own.queryValues.Get(key)
 	}
 
-	if l, e = strconv.ParseInt(own.query.Get(limit), 10, 64); e != nil {
-		return 0, 0, fmt.Errorf(_NOT_FOUND_QUERY_PARAMETER, limit)
-	}
-
-	return
+	own.queryValues = own.Request.URL.Query()
+	return own.queryValues.Get(key)
 }
 
 // GetFormValue 获取表单信息, 可查询 URL 参数和 x-www-form-urlencoded 格式的 body
@@ -173,7 +182,7 @@ func (own *Context) GetMultipartFormValue(key string) string {
 
 // GetServiceName 获取服务名称
 func (own *Context) GetServiceName() string {
-	return own.engine.GetServiceName()
+	return own.engine.GetName()
 }
 
 // GetRequestHeader 获取请求头字段信息
@@ -217,7 +226,7 @@ func (own *Context) BindJSON(data any) error {
 
 // GetStartTime 获取上下文创建时间
 func (own *Context) GetStartTime() time.Time {
-	return own.time
+	return own.startTime
 }
 
 // GetStatusCode 获取响应状态码

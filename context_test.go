@@ -7,7 +7,7 @@ import (
 )
 
 func BenchmarkContext_NewContext(b *testing.B) {
-	engine := NewEngine("test")
+	engine := NewEngine()
 	resp := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/users/123", nil)
 

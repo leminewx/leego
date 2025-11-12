@@ -1,8 +1,38 @@
 package leego
 
-import "path"
+import (
+	"path"
+	"testing"
+)
 
-func newTestGroup(engine *Engine, parent *group, prefix string) *group {
+func TestGroup_UseMiddlewareFuncs(t *testing.T) {
+	group := mockGroup(NewEngine(), nil, "/")
+	group.UseMiddlewareFuncs(func(next HandleFunc) HandleFunc {
+		t.Log("init middleware 1")
+		return func(ctx *Context) {
+			next(ctx)
+		}
+	}, func(next HandleFunc) HandleFunc {
+		t.Log("init middleware 2")
+		return func(ctx *Context) {
+			next(ctx)
+		}
+	})
+
+	group.UseMiddlewareFuncs(func(next HandleFunc) HandleFunc {
+		t.Log("init middleware 3")
+		return func(ctx *Context) {
+			next(ctx)
+		}
+	}, func(next HandleFunc) HandleFunc {
+		t.Log("init middleware 4")
+		return func(ctx *Context) {
+			next(ctx)
+		}
+	})
+}
+
+func mockGroup(engine *Engine, parent *group, prefix string) *group {
 	g := &group{engine: engine, parent: parent, middlewares: make([]MiddlewareFunc, 0, 10)}
 
 	if parent != nil {

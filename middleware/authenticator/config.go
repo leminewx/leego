@@ -130,6 +130,11 @@ func (own *Authenticator) WithSkipPaths(paths ...string) *Authenticator {
 	return own
 }
 
+// GetID 获取ID
+func (own *Authenticator) GetID() string {
+	return own.config.Id
+}
+
 // GetConfig 获取认证器配置
 func (own *Authenticator) GetConfig() *Config {
 	config := &Config{

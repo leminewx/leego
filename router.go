@@ -10,52 +10,57 @@ import (
 	"gitee.com/leminewx/leego/tree"
 )
 
-// router 定义路由器的数据结构
-type router struct {
-	engine *Engine
+type (
+	// Router 定义路由器的接口类型
+	Router interface {
+		// Insert 插入路由
+		Insert(method, pattern string, handler Handler)
+		// Search 搜索路由
+		Search(method, path string) (Handler, map[string]string, bool)
+		// AddBlacklist 添加路由黑名单
+		AddBlacklist(urls ...string)
+		// ServeHTTP 实现 http.Handler 接口
+		ServeHTTP(resp http.ResponseWriter, req *http.Request)
+	}
 
-	roots    map[string]tree.Tree[*handler] // 不同方法对应不同的路由树
-	backlist sync.Map                       // 路由黑名单
+	// router 定义路由器的实现类型
+	router struct {
+		engine *Engine
 
-	insertLock sync.Mutex
-}
+		roots    map[string]tree.Tree[Handler] // 不同方法对应不同的路由树
+		backlist sync.Map                      // 路由黑名单
+
+		insertLock sync.Mutex
+	}
+)
 
 // newRouter 创建一个新的路由器
-func newRouter(engine *Engine) *router {
+func newRouter(engine *Engine) Router {
 	return &router{
 		engine:   engine,
-		roots:    make(map[string]tree.Tree[*handler]),
+		roots:    make(map[string]tree.Tree[Handler]),
 		backlist: sync.Map{},
 	}
 }
 
-// WithURLBlacklist 添加 URL 黑名单
-func (own *router) WithURLBlacklist(urls ...string) *router {
-	for _, url := range urls {
-		own.backlist.Store(url, true)
-	}
-
-	return own
-}
-
 // Insert 插入新增的路由
-func (own *router) Insert(method, pattern string, _handler *handler) {
+func (own *router) Insert(method, pattern string, handler Handler) {
 	own.insertLock.Lock()
 	defer own.insertLock.Unlock()
 
 	// 若方法对应的路由树不存在，则创建
 	root, ok := own.roots[method]
 	if !ok {
-		root = tree.NewTrie[*handler]()
+		root = tree.NewTrie[Handler]()
 		own.roots[method] = root
 	}
 
 	// 插入路由
-	root.Insert(pattern, _handler)
+	root.Insert(pattern, handler)
 }
 
 // Search 搜索匹配的路由
-func (own *router) Search(method, path string) (*handler, map[string]string, bool) {
+func (own *router) Search(method, path string) (Handler, map[string]string, bool) {
 	// 找到路由根节点
 	root, ok := own.roots[method]
 	if !ok {
@@ -64,6 +69,13 @@ func (own *router) Search(method, path string) (*handler, map[string]string, boo
 
 	// 搜索路由
 	return root.Search(path)
+}
+
+// AddBlacklist 添加路由黑名单
+func (own *router) AddBlacklist(urls ...string) {
+	for _, url := range urls {
+		own.backlist.Store(url, true)
+	}
 }
 
 // ServeHTTP 实现 http.Handler 接口
@@ -78,25 +90,27 @@ func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
 	// 匹配路由
 	handler, params, ok := own.Search(req.Method, path)
-	if !ok {
+	if !ok || handler == nil {
 		http.Error(resp, response.STATUS_404_NOT_FOUND, http.StatusNotFound)
 		return
 	}
 
+	monitor := handler.GetMonitor()
+
 	// 创建上下文，采集数据
-	handler.monitor.Increase()
+	monitor.Increase()
 	ctx := newContext(own.engine, resp, req, params)
 
-	// 检查处理器是否禁用
-	if !handler.IsEnable() {
+	// 禁用处理器
+	if !handler.IsEnabled() {
 		ctx.ResponseError(http.StatusLocked, response.STATUS_423_LOCKED)
-		handler.monitor.Decrease(http.StatusLocked, time.Since(ctx.GetStartTime()))
+		monitor.Decrease(http.StatusLocked, time.Since(ctx.GetStartTime()))
 		return
 	}
 
-	// 处理请求，采集数据
-	handler.Handle(ctx)
-	handler.monitor.Decrease(ctx.GetStatusCode(), time.Since(ctx.GetStartTime()))
+	// 启用处理器
+	handler.ServeHTTP(ctx)
+	monitor.Decrease(ctx.GetStatusCode(), time.Since(ctx.GetStartTime()))
 }
 
 // extractSegmentNames 从路径中提取所有的参数名称（:param 或 *param 或 *）

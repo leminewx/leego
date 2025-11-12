@@ -160,11 +160,10 @@ func (own *CORS) WithExposeHeaders(headers ...string) *CORS {
 
 // Sync 同步配置
 func (own *CORS) Sync(config *Config) {
-	own.lock.Lock()
-	defer own.lock.Unlock()
-
 	// 重置配置
+	own.lock.Lock()
 	own.resetConfig()
+	own.lock.Unlock()
 
 	// 同步配置参数
 	own.WithMaxAge(config.MaxAge).
@@ -190,6 +189,11 @@ func (own *CORS) resetConfig() {
 	own.allowMethodString = ""
 	own.allowHeaderString = ""
 	own.exposeHeaderString = ""
+}
+
+// GetID 获取ID
+func (own *CORS) GetID() string {
+	return own.config.Id
 }
 
 // GetConfig 获取跨域配置

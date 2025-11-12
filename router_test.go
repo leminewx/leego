@@ -40,7 +40,7 @@ func TestRouter(t *testing.T) {
 }
 
 func TestRouterServeHTTP(t *testing.T) {
-	router := newRouter(NewEngine("test"))
+	router := newRouter(NewEngine())
 
 	// 创建测试处理器
 	called := false

@@ -13,32 +13,48 @@ type (
 	HandleFunc func(ctx *Context)
 
 	// MiddlewareFunc 定义中间件函数的类型
-	MiddlewareFunc func(HandleFunc) HandleFunc
+	MiddlewareFunc func(next HandleFunc) HandleFunc
 
 	// Middleware 定义中间件的接口类型
 	Middleware interface {
 		// Handle 处理函数
-		Handle(handle HandleFunc) HandleFunc
+		Handle(next HandleFunc) HandleFunc
 		// SetScope 设置中间件的作用域
 		SetScope(scope string)
+		// GetID 获取中间件ID
+		GetID() string
+	}
+
+	// Handler 定义处理器的接口类型
+	Handler interface {
+		// Enable 启用该处理器
+		Enable()
+		// Disable 禁用该处理器
+		Disable()
+		// IsEnabled 是否启用该处理器
+		IsEnabled() bool
+		// GetMonitor 获取指标监控器
+		GetMonitor() *monitor.Monitor
+		// ServeHTTP 处理 HTTP 请求
+		ServeHTTP(ctx *Context)
+	}
+
+	// handler 定义处理器的实现类型
+	handler struct {
+		group *group
+
+		handle      HandleFunc       // 处理函数
+		monitor     *monitor.Monitor // 监控器
+		paramNames  []string         // 模式中的参数名列表
+		middlewares []MiddlewareFunc // 中间件函数
+
+		initialized     bool // 标记是否已经初始化
+		initializedLock sync.Mutex
 	}
 )
 
-// handler 定义处理器的数据结构
-type handler struct {
-	group *group
-
-	handle      HandleFunc       // 处理函数
-	monitor     *monitor.Monitor // 监控器
-	paramNames  []string         // 模式中的参数名列表
-	middlewares []MiddlewareFunc // 中间件函数
-
-	initialized     bool // 标记是否已经初始化
-	initializedLock sync.Mutex
-}
-
 // newHandler 新建一个处理器
-func newHandler(group *group, method, pattern string, handle HandleFunc, tags ...string) *handler {
+func newHandler(group *group, method, pattern string, handle HandleFunc, tags ...string) Handler {
 	return &handler{
 		group:      group,
 		handle:     handle,
@@ -48,28 +64,29 @@ func newHandler(group *group, method, pattern string, handle HandleFunc, tags ..
 }
 
 // Enable 启用
-func (own *handler) Enable() *handler {
+func (own *handler) Enable() {
 	atomic.StoreInt32(&own.monitor.Enabled, 1)
-	return own
 }
 
-// Disenable 禁用
-func (own *handler) Disenable() *handler {
+// Disable 禁用
+func (own *handler) Disable() {
 	atomic.StoreInt32(&own.monitor.Enabled, 0)
-	return own
 }
 
-// IsEnable 检查处理器是否启用
-func (own *handler) IsEnable() bool {
+// IsEnabled 检查处理器是否启用
+func (own *handler) IsEnabled() bool {
 	return atomic.LoadInt32(&own.monitor.Enabled) == 1
 }
 
-// Handle 请求处理函数
-func (own *handler) Handle(ctx *Context) {
+// GetMonitor 获取指标监控器
+func (own *handler) GetMonitor() *monitor.Monitor {
+	return own.monitor
+}
+
+// ServeHTTP 请求处理函数
+func (own *handler) ServeHTTP(ctx *Context) {
 	// 延迟初始化
-	if !own.initialized {
-		own.initialize()
-	}
+	own.initialize()
 
 	// 调用处理函数
 	own.handle(ctx)
@@ -90,15 +107,21 @@ func (own *handler) initialize() {
 		return
 	}
 
+	// 标记已初始化
+	own.initialized = true
+	if own.group == nil {
+		return
+	}
+
 	// 获取所有中间件
 	own.middlewares = make([]MiddlewareFunc, 0, 30)
 	own.group.getAllMiddlewares(&own.middlewares)
+	if len(own.middlewares) == 0 {
+		return
+	}
 
 	// 调用中间件
 	for i := len(own.middlewares) - 1; i >= 0; i-- {
 		own.handle = own.middlewares[i](own.handle)
 	}
-
-	// 标记已初始化
-	own.initialized = true
 }
