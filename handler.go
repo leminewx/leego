@@ -19,24 +19,32 @@ type (
 	Middleware interface {
 		// Handle 处理函数
 		Handle(next HandleFunc) HandleFunc
+		// Enable 启用中间件
+		Enable()
+		// Disable 禁用中间件
+		Disable()
 		// SetScope 设置中间件的作用域
 		SetScope(scope string)
+		// SyncConfig 同步中间件的配置
+		SyncConfig(config any) error
+		// GetConfig 获取中间件的配置
+		GetConfig() any
 		// GetID 获取中间件ID
 		GetID() string
 	}
 
 	// Handler 定义处理器的接口类型
 	Handler interface {
-		// Enable 启用该处理器
+		// ServeHTTP 处理 HTTP 请求
+		ServeHTTP(ctx *Context)
+		// Enable 启用处理器
 		Enable()
-		// Disable 禁用该处理器
+		// Disable 禁用处理器
 		Disable()
 		// IsEnabled 是否启用该处理器
 		IsEnabled() bool
 		// GetMonitor 获取指标监控器
 		GetMonitor() *monitor.Monitor
-		// ServeHTTP 处理 HTTP 请求
-		ServeHTTP(ctx *Context)
 	}
 
 	// handler 定义处理器的实现类型

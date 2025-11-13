@@ -10,8 +10,7 @@ import (
 
 	"gitee.com/leminewx/gokit/cryptox/rsax"
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/middleware/authenticator"
-	"gitee.com/leminewx/leego/middleware/authenticator/jwt"
+	jwt2 "gitee.com/leminewx/leego/middleware/jwt"
 	"gitee.com/leminewx/leego/response"
 )
 
@@ -28,8 +27,8 @@ type Administrator struct {
 
 	// 认证信息
 	maxTokens     int
-	Authenticator *authenticator.Authenticator
-	tokens        map[string]*jwt.Token
+	Authenticator *jwt2.Authenticator
+	tokens        map[string]*jwt2.Token
 
 	lock sync.RWMutex
 }
@@ -48,9 +47,8 @@ func NewAdministrator() *Administrator {
 		privateKey:      privateKey,
 		publicKey:       publicKey,
 		publicKeyString: publicKeyString,
-		tokens:          make(map[string]*jwt.Token),
-		Authenticator: authenticator.
-			NewHS256Authenticator("", []byte("00008e03308a-0b1f-0000-0628ba3cba87")).
+		tokens:          make(map[string]*jwt2.Token),
+		Authenticator: jwt2.NewHS256Authenticator("", []byte("00008e03308a-0b1f-0000-0628ba3cba87")).
 			WithSkipPaths("/auth/pubkey", "/auth/login").
 			WithExceptedIssuer("leego").
 			WithExceptedAudience("leego_admin").
@@ -158,7 +156,7 @@ func (own *Administrator) Login(data []byte) (string, error) {
 	}
 
 	// 生成token
-	token := own.Authenticator.GenerateToken(&jwt.StandardClaims{})
+	token := own.Authenticator.GenerateToken(&jwt2.StandardClaims{})
 	tokenBytes, err := own.Authenticator.Sign(token)
 	if err != nil {
 		return "", err

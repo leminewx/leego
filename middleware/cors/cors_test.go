@@ -5,6 +5,6 @@ import (
 )
 
 func TestCors(t *testing.T) {
-	cors := NewDefaultCORS("跨域中间件")
+	cors := NewDefaultCORS()
 	t.Log(cors)
 }

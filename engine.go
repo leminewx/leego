@@ -17,23 +17,18 @@ import (
 	"gitee.com/leminewx/leego/middleware/monitor"
 )
 
-const (
-	_FORMAT_DATETIME                       = "2006-01-02 15:04:05.000"
-	_FORMAT_PRINT_START_HTTP_SERVICE       = "\033[32mINFO \033[0m -  %s  -  HTTP server '%s' is starting %s ...\n\n"
-	_FORMAT_PRINT_START_HTTPS_SERVICE      = "\033[32mINFO \033[0m -  %s  -  HTTPS server '%s' is starting %s ...\n\n"
-	_FORMAT_PRINT_FAILED_SHUTDOWN_SERVICE  = "\033[35mERROR\033[0m -  %s  -  Failed to shutdown server '%s': %v\n\n"
-	_FORMAT_PRINT_SUCCESS_SHUTDOWN_SERVICE = "\033[32mINFO \033[0m -  %s  -  Server '%s' shutdown successfully.\n\n"
-)
+const _FORMAT_DATETIME = "2006-01-02 15:04:05.000"
 
 // Engine 定义引擎的结构
 type Engine struct {
 	*group // 继承路由组，所以引擎本身也是一个路由组
 
-	name        string                // 服务名
-	router      Router                // 路由器
-	server      *http.Server          // 服务器
-	handlers    map[string]Handler    // 处理器
-	middlewares map[string]Middleware // 中间件
+	name         string                // 服务名
+	router       Router                // 路由器
+	server       *http.Server          // 服务器
+	handlers     map[string]Handler    // 处理器
+	middlewares  map[string]Middleware // 中间件
+	printBuilder *strings.Builder
 }
 
 // NewEngine 新建一个引擎
@@ -41,23 +36,19 @@ func NewEngine() *Engine {
 	checkGoVersion()
 
 	engine := &Engine{
-		handlers:    make(map[string]Handler),
-		middlewares: make(map[string]Middleware),
+		handlers:     make(map[string]Handler),
+		middlewares:  make(map[string]Middleware),
+		printBuilder: &strings.Builder{},
 	}
 
-	engine.router = newRouter(engine)
 	engine.group = &group{
 		engine: engine,
 		parent: nil,
 	}
 
+	engine.router = newRouter(engine)
+	engine.printBuilder.WriteString("Creating routes:\n")
 	return engine
-}
-
-// WithName 设置服务名称
-func (own *Engine) WithName(name string) *Engine {
-	own.name = name
-	return own
 }
 
 // GetName 获取服务名称
@@ -91,36 +82,47 @@ func (own *Engine) GetAllRouteMonitors() []*monitor.Monitor {
 	return monitors
 }
 
+// WithName 设置服务名称
+func (own *Engine) WithName(name string) *Engine {
+	own.name = name
+	return own
+}
+
 // AddURLBlacklist 添加路由黑名单
 func (own *Engine) AddURLBlacklist(urls ...string) {
-	own.router.AddBlacklist(urls...)
+	for _, url := range urls {
+		if url = strings.TrimSpace(url); url != "" {
+			own.router.AddBlacklist(url)
+		}
+	}
 }
 
 // EnableRoute 启用指定路由
-func (own *Engine) EnableRoute(method, path string) *Engine {
+func (own *Engine) EnableRoute(method, path string) {
 	key := method + " " + path
 	if handler, ok := own.handlers[key]; ok {
 		handler.Enable()
 	}
-
-	return own
 }
 
 /*
 DisableRoute 禁用指定路由
   - 禁用指定路由后，也不会调用该路由上的任一中间件，且响应状态码为 423
 */
-func (own *Engine) DisableRoute(method, path string) *Engine {
+func (own *Engine) DisableRoute(method, path string) {
 	key := method + " " + path
 	if handler, ok := own.handlers[key]; ok {
 		handler.Disable()
 	}
-
-	return own
 }
 
 // Run 启动 HTTP 服务
 func (own *Engine) Run(addr string) error {
+	// 打印路由信息
+	own.printBuilder.WriteByte('\n')
+	logging.INFO(own.printBuilder.String())
+	own.printBuilder.Reset()
+
 	// 创建 HTTP 服务
 	own.server = &http.Server{
 		Addr:    addr,
@@ -128,7 +130,11 @@ func (own *Engine) Run(addr string) error {
 	}
 
 	// 启动 HTTP 服务
-	fmt.Printf(_FORMAT_PRINT_START_HTTP_SERVICE, time.Now().Format(_FORMAT_DATETIME), own.name, addr)
+	if own.name != "" {
+		logging.INFO("HTTP server '%s' is starting %s ...\n\n", own.name, own.server.Addr)
+	} else {
+		logging.INFO("HTTP server is starting %s ...\n\n", own.server.Addr)
+	}
 	return own.server.ListenAndServe()
 }
 
@@ -138,12 +144,14 @@ func (own *Engine) Shutdown(timeout time.Duration) error {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+	fmt.Println()
 
 	// 创建一个超时 context.Context
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// 优雅关闭服务器
+	fmt.Println()
 	if err := own.server.Shutdown(ctx); err != nil {
 		if own.name != "" {
 			logging.WARN("Failed to shutdown server '%s': %v\n", own.name, err)
@@ -164,13 +172,15 @@ func (own *Engine) Shutdown(timeout time.Duration) error {
 
 // checkGoVersion 检查 Go 版本信息
 func checkGoVersion() {
+	// 获取 Go 版本信息
 	ver := runtime.Version()
-	if strings.HasPrefix(ver, "go") {
-		ver = strings.TrimPrefix(ver, "go")
+	if after, ok := strings.CutPrefix(ver, "go"); ok {
+		ver = after
 	}
 
+	// 检查 Go 版本（1.25+）
 	if m, s, _, e := getGoVersionParts(ver); e == nil && (m < 1 || s < 25) {
-		logging.WARN("Leego requires Go 1.25+, but now Go version is %s.\n", ver)
+		logging.WARN("Leego requires Go 1.25+, but now Go version is %s.\n\n", ver)
 	}
 }
 

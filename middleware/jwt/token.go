@@ -35,6 +35,11 @@ func (own *Token) GetClaim(key string) (any, bool) {
 	return nil, false
 }
 
+// GetAllClaims 获取所有的声明
+func (own *Token) GetAllClaims() map[string]any {
+	return own.claims
+}
+
 // GetStandardClaims 获取标准声明字段
 func (own *Token) GetStandardClaims() *StandardClaims {
 	return own.stdClaims

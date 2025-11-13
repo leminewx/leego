@@ -1,8 +1,10 @@
 package cors
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"gitee.com/leminewx/gokit/ggid"
 )
@@ -12,6 +14,9 @@ type Config struct {
 	Id    string `json:"id" xml:"id"`
 	Type  string `json:"type" xml:"type"`
 	Scope string `json:"scope" xml:"scope"`
+
+	// IsEnabled 是否启用
+	IsEnabled int32 `json:"is_enabled" xml:"is_enabled"`
 
 	// MaxAge 表示资源缓存时间（一般为24小时：86400，单位：秒）
 	MaxAge int64 `json:"max_age" xml:"max_age"`
@@ -30,7 +35,8 @@ func NewDefaultConfig() *Config {
 	return &Config{
 		Id:            ggid.New().GetShort(),
 		Type:          "cors",
-		MaxAge:        _DEFAULT_MAX_AGE,
+		MaxAge:        86400, // 默认预检请求缓存时间（24小时）\
+		IsEnabled:     1,
 		AllowOrigins:  make([]string, 0),
 		AllowMethods:  make([]string, 0),
 		AllowHeaders:  make([]string, 0),
@@ -38,14 +44,28 @@ func NewDefaultConfig() *Config {
 	}
 }
 
+// Enable 启用中间件
+func (own *CORS) Enable() {
+	atomic.StoreInt32(&own.config.IsEnabled, 1)
+}
+
+// Disable 禁用中间件
+func (own *CORS) Disable() {
+	atomic.StoreInt32(&own.config.IsEnabled, 0)
+}
+
 // SetScope 设置作用域
 func (own *CORS) SetScope(scope string) {
+	if scope == "" {
+		scope = "/"
+	}
+
 	own.lock.Lock()
 	own.config.Scope = scope
 	own.lock.Unlock()
 }
 
-// WithMaxAge 设置最大可以缓存 Access-Control-Allow-Methods 和 Access-Control-Allow-Headers 信息的时间
+// WithMaxAge 设置前端缓存信息的最大时间（单位：秒）
 func (own *CORS) WithMaxAge(seconds int64) *CORS {
 	if seconds < 0 {
 		seconds = 0
@@ -158,19 +178,34 @@ func (own *CORS) WithExposeHeaders(headers ...string) *CORS {
 	return own
 }
 
-// Sync 同步配置
-func (own *CORS) Sync(config *Config) {
+// SyncConfig 同步配置
+func (own *CORS) SyncConfig(config any) error {
+	conf, ok := config.(*Config)
+	if !ok {
+		return fmt.Errorf("leego: cors: failed to sync config, config is not *cors.Config")
+	}
+	if config == nil {
+		return fmt.Errorf("leego: cors: failed to sync config, config is nil")
+	}
+
 	// 重置配置
 	own.lock.Lock()
 	own.resetConfig()
 	own.lock.Unlock()
 
 	// 同步配置参数
-	own.WithMaxAge(config.MaxAge).
-		WithAllowOrigins(config.AllowOrigins...).
-		WithAllowHeaders(config.AllowHeaders...).
-		WithAllowMethods(config.AllowMethods...).
-		WithExposeHeaders(config.ExposeHeaders...)
+	if conf.IsEnabled == 0 {
+		own.Disable()
+	} else {
+		own.Enable()
+	}
+
+	own.WithMaxAge(conf.MaxAge).
+		WithAllowOrigins(conf.AllowOrigins...).
+		WithAllowHeaders(conf.AllowHeaders...).
+		WithAllowMethods(conf.AllowMethods...).
+		WithExposeHeaders(conf.ExposeHeaders...)
+	return nil
 }
 
 // resetConfig 重置配置
@@ -197,11 +232,13 @@ func (own *CORS) GetID() string {
 }
 
 // GetConfig 获取跨域配置
-func (own *CORS) GetConfig() *Config {
+func (own *CORS) GetConfig() any {
 	config := &Config{
 		Id:            own.config.Id,
 		Type:          "cors",
 		Scope:         own.config.Scope,
+		MaxAge:        atomic.LoadInt64(&own.config.MaxAge),
+		IsEnabled:     atomic.LoadInt32(&own.config.IsEnabled),
 		AllowOrigins:  make([]string, 0),
 		AllowMethods:  make([]string, 0),
 		AllowHeaders:  make([]string, 0),
@@ -209,8 +246,6 @@ func (own *CORS) GetConfig() *Config {
 	}
 
 	own.lock.RLock()
-	config.MaxAge = own.config.MaxAge
-
 	for _, origin := range own.config.AllowOrigins {
 		config.AllowOrigins = append(config.AllowOrigins, origin)
 	}
@@ -226,7 +261,7 @@ func (own *CORS) GetConfig() *Config {
 	for _, header := range own.config.ExposeHeaders {
 		config.ExposeHeaders = append(config.ExposeHeaders, header)
 	}
-
 	own.lock.RUnlock()
+	
 	return config
 }

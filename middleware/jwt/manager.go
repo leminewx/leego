@@ -1,4 +1,4 @@
-package authenticator
+package jwt
 
 import (
 	"errors"
@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/middleware/authenticator/jwt"
 	"gitee.com/leminewx/leego/response"
 )
 
@@ -18,34 +17,43 @@ var (
 	errTokenStandardClaimsNil = errors.New("leego: jwt: standard claims of token is nil")
 )
 
-// Authenticator 定义 JWT 中间件的数据结构
-type Authenticator struct {
+// Manager 定义 JWT 中间件管理器的实现类型
+type Manager struct {
 	config           *Config                     // 配置
-	signer           jwt.Signer                  // 签名器
-	parser           jwt.Parser                  // 解析器
-	header           *jwt.Header                 // JWT 头部
+	signer           Signer                      // 签名器
+	parser           Parser                      // 解析器
+	header           *Header                     // JWT 头部
 	extractors       []Extractor                 // 令牌提取器
 	defaultExtractor Extractor                   // 令牌默认提取器
 	errorHandler     func(*leego.Context, error) // 错误处理
 	lock             sync.RWMutex
 }
 
-// NewHS256Authenticator 创建一个带默认配置的 使用 HS256 签名算法的 JWT 中间件
-func NewHS256Authenticator(key []byte) *Authenticator {
-	signer, _ := jwt.NewHMACSigner(jwt.NewHeader(jwt.HS256), key)
+var _ leego.Middleware = &Manager{}
+
+/*
+NewDefaultManager 创建一个默认配置的 JWT 令牌管理器
+  - key: 密钥
+  - 默认使用 HS256 签名算法
+  - 默认启用 JWT 校验
+  - 默认令牌 1 天有效
+  - 默认通过 Authorization: Bearer 提取令牌信息
+*/
+func NewDefaultManager(key []byte) *Manager {
+	signer, _ := NewHMACSigner(NewHeader(HS256), key)
 	config := NewDefaultConfig()
-	config.Algorithm = jwt.HS256
-	return NewAuthenticator(config, signer, jwt.NewParser())
+	config.Algorithm = HS256
+	return NewManager(config, signer, NewParser())
 }
 
-// NewAuthenticator 创建一个 JWT 中间件（默认使用 Bearer 令牌提取器）
-func NewAuthenticator(config *Config, signer jwt.Signer, parser jwt.Parser) *Authenticator {
+// NewManager 创建一个 JWT 中间件（默认使用 Bearer 令牌提取器）
+func NewManager(config *Config, signer Signer, parser Parser) *Manager {
 	config.Algorithm = signer.GetAlgorithm()
-	return &Authenticator{
+	return &Manager{
 		config: config,
 		signer: signer,
 		parser: parser,
-		header: &jwt.Header{
+		header: &Header{
 			Type:      "JWT",
 			Algorithm: signer.GetAlgorithm(),
 		},
@@ -55,7 +63,7 @@ func NewAuthenticator(config *Config, signer jwt.Signer, parser jwt.Parser) *Aut
 }
 
 // WithErrorHandler 设置错误处理函数
-func (own *Authenticator) WithErrorHandler(handler func(ctx *leego.Context, err error)) *Authenticator {
+func (own *Manager) WithErrorHandler(handler func(ctx *leego.Context, err error)) *Manager {
 	if handler != nil {
 		own.lock.Lock()
 		own.errorHandler = handler
@@ -66,7 +74,7 @@ func (own *Authenticator) WithErrorHandler(handler func(ctx *leego.Context, err 
 }
 
 // WithExtractors 设置令牌提取器（当所有令牌提取器都无效时，默认使用 Bearer 令牌提取器）
-func (own *Authenticator) WithExtractors(extractors ...Extractor) *Authenticator {
+func (own *Manager) WithExtractors(extractors ...Extractor) *Manager {
 	own.lock.Lock()
 	for _, extractor := range extractors {
 		if extractor != nil {
@@ -79,17 +87,17 @@ func (own *Authenticator) WithExtractors(extractors ...Extractor) *Authenticator
 }
 
 // GenerateToken 生成 JWT 令牌
-func (own *Authenticator) GenerateToken(claims *jwt.StandardClaims) *jwt.Token {
+func (own *Manager) GenerateToken(claims *StandardClaims) *Token {
 	own.lock.RLock()
 	defer own.lock.RUnlock()
 
-	conf := own.config.JWTStandardClaimsConfig
+	conf := own.config.StandardClaimsConfig
 	if conf == nil || (conf.ExceptedIssuer == "" && conf.ExceptedAudience == "" && conf.NotBeforeSeconds <= 0 && conf.ExpiresAfterSeconds <= 0) {
-		return jwt.NewToken(claims)
+		return NewToken(claims)
 	}
 
 	if claims == nil {
-		claims = &jwt.StandardClaims{}
+		claims = &StandardClaims{}
 	}
 
 	if claims.Issuer == "" && conf.ExceptedIssuer != "" {
@@ -111,11 +119,11 @@ func (own *Authenticator) GenerateToken(claims *jwt.StandardClaims) *jwt.Token {
 		claims.ExpiresAt = now.Add(time.Duration(conf.NotBeforeSeconds+conf.ExpiresAfterSeconds) * time.Second).Unix()
 	}
 
-	return jwt.NewToken(claims)
+	return NewToken(claims)
 }
 
 // GenerateTokenString 生成 JWT 令牌字符串
-func (own *Authenticator) GenerateTokenString(claims *jwt.StandardClaims) (string, error) {
+func (own *Manager) GenerateTokenString(claims *StandardClaims) (string, error) {
 	tokenBytes, err := own.Sign(own.GenerateToken(claims))
 	if err != nil {
 		return "", err
@@ -125,11 +133,17 @@ func (own *Authenticator) GenerateTokenString(claims *jwt.StandardClaims) (strin
 }
 
 // Handle 创建一个处理函数
-func (own *Authenticator) Handle(handle leego.HandleFunc) leego.HandleFunc {
+func (own *Manager) Handle(next leego.HandleFunc) leego.HandleFunc {
 	return func(ctx *leego.Context) {
+		// 未启用，直接跳过
+		if atomic.LoadInt32(&own.config.IsEnabled) == 0 {
+			next(ctx)
+			return
+		}
+
 		// 检查是否跳过当前路径
 		if own.ShouldSkip(ctx.Request.URL.Path) {
-			handle(ctx)
+			next(ctx)
 			return
 		}
 
@@ -150,7 +164,7 @@ func (own *Authenticator) Handle(handle leego.HandleFunc) leego.HandleFunc {
 		}
 
 		// 验证令牌
-		var token *jwt.Token
+		var token *Token
 		if atomic.LoadInt32(&own.config.Validation) > 0 { // 验证签名和标准声明
 			token, err = own.VerifyWithStandardClaims(tokenString)
 		} else { // 仅验证签名
@@ -173,25 +187,25 @@ func (own *Authenticator) Handle(handle leego.HandleFunc) leego.HandleFunc {
 		}
 
 		// 将令牌和声明存储在请求中，然后调用下一个处理器
-		ctx.WithJWT(token)
-		handle(ctx)
+		ctx.WithJWTClaims(token.GetAllClaims())
+		next(ctx)
 	}
 }
 
 // ShouldSkip 检查是否应该跳过当前路径
-func (own *Authenticator) ShouldSkip(path string) bool {
+func (own *Manager) ShouldSkip(path string) bool {
 	own.lock.RLock()
 	defer own.lock.RUnlock()
 
 	// 检查绝对路径
-	if len(own.config.SkipAbsolutePathMap) > 0 {
-		if _, ok := own.config.SkipAbsolutePathMap[path]; ok {
+	if len(own.config.SkipAbsolutePaths) > 0 {
+		if _, ok := own.config.SkipAbsolutePaths[path]; ok {
 			return true
 		}
 	}
 
 	// 检查通配路径
-	for _, skipPath := range own.config.SkipWildcardPathSlice {
+	for _, skipPath := range own.config.SkipWildcardPaths {
 		if strings.HasPrefix(path, skipPath) {
 			return true
 		}
@@ -201,7 +215,7 @@ func (own *Authenticator) ShouldSkip(path string) bool {
 }
 
 // ExtractToken 提取取令牌
-func (own *Authenticator) ExtractToken(req *http.Request) (string, error) {
+func (own *Manager) ExtractToken(req *http.Request) (string, error) {
 	// 未指定令牌提取器，则使用默认令牌提取器
 	if len(own.extractors) == 0 {
 		return own.defaultExtractor.Extract(req)
@@ -218,12 +232,12 @@ func (own *Authenticator) ExtractToken(req *http.Request) (string, error) {
 }
 
 // Sign 生成令牌签名
-func (own *Authenticator) Sign(token *jwt.Token) ([]byte, error) {
+func (own *Manager) Sign(token *Token) ([]byte, error) {
 	return own.signer.Sign(token)
 }
 
 // Verify 验证签名
-func (own *Authenticator) Verify(tokenString string) (*jwt.Token, error) {
+func (own *Manager) Verify(tokenString string) (*Token, error) {
 	if len(tokenString) == 0 {
 		return nil, errTokenStringEmpty
 	}
@@ -232,12 +246,12 @@ func (own *Authenticator) Verify(tokenString string) (*jwt.Token, error) {
 }
 
 // VerifyWithStandardClaims 验证签名并验证标准声明（签发时间允许1分钟时间偏差）
-func (own *Authenticator) VerifyWithStandardClaims(tokenString string) (*jwt.Token, error) {
+func (own *Manager) VerifyWithStandardClaims(tokenString string) (*Token, error) {
 	if len(tokenString) == 0 {
 		return nil, errTokenStringEmpty
 	}
 
-	conf := own.config.JWTStandardClaimsConfig
+	conf := own.config.StandardClaimsConfig
 	if conf == nil {
 		return nil, errTokenStandardClaimsNil
 	}

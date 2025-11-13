@@ -1,4 +1,4 @@
-package authenticator
+package jwt
 
 import (
 	"errors"

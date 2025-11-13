@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego/headers"
-	"gitee.com/leminewx/leego/middleware/authenticator/jwt"
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/response/sse"
 )
@@ -41,10 +40,10 @@ type Context struct {
 	startTime   time.Time         // 创建时间
 	queryValues url.Values        // 查询参数
 	pathValues  map[string]string // 路由参数
+	tokenValues map[string]any    // JWT参数
 
-	url    *url.URL   // URL 消息
-	engine *Engine    // 绑定引擎
-	token  *jwt.Token // JWT 令牌
+	url    *url.URL // URL 消息
+	engine *Engine  // 绑定引擎
 
 	// 原始请求何响应
 	Request  *http.Request   // 原始请求
@@ -70,13 +69,14 @@ func (own *Context) GetURL() *url.URL {
 	return own.url
 }
 
-// GetJWT 获取 JWT 令牌
-func (own *Context) GetJWT() (*jwt.Token, bool) {
-	if own.token != nil {
-		return own.token, true
+// GetJWTClaim 获取 JWT 声明参数
+func (own *Context) GetJWTClaim(key string) (any, bool) {
+	if own.tokenValues == nil {
+		return nil, false
 	}
 
-	return nil, false
+	value, ok := own.tokenValues[key]
+	return value, ok
 }
 
 // GetClientIP 获取客户端 IP
@@ -190,9 +190,9 @@ func (own *Context) GetRequestHeader(key string) string {
 	return own.Request.Header.Get(key)
 }
 
-// WithJWT 绑定 JWT 令牌
-func (own *Context) WithJWT(token *jwt.Token) *Context {
-	own.token = token
+// WithJWTClaims 绑定 JWT 声明信息
+func (own *Context) WithJWTClaims(claims map[string]any) *Context {
+	own.tokenValues = claims
 	return own
 }
 

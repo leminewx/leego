@@ -3,14 +3,10 @@ package cors
 import (
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/headers"
-)
-
-const (
-	_DEFAULT_MAX_AGE       = 86400                                    // 默认预检请求缓存时间（24小时）
-	_DEFAULT_ALLOW_METHODS = "GET, PUT, POST, DELETE, OPTIONS, PATCH" // 默认允许的 HTTP 方法
 )
 
 // CORS 定义跨域处理器的数据结构
@@ -23,7 +19,7 @@ type CORS struct {
 	// 允许访问的源
 	allowCredentials bool                // 是否需要指定源，设置为 true 时，Access-Control-Allow-Origin 不能设置为 *
 	allowAllOrigins  bool                // 是否允许所有源
-	allowOrigins     map[string]struct{} // 具体的允许源列表
+	allowOrigins     map[string]struct{} // 具体允许的源列表
 
 	// 允许访问的方法
 	allowMethods      map[string]struct{}
@@ -59,15 +55,24 @@ func NewDefaultCORS() *CORS {
 
 // NewCORS 新建一个 CORS 中间件
 func NewCORS(config *Config) *CORS {
-	cors := &CORS{config: config}
-	cors.Sync(config) // 直接同步
+	cors := &CORS{
+		config: config,
+	}
+
+	_ = cors.SyncConfig(config) // 直接同步
 	return cors
 
 }
 
 // Handle 创建一个处理函数
-func (own *CORS) Handle(handle leego.HandleFunc) leego.HandleFunc {
+func (own *CORS) Handle(next leego.HandleFunc) leego.HandleFunc {
 	return func(ctx *leego.Context) {
+		// 未启用，直接跳过
+		if atomic.LoadInt32(&own.config.IsEnabled) == 0 {
+			next(ctx)
+			return
+		}
+
 		// 处理预检请求
 		if own.handlePreflight(ctx) {
 			return
@@ -77,7 +82,7 @@ func (own *CORS) Handle(handle leego.HandleFunc) leego.HandleFunc {
 		own.writeResponseHeader(ctx)
 
 		// 调用下一个处理器
-		handle(ctx)
+		next(ctx)
 	}
 }
 
@@ -100,6 +105,8 @@ func (own *CORS) handlePreflight(ctx *leego.Context) bool {
 	ctx.WithStatusCode(http.StatusNoContent)
 	return true
 }
+
+const _DEFAULT_ALLOW_METHODS = "GET, PUT, POST, DELETE, OPTIONS, PATCH"
 
 // writeResponseHeader 写入响应头
 func (own *CORS) writeResponseHeader(ctx *leego.Context) {

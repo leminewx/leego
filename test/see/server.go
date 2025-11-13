@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -21,19 +19,23 @@ import (
 
 func main() {
 	// 创建服务
-	engine := leego.NewEngine("test")
+	engine := leego.NewEngine()
 
 	// 中间件
-	engine.WithMiddlewareFuncs(
-		middleware.Log(nil),
-		middleware.Limit(3),
+	engine.UseMiddlewareFuncs(
+		middleware.Log(),
 		middleware.Recover(nil),
-	).WithMiddlewares(
-		cors.NewDefaultCORS("CORS 配置中间件"),
-	).WithMiddlewareFuncs(
-		middleware.GenerateRequestId(headers.X_REQUEST_ID, func(req *http.Request) string {
-			return fmt.Sprintf("rid_%d", time.Now().UnixNano())
-		}),
+	)
+	engine.UseMiddlewares(
+		cors.NewDefaultCORS(),
+	)
+	engine.UseMiddlewareFuncs(
+		func(next leego.HandleFunc) leego.HandleFunc {
+			return func(ctx *leego.Context) {
+				ctx.Response.Header().Set(headers.X_REQUEST_ID, ggid.New().String())
+				next(ctx)
+			}
+		},
 	)
 
 	sseManager := sse.NewManager()
@@ -112,9 +114,7 @@ func main() {
 
 	// 启动服务
 	wg.Go(func() {
-		_ = engine.ListenAndServe(&leego.Options{
-			Addr: ":10000",
-		})
+		_ = engine.Run(":10000")
 	})
 
 	if err := engine.Shutdown(5 * time.Second); err != nil {

@@ -11,7 +11,7 @@ import (
 
 	"gitee.com/leminewx/gokit/cryptox/rsax"
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/middleware/authenticator"
+	"gitee.com/leminewx/leego/middleware/jwt"
 )
 
 //go:embed views
@@ -26,10 +26,10 @@ type Admin struct {
 	service *leego.Engine
 
 	// 后台管理服务
-	admin         *leego.Engine                // 后台管理服务
-	config        *Config                      // 后台服务配置
-	authenticator *authenticator.Authenticator // 后台服务的认证管理器
-	staticHandler http.Handler                 // 静态文件处理器
+	admin         *leego.Engine      // 后台管理服务
+	config        *Config            // 后台服务配置
+	authenticator *jwt.Authenticator // 后台服务的认证管理器
+	staticHandler http.Handler       // 静态文件处理器
 
 	// 管理员账户
 	user            *Administrator  // 账户
@@ -90,7 +90,7 @@ func (own *Admin) initKeys() (err error) {
 }
 
 func (own *Admin) initAuthenticator() {
-	own.authenticator = authenticator.NewHS256Authenticator("adminAuthenticator", []byte(DEFAULT_AUTHENTICATOR_KEY)).
+	own.authenticator = jwt.NewHS256Authenticator("adminAuthenticator", []byte(DEFAULT_AUTHENTICATOR_KEY)).
 		WithSkipPaths("/auth/pkey", "/auth/login"). // 认证跳过这两个接口
 		WithExceptedIssuer("leego_admin").          // 设置签发者
 		WithExpiresAfterSeconds(3600 * 24).         // JWT 有效期 1 天

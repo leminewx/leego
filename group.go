@@ -7,17 +7,10 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/tree"
-)
-
-const (
-	_FORMAT_PRINT_EXISTS_ROUTE               = "\033[33mWARN \033[0m -  %s  -  Exists route: %7s: %s\n"
-	_FORMAT_PRINT_CREATE_ROUTE               = "\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s\n"
-	_FORMAT_PRINT_CREATE_ROUTE_WITH_FILEPATH = "\033[32mINFO \033[0m -  %s  -  Create route: %7s: %s  -  filepath: %s\n"
 )
 
 type (
@@ -29,10 +22,24 @@ type (
 		UseMiddlewares(middlewares ...Middleware)
 		// UseMiddlewareFuncs 使用路由中间件函数
 		UseMiddlewareFuncs(fns ...MiddlewareFunc)
-		// SetStatic 设置静态文件服务
+		// SetStatic 处理文件请求
 		SetStatic(relativePath, rootPath string, cache bool, tags ...string) error
-		// SetStaticFS 通过 FS 设置静态文件服务
+		// SetStaticFS 通过 FS 处理文件请求
 		SetStaticFS(relativePath string, fs http.FileSystem, cache bool, tags ...string) error
+		// GET 处理 GET 请求
+		GET(pattern string, handle HandleFunc, tags ...string)
+		// PUT 处理 PUT 请求
+		PUT(pattern string, handle HandleFunc, tags ...string)
+		// POST 处理 POST 请求
+		POST(pattern string, handle HandleFunc, tags ...string)
+		// HEAD 处理 HEAD 请求
+		HEAD(pattern string, handle HandleFunc, tags ...string)
+		// PATCH 处理 PATCH 请求
+		PATCH(pattern string, handle HandleFunc, tags ...string)
+		// DELETE 处理 DELETE 请求
+		DELETE(pattern string, handle HandleFunc, tags ...string)
+		// OPTIONS 处理 OPTIONS 请求
+		OPTIONS(pattern string, handle HandleFunc, tags ...string)
 	}
 
 	// group 定义路由组的实现类型
@@ -47,7 +54,7 @@ type (
 )
 
 // Group 在当前路由组的基础上创建一个新的路由组
-func (own *group) Group(prefix string) *group {
+func (own *group) Group(prefix string) Group {
 	return &group{
 		engine:      own.engine,
 		parent:      own,
@@ -121,11 +128,17 @@ func (own *group) SetStatic(relativePath, rootPath string, cache bool, tags ...s
 
 	// 创建 GET 和 HEAD 服务接口
 	wildcardName := "*" + tree.WILDCARD_DEFAULT_NAME
-	own.addRoute(http.MethodGet, path.Join(relativePath, wildcardName), rootPath, handler, tags...)
-	own.addRoute(http.MethodHead, path.Join(relativePath, wildcardName), rootPath, handler, tags...)
+	own.addRoute(http.MethodGet, path.Join(relativePath, wildcardName), handler, rootPath, tags...)
+	own.addRoute(http.MethodHead, path.Join(relativePath, wildcardName), handler, rootPath, tags...)
 	own.hasStatic = true
 
 	return
+}
+
+// SetStaticFS 通过 FS 设置静态文件服务
+func (own *group) SetStaticFS(relativePath string, fs http.FileSystem, cache bool, tags ...string) (err error) {
+	// TODO
+	return nil
 }
 
 // createStaticHandler 创建静态文件服务的处理器
@@ -165,51 +178,51 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 		}
 
 		// 设置安全头
-		ctx.WithResponseHeader("X-Content-Type-Options", "nosniff") // 防止 MIME 类型嗅探攻击
-		ctx.WithResponseHeader("X-Frame-Options", "DENY")           // 防止点击劫持（ClickJacking）攻击
+		ctx.WithResponseHeader(headers.X_CONTENT_TYPE_OPTIONS, "nosniff") // 防止 MIME 类型嗅探攻击
+		ctx.WithResponseHeader(headers.X_FRAME_OPTIONS, "DENY")           // 防止点击劫持（ClickJacking）攻击
 
 		// 响应文件
 		fileServer.ServeHTTP(ctx.Response, ctx.Request)
 	}
 }
 
-// GET 添加一个处理 GET 方法的处理器
+// GET 处理 GET 请求
 func (own *group) GET(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodGet, pattern, "", handle, tags...)
+	own.addRoute(http.MethodGet, pattern, handle, "", tags...)
 }
 
-// PUT 添加一个处理 PUT 方法的处理器
+// PUT 处理 PUT 请求
 func (own *group) PUT(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodPut, pattern, "", handle, tags...)
+	own.addRoute(http.MethodPut, pattern, handle, "", tags...)
 }
 
-// HEAD 添加一个处理 HEAD 方法的处理器
-func (own *group) HEAD(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodHead, pattern, "", handle, tags...)
-}
-
-// POST 添加一个处理 POST 方法的处理器
+// POST 处理 POST 请求
 func (own *group) POST(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodPost, pattern, "", handle, tags...)
+	own.addRoute(http.MethodPost, pattern, handle, "", tags...)
 }
 
-// PATCH 添加一个处理 PATCH 方法的处理器
+// HEAD 处理 HEAD 请求
+func (own *group) HEAD(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodHead, pattern, handle, "", tags...)
+}
+
+// PATCH 处理 PATCH 请求
 func (own *group) PATCH(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodPatch, pattern, "", handle, tags...)
+	own.addRoute(http.MethodPatch, pattern, handle, "", tags...)
 }
 
-// DELETE 添加一个处理 DELETE 方法的处理器
+// DELETE 处理 DELETE 请求
 func (own *group) DELETE(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodDelete, pattern, "", handle, tags...)
+	own.addRoute(http.MethodDelete, pattern, handle, "", tags...)
 }
 
-// OPTIONS 添加一个处理 OPTIONS 方法的处理器
+// OPTIONS 处理 OPTIONS 请求
 func (own *group) OPTIONS(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodOptions, pattern, "", handle, tags...)
+	own.addRoute(http.MethodOptions, pattern, handle, "", tags...)
 }
 
 // addRoute 添加处理器到当前路由组
-func (own *group) addRoute(method, pattern, desc string, handle HandleFunc, tags ...string) {
+func (own *group) addRoute(method, pattern string, handle HandleFunc, desc string, tags ...string) {
 	// 规范化路径
 	pattern = path.Join(own.prefix, normalizePath(pattern))
 	pattern = strings.ReplaceAll(pattern, "//", "/") // 移除可能出现的双斜杠
@@ -217,7 +230,7 @@ func (own *group) addRoute(method, pattern, desc string, handle HandleFunc, tags
 	// 检查接口是否已经创建
 	key := method + " " + pattern
 	if _, ok := own.engine.handlers[key]; ok {
-		fmt.Printf(_FORMAT_PRINT_EXISTS_ROUTE, time.Now().Format(_FORMAT_DATETIME), method, pattern)
+		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Repeat | %-7s \033[0m %s\n", method, pattern))
 		return
 	}
 
@@ -228,11 +241,10 @@ func (own *group) addRoute(method, pattern, desc string, handle HandleFunc, tags
 	// 关联到服务引擎
 	own.engine.handlers[key] = handler
 
-	// 输出信息
 	if desc != "" {
-		fmt.Printf(_FORMAT_PRINT_CREATE_ROUTE_WITH_FILEPATH, time.Now().Format(_FORMAT_DATETIME), method, pattern, desc)
+		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Create | %-7s \033[0m %s  -  filepath: %s\n", method, pattern, desc))
 	} else {
-		fmt.Printf(_FORMAT_PRINT_CREATE_ROUTE, time.Now().Format(_FORMAT_DATETIME), method, pattern)
+		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Create | %-7s \033[0m %s\n", method, pattern))
 	}
 }
 

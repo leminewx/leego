@@ -13,14 +13,14 @@ import (
 type (
 	// Router 定义路由器的接口类型
 	Router interface {
+		// ServeHTTP 实现 http.Handler 接口
+		ServeHTTP(resp http.ResponseWriter, req *http.Request)
 		// Insert 插入路由
 		Insert(method, pattern string, handler Handler)
 		// Search 搜索路由
 		Search(method, path string) (Handler, map[string]string, bool)
 		// AddBlacklist 添加路由黑名单
 		AddBlacklist(urls ...string)
-		// ServeHTTP 实现 http.Handler 接口
-		ServeHTTP(resp http.ResponseWriter, req *http.Request)
 	}
 
 	// router 定义路由器的实现类型

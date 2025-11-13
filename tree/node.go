@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-const WILDCARD_DEFAULT_NAME = "path"
+const WILDCARD_DEFAULT_NAME = "filepath"
 
 // Node 定义路由树节点的数据结构
 type Node[T any] struct {
