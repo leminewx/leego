@@ -26,6 +26,12 @@ import (
 
 var maxMultipartMemory int64 = 10 << 20 // 10M
 
+var contextPool *sync.Pool = &sync.Pool{
+	New: func() any {
+		return &Context{startTime: time.Now()}
+	},
+}
+
 // SetMaxMultipartMemory 设置解析 multipart/form-data 多部分表单时最大使用的内存
 func SetMaxMultipartMemory(size int64) {
 	atomic.StoreInt64(&maxMultipartMemory, size)
@@ -50,16 +56,28 @@ type Context struct {
 	Response response.Writer // 原始响应
 }
 
-// newContext 新建一个上下文
-func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request, pathValues map[string]string) *Context {
-	return &Context{
-		startTime:  time.Now(),
-		url:        req.URL,
-		pathValues: pathValues,
-		engine:     engine,
-		Request:    req,
-		Response:   response.NewWriter(resp),
-	}
+// allocContext 分配一个上下文
+func allocContext(engine *Engine, resp http.ResponseWriter, req *http.Request, pathValues map[string]string) *Context {
+	ctx := contextPool.Get().(*Context)
+	ctx.engine = engine
+	ctx.url = req.URL
+	ctx.Request = req
+	ctx.pathValues = pathValues
+	ctx.queryValues = req.URL.Query()
+	ctx.Response = response.NewWriter(resp)
+	return ctx
+}
+
+// dealloc 释放当前上下文
+func (own *Context) dealloc() {
+	own.clientIP = ""
+	own.url = nil
+	own.queryValues = nil
+	own.pathValues = nil
+	own.tokenValues = nil
+	own.Request = nil
+	own.Response = nil
+	contextPool.Put(own)
 }
 
 /**************************************************** HTTP Request ****************************************************/

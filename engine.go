@@ -138,6 +138,33 @@ func (own *Engine) Run(addr string) error {
 	return own.server.ListenAndServe()
 }
 
+// RunTLS 启动 HTTPS 服务
+func (own *Engine) RunTLS(addr, certFile, keyFile string) error {
+	// 打印路由信息
+	own.printBuilder.WriteByte('\n')
+	logging.INFO(own.printBuilder.String())
+	own.printBuilder.Reset()
+
+	// 创建 HTTP 服务
+	own.server = &http.Server{
+		Addr:    addr,
+		Handler: own.router,
+	}
+
+	// 启动 HTTP 服务
+	if own.name != "" {
+		logging.INFO("HTTPS server '%s' is starting %s ...\n\n", own.name, own.server.Addr)
+	} else {
+		logging.INFO("HTTPS server is starting %s ...\n\n", own.server.Addr)
+	}
+	return own.server.ListenAndServeTLS(certFile, keyFile)
+}
+
+// ServeHTTP 继承 http.Handler 接口
+func (own *Engine) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	own.router.ServeHTTP(resp, req)
+}
+
 // Shutdown 优雅关闭服务
 func (own *Engine) Shutdown(timeout time.Duration) error {
 	// 等待中断信号
