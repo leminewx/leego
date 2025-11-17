@@ -97,9 +97,9 @@ func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
 	monitor := handler.GetMonitor()
 
-	// 创建上下文，采集数据
+	// 分配上下文，采集数据
 	monitor.Increase()
-	ctx := allocContext(own.engine, resp, req, params)
+	ctx := newContext(own.engine, resp, req, params)
 
 	// 禁用处理器
 	if !handler.IsEnabled() {
@@ -111,9 +111,6 @@ func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	// 启用处理器
 	handler.ServeHTTP(ctx)
 	monitor.Decrease(ctx.GetStatusCode(), time.Since(ctx.GetStartTime()))
-
-	//	回收上下文，以备复用
-	ctx.dealloc()
 }
 
 // extractSegmentNames 从路径中提取所有的参数名称（:param 或 *param 或 *）

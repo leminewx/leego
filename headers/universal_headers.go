@@ -41,10 +41,22 @@ const (
 		取值：
 		  - close：请求 / 响应完成后关闭连接
 		  - keep-alive：保持 TCP 连接不关闭，用于复用连接（HTTP/1.1 默认开启）
+		  - upgrade：表示客户端希望将连接升级到另一种协议（必须与 Upgrade 头配合使用）
 		示例：
 		  - Connection: keep-alive
 	*/
 	CONNECTION = "Connection"
+
+	/*
+		Upgrade
+
+		作用：
+		  - 提供一种简单的机制，将当前连接从HTTP/1.1切换到其他应用层协议
+		取值：
+		  - WebSocket：从HTTP升级到WebSocket协议
+		  - HTTP/2 (h2c)：通过HTTP/1.1升级到HTTP/2（不加密的通道）
+	*/
+	UPGRADE = "Upgrade"
 
 	/*
 		Via
@@ -65,10 +77,10 @@ const (
 		取值：
 		  - text/html：优先级最高的类型之一，用于接收 HTML 网页（浏览器默认核心接收类型）
 		  - text/plain：接收纯文本内容（如 txt 文件、简单字符串响应）
-		  - text/xml; charset=utf-8：消息体为 XML 格式数据
+		  - text/xml：消息体为 XML 格式数据
 		  - text/css：接收 CSS 样式文件（客户端加载样式资源时使用）
-		  - application/json; charset=utf-8：消息体为 JSON 格式数据，前后端 API 交互的主流类型
-		  - application/xml; charset=utf-8：消息体为 XML 格式数据
+		  - application/json：消息体为 JSON 格式数据，前后端 API 交互的主流类型
+		  - application/xml：消息体为 XML 格式数据
 		  - application/x-www-form-urlencoded：表单数据的默认编码格式，数据以 key1=value1&key2=value2 形式拼接
 		  - application/octet-stream：二进制流数据（通用文件类型，服务器无法识别具体格式时使用，客户端通常会触发下载）
 		  - application/zip：ZIP 压缩文件

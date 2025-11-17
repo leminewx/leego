@@ -13,8 +13,8 @@ import (
 	"gitee.com/leminewx/leego/response"
 )
 
-// ServeHTTP 创建独立 SSE 响应
-func ServeHTTP(resp response.Writer, req *http.Request, handle func(ctx context.Context) <-chan *Message) error {
+// Handle 处理 sse 响应
+func Handle(resp response.Writer, req *http.Request, handle func(ctx context.Context) <-chan *Message) error {
 	// 创建 SSE 客户端
 	client := NewClient("*")
 	// 处理 SSE 请求

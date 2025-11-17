@@ -12,7 +12,7 @@ func TestAuthenticator_GenerateToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	authenticator := NewAuthenticator(NewDefaultConfig(), signer, NewParser())
+	authenticator := NewManager(NewDefaultConfig(), signer, NewParser())
 
 	for i := range 10 {
 		t.Log(*authenticator.GenerateToken(&StandardClaims{Id: strconv.Itoa(i)}).GetStandardClaims())
@@ -26,7 +26,7 @@ func BenchmarkAuthenticator_GenerateToken(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	authenticator := NewAuthenticator(NewDefaultConfig(), signer, NewParser())
+	authenticator := NewManager(NewDefaultConfig(), signer, NewParser())
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -42,7 +42,7 @@ func TestAuthenticator_Sign(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	authenticator := NewAuthenticator(NewDefaultConfig(), signer, NewParser())
+	authenticator := NewManager(NewDefaultConfig(), signer, NewParser())
 
 	for i := range 10 {
 		token := authenticator.GenerateToken(&StandardClaims{Id: strconv.Itoa(i)})
@@ -58,7 +58,7 @@ func BenchmarkAuthenticator_Sign(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	authenticator := NewAuthenticator(NewDefaultConfig(), signer, NewParser())
+	authenticator := NewManager(NewDefaultConfig(), signer, NewParser())
 
 	token := authenticator.GenerateToken(&StandardClaims{Id: "0123456789"})
 
@@ -78,7 +78,7 @@ func TestAuthenticator_Verify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	authenticator := NewAuthenticator(NewDefaultConfig(), signer, NewParser())
+	authenticator := NewManager(NewDefaultConfig(), signer, NewParser())
 
 	tokenSrc := authenticator.GenerateToken(&StandardClaims{Id: "0123456789"})
 	signature, err := authenticator.Sign(tokenSrc)
@@ -101,7 +101,7 @@ func BenchmarkAuthenticator_Verify(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	authenticator := NewAuthenticator(NewDefaultConfig(), signer, NewParser())
+	authenticator := NewManager(NewDefaultConfig(), signer, NewParser())
 
 	token := authenticator.GenerateToken(&StandardClaims{Id: "0123456789"})
 	signature, err := authenticator.Sign(token)

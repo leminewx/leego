@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,15 +16,24 @@ import (
 
 	"gitee.com/leminewx/leego/logging"
 	"gitee.com/leminewx/leego/middleware/monitor"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 const _FORMAT_DATETIME = "2006-01-02 15:04:05.000"
 
 // Engine 定义引擎的结构
 type Engine struct {
-	*group // 继承路由组，所以引擎本身也是一个路由组
+	// 继承路由组，所以引擎本身也是一个路由组
+	*group
 
-	name         string                // 服务名
+	// Name 引擎名称
+	Name string
+	// MaxMultipartMemory 解析 multipart/form-data 多部分表单时最大使用的内存
+	MaxMultipartMemory int64
+	// UseH2C 是否使用 HTTP2
+	UseH2C bool
+
 	router       Router                // 路由器
 	server       *http.Server          // 服务器
 	handlers     map[string]Handler    // 处理器
@@ -36,9 +46,10 @@ func NewEngine() *Engine {
 	checkGoVersion()
 
 	engine := &Engine{
-		handlers:     make(map[string]Handler),
-		middlewares:  make(map[string]Middleware),
-		printBuilder: &strings.Builder{},
+		MaxMultipartMemory: 32 << 20, // 默认 32 MB
+		handlers:           make(map[string]Handler),
+		middlewares:        make(map[string]Middleware),
+		printBuilder:       &strings.Builder{},
 	}
 
 	engine.group = &group{
@@ -49,11 +60,6 @@ func NewEngine() *Engine {
 	engine.router = newRouter(engine)
 	engine.printBuilder.WriteString("Creating routes:\n")
 	return engine
-}
-
-// GetName 获取服务名称
-func (own *Engine) GetName() string {
-	return own.name
 }
 
 // GetMiddleware 获取指定的中间件
@@ -80,12 +86,6 @@ func (own *Engine) GetAllRouteMonitors() []*monitor.Monitor {
 	}
 
 	return monitors
-}
-
-// WithName 设置服务名称
-func (own *Engine) WithName(name string) *Engine {
-	own.name = name
-	return own
 }
 
 // AddURLBlacklist 添加路由黑名单
@@ -116,48 +116,93 @@ func (own *Engine) DisableRoute(method, path string) {
 	}
 }
 
-// Run 启动 HTTP 服务
+// Run 通过指定端口监听和服务 HTTP 请求
 func (own *Engine) Run(addr string) error {
+	// 创建 HTTP 服务
+	own.server = &http.Server{
+		Addr:    addr,
+		Handler: own.GetHandler(),
+	}
+
 	// 打印路由信息
 	own.printBuilder.WriteByte('\n')
 	logging.INFO(own.printBuilder.String())
 	own.printBuilder.Reset()
 
-	// 创建 HTTP 服务
-	own.server = &http.Server{
-		Addr:    addr,
-		Handler: own.router,
-	}
-
 	// 启动 HTTP 服务
-	if own.name != "" {
-		logging.INFO("HTTP server '%s' is starting %s ...\n\n", own.name, own.server.Addr)
-	} else {
-		logging.INFO("HTTP server is starting %s ...\n\n", own.server.Addr)
-	}
+	logging.INFO("Listening and serving HTTP %s ...\n\n", own.server.Addr)
 	return own.server.ListenAndServe()
 }
 
-// RunTLS 启动 HTTPS 服务
+// RunTLS 通过指定端口监听和服务 HTTPS 请求
 func (own *Engine) RunTLS(addr, certFile, keyFile string) error {
+	// 创建 HTTP 服务
+	own.server = &http.Server{
+		Addr:    addr,
+		Handler: own.GetHandler(),
+	}
+
 	// 打印路由信息
 	own.printBuilder.WriteByte('\n')
 	logging.INFO(own.printBuilder.String())
 	own.printBuilder.Reset()
 
-	// 创建 HTTP 服务
-	own.server = &http.Server{
-		Addr:    addr,
-		Handler: own.router,
+	// 启动 HTTP 服务
+	logging.INFO("Listening and serving HTTPS %s ...\n\n", own.server.Addr)
+	return own.server.ListenAndServeTLS(certFile, keyFile)
+}
+
+// RunUnix 使用 Unix 套接字监听和服务 HTTP 请求
+func (own *Engine) RunUnix(file string) error {
+	// 创建监听套接字
+	listener, err := net.Listen("unix", file)
+	if err != nil {
+		return err
 	}
+	defer func() {
+		_ = listener.Close()
+		_ = os.Remove(file)
+	}()
+
+	// 打印路由信息
+	own.printBuilder.WriteByte('\n')
+	logging.INFO(own.printBuilder.String())
+	own.printBuilder.Reset()
 
 	// 启动 HTTP 服务
-	if own.name != "" {
-		logging.INFO("HTTPS server '%s' is starting %s ...\n\n", own.name, own.server.Addr)
-	} else {
-		logging.INFO("HTTPS server is starting %s ...\n\n", own.server.Addr)
+	logging.INFO("Listening and serving HTTP on unix:%s ...\n\n", file)
+	return http.Serve(listener, own.GetHandler())
+}
+
+// RunFd 通过指定的文件描述符监听和服务 HTTP 请求
+func (own *Engine) RunFd(fd int) (err error) {
+	// 创建监听套接字
+	f := os.NewFile(uintptr(fd), fmt.Sprintf("fd@%d", fd))
+	listener, err := net.FileListener(f)
+	if err != nil {
+		return
 	}
-	return own.server.ListenAndServeTLS(certFile, keyFile)
+	defer func() { _ = listener.Close() }()
+
+	// 启动 HTTP 服务
+	logging.INFO("Listening and serving HTTP on fd@%s ...\n\n", fd)
+	return http.Serve(listener, own.GetHandler())
+}
+
+// RunListener 通过指定的网络监听和服务 HTTP 请求
+func (own *Engine) RunListener(listener net.Listener) (err error) {
+	logging.INFO("Listening and serving HTTP on listener what's bind with address@%s", listener.Addr())
+	return http.Serve(listener, own.GetHandler())
+}
+
+// GetHandler 获取引擎处理器
+func (own *Engine) GetHandler() http.Handler {
+	if !own.UseH2C {
+		return own
+	}
+
+	h2s := &http2.Server{}
+	return h2c.NewHandler(own, h2s)
 }
 
 // ServeHTTP 继承 http.Handler 接口
@@ -171,7 +216,6 @@ func (own *Engine) Shutdown(timeout time.Duration) error {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	fmt.Println()
 
 	// 创建一个超时 context.Context
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -180,20 +224,11 @@ func (own *Engine) Shutdown(timeout time.Duration) error {
 	// 优雅关闭服务器
 	fmt.Println()
 	if err := own.server.Shutdown(ctx); err != nil {
-		if own.name != "" {
-			logging.WARN("Failed to shutdown server '%s': %v\n", own.name, err)
-		} else {
-			logging.WARN("Failed to shutdown server: %v\n", err)
-		}
+		logging.WARN("Failed to shutdown server : %v\n", err)
 		return err
 	}
 
-	if own.name != "" {
-		logging.INFO("Shutdown server '%s' successfully\n", own.name)
-	} else {
-		logging.INFO("Shutdown server successfully\n")
-	}
-
+	logging.INFO("Shutdown server successfully\n")
 	return nil
 }
 

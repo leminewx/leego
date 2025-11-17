@@ -2,4 +2,9 @@ module gitee.com/leminewx/leego
 
 go 1.25.0
 
-require gitee.com/leminewx/gokit v0.0.0-20251103160724-a2d0344e763c
+require (
+	gitee.com/leminewx/gokit v0.0.0-20251109161709-702546ed38cb
+	golang.org/x/net v0.47.0
+)
+
+require golang.org/x/text v0.31.0 // indirect

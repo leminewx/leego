@@ -28,8 +28,8 @@ func TestNewDefaultConfig(t *testing.T) {
 		t.Error("SkipWildcardPaths should be initialized")
 	}
 
-	if config.JWTStandardClaimsConfig == nil {
-		t.Fatal("JWTStandardClaimsConfig should be initialized")
+	if config.StandardClaimsConfig == nil {
+		t.Fatal("StandardClaimsConfig should be initialized")
 	}
 
 	if config.Validation != 1 {
@@ -41,8 +41,8 @@ func TestNewDefaultConfig(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_WithScope(t *testing.T) {
-	auth := &Authenticator{config: &Config{JWTStandardClaimsConfig: &JWTStandardClaimsConfig{}}}
+func TestManager_WithScope(t *testing.T) {
+	auth := &Manager{config: &Config{StandardClaimsConfig: &StandardClaimsConfig{}}}
 	scope := "test-scope"
 
 	auth.SetScope(scope)
@@ -51,8 +51,8 @@ func TestAuthenticator_WithScope(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_WithExceptedIssuer(t *testing.T) {
-	auth := &Authenticator{config: &Config{JWTStandardClaimsConfig: &JWTStandardClaimsConfig{}}}
+func TestManager_WithExceptedIssuer(t *testing.T) {
+	auth := &Manager{config: &Config{StandardClaimsConfig: &StandardClaimsConfig{}}}
 	issuer := "test-issuer"
 
 	result := auth.WithExceptedIssuer(issuer)
@@ -72,8 +72,8 @@ func TestAuthenticator_WithExceptedIssuer(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_WithExceptedAudience(t *testing.T) {
-	auth := &Authenticator{config: &Config{JWTStandardClaimsConfig: &JWTStandardClaimsConfig{}}}
+func TestManager_WithExceptedAudience(t *testing.T) {
+	auth := &Manager{config: &Config{StandardClaimsConfig: &StandardClaimsConfig{}}}
 	audience := "test-audience"
 
 	result := auth.WithExceptedAudience(audience)
@@ -87,8 +87,8 @@ func TestAuthenticator_WithExceptedAudience(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_WithNotBeforeSeconds(t *testing.T) {
-	auth := &Authenticator{config: &Config{JWTStandardClaimsConfig: &JWTStandardClaimsConfig{}}}
+func TestManager_WithNotBeforeSeconds(t *testing.T) {
+	auth := &Manager{config: &Config{StandardClaimsConfig: &StandardClaimsConfig{}}}
 
 	// Test positive value
 	seconds := int64(300)
@@ -115,8 +115,8 @@ func TestAuthenticator_WithNotBeforeSeconds(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_WithExpiresAfterSeconds(t *testing.T) {
-	auth := &Authenticator{config: &Config{JWTStandardClaimsConfig: &JWTStandardClaimsConfig{}}}
+func TestManager_WithExpiresAfterSeconds(t *testing.T) {
+	auth := &Manager{config: &Config{StandardClaimsConfig: &StandardClaimsConfig{}}}
 
 	// Test positive value
 	seconds := int64(3600)
@@ -143,8 +143,8 @@ func TestAuthenticator_WithExpiresAfterSeconds(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_WithSkipPaths(t *testing.T) {
-	auth := &Authenticator{
+func TestManager_WithSkipPaths(t *testing.T) {
+	auth := &Manager{
 		config: &Config{
 			SkipAbsolutePaths: make(map[string]struct{}),
 			SkipWildcardPaths: make([]string, 0),
@@ -199,12 +199,12 @@ func TestAuthenticator_WithSkipPaths(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_Sync(t *testing.T) {
-	auth := &Authenticator{
+func TestManager_Sync(t *testing.T) {
+	auth := &Manager{
 		config: &Config{
 			SkipAbsolutePaths: make(map[string]struct{}),
 			SkipWildcardPaths: []string{"/old"},
-			JWTStandardClaimsConfig: &JWTStandardClaimsConfig{
+			StandardClaimsConfig: &StandardClaimsConfig{
 				Validation:          1,
 				NotBeforeSeconds:    100,
 				ExpiresAfterSeconds: 200,
@@ -220,7 +220,7 @@ func TestAuthenticator_Sync(t *testing.T) {
 			"/docs":       {},
 		},
 		SkipWildcardPaths: []string{"/static", "/public"},
-		JWTStandardClaimsConfig: &JWTStandardClaimsConfig{
+		StandardClaimsConfig: &StandardClaimsConfig{
 			Validation:          0,
 			NotBeforeSeconds:    300,
 			ExpiresAfterSeconds: 400,
@@ -267,10 +267,10 @@ func TestAuthenticator_Sync(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_Sync_WithNilJWTConfig(t *testing.T) {
-	auth := &Authenticator{
+func TestManager_Sync_WithNilJWTConfig(t *testing.T) {
+	auth := &Manager{
 		config: &Config{
-			JWTStandardClaimsConfig: &JWTStandardClaimsConfig{
+			StandardClaimsConfig: &StandardClaimsConfig{
 				Validation: 1,
 			},
 		},
@@ -279,12 +279,12 @@ func TestAuthenticator_Sync_WithNilJWTConfig(t *testing.T) {
 	config := &Config{
 		SkipAbsolutePaths: make(map[string]struct{}),
 		SkipWildcardPaths: []string{},
-		// JWTStandardClaimsConfig is nil
+		// StandardClaimsConfig is nil
 	}
 
 	auth.SyncConfig(config)
 
-	if auth.config.JWTStandardClaimsConfig == nil {
-		t.Error("JWTStandardClaimsConfig should not be nil after sync with nil config")
+	if auth.config.StandardClaimsConfig == nil {
+		t.Error("StandardClaimsConfig should not be nil after sync with nil config")
 	}
 }
