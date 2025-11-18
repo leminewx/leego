@@ -24,8 +24,8 @@ const (
 	_COLOR_RESET   = "\033[0m"     // 无色
 
 	_FORMAT_DATETIME          = "2006-01-02 15:04:05.000"
-	_FORMAT_LOG_WITH_COLOR    = "[LEEGO] %v |%s %3d \033[0m|%s %10v \033[0m| %15s |%s %-7s \033[0m %#v\n"
-	_FORMAT_LOG_WITHOUT_COLOR = "[LEEGO] %v | %3d | %10v | %15s | %-7s %#v\n"
+	_FORMAT_LOG_WITH_COLOR    = "[LEEGO] %v | %15s |%s %3d \033[0m|%s %11v \033[0m|%s %-7s \033[0m %#v\n"
+	_FORMAT_LOG_WITHOUT_COLOR = "[LEEGO] %v | %15s | %3d | %10v | %-7s %#v\n"
 )
 
 // Log 记录请求响应信息
@@ -42,10 +42,9 @@ func Log() leego.MiddlewareFunc {
 			request := ctx.Request
 
 			_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITH_COLOR,
-				time.Now().Format(_FORMAT_DATETIME),
+				time.Now().Format(_FORMAT_DATETIME), ctx.GetClientIP(),
 				getStatusColor(status), status,
 				getLatencyColor(latency), latency,
-				ctx.GetClientIP(),
 				getMethodColor(request.Method), request.Method, request.URL.Path,
 			)
 		}
@@ -79,49 +78,43 @@ func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
 			status := ctx.GetStatusCode()
 			latency := time.Since(start)
 
-			// 带颜色
-			if config.WithColor {
-				// 不带查询参数
-				if !config.WithQuery {
+			// 不带查询参数
+			if !config.WithQuery {
+				// 带颜色
+				if config.WithColor {
 					_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITH_COLOR,
-						time.Now().Format(_FORMAT_DATETIME),
+						time.Now().Format(_FORMAT_DATETIME), ctx.GetClientIP(),
 						getStatusColor(status), status,
 						getLatencyColor(latency), latency,
-						ctx.GetClientIP(),
 						getMethodColor(request.Method), request.Method, request.URL.Path)
 					return
 				}
 
-				// 带查询参数
-				query := request.URL.RawQuery
-				if query != "" {
-					query = "?" + query
-				}
-
-				_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITH_COLOR,
-					time.Now().Format(_FORMAT_DATETIME),
-					getStatusColor(status), status,
-					getLatencyColor(latency), latency,
-					ctx.GetClientIP(),
-					getMethodColor(request.Method), request.Method, request.URL.Path+query)
-				return
-			}
-
-			// 不带颜色，不带查询参数
-			if !config.WithQuery {
+				// 不带颜色
 				_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITHOUT_COLOR, time.Now().Format(_FORMAT_DATETIME),
-					status, latency, ctx.GetClientIP(), request.Method, request.URL.Path)
+					ctx.GetClientIP(), status, latency, request.Method, request.URL.Path)
 				return
 			}
 
-			// 不带颜色，带查询参数
+			// 带查询参数
 			query := request.URL.RawQuery
 			if query != "" {
 				query = "?" + query
 			}
 
+			// 带颜色
+			if config.WithColor {
+				_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITH_COLOR,
+					time.Now().Format(_FORMAT_DATETIME), ctx.GetClientIP(),
+					getStatusColor(status), status,
+					getLatencyColor(latency), latency,
+					getMethodColor(request.Method), request.Method, request.URL.Path+query)
+				return
+			}
+
+			// 不带颜色
 			_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITHOUT_COLOR, time.Now().Format(_FORMAT_DATETIME),
-				status, latency, ctx.GetClientIP(), request.Method, request.URL.Path+query)
+				ctx.GetClientIP(), status, latency, request.Method, request.URL.Path+query)
 		}
 	}
 }

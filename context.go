@@ -7,18 +7,18 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"mime"
 	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"text/template"
 	"time"
+	"unicode"
 
 	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/response"
@@ -431,80 +431,68 @@ func (own *Context) ResponseBytes(code int, data []byte) error {
 	return err
 }
 
-// ResponseString 响应字符串
-func (own *Context) ResponseString(code int, data string) error {
-	own.WithResponseHeader(headers.CONTENT_TYPE, "text/plain")
+// ResponsePlain 响应纯文本内容
+func (own *Context) ResponsePlain(code int, data string) error {
+	own.WithResponseHeader(headers.CONTENT_TYPE, "text/plain; charset=utf-8")
 	own.Response.WriteHeader(code)
 	_, err := own.Response.Write([]byte(data))
 	return err
 }
 
-// ResponseFile 响应文件（下载文件）
-func (own *Context) ResponseFile(filename string) error {
-	return own.responseFile(filename, "attachment")
+// ResponseFileContent 响应文件内容（页面显示）
+func (own *Context) ResponseFileContent(filepath string) {
+	http.ServeFile(own.Response, own.Request, filepath)
 }
 
-// ResponseContent 响应文件（页面显示）
-func (own *Context) ResponseContent(filename string) error {
-	return own.responseFile(filename, "inline")
-}
-
-// responseFile 响应文件
-func (own *Context) responseFile(filename, disposition string) error {
-	// 打开文件
-	file, err := os.Open(filename)
-	if err != nil {
-		own.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	// 获取文件信息
-	info, err := file.Stat()
-	if err != nil {
-		own.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
-		return err
-	}
-
-	// 设置响应头
-	own.WithResponseHeader(headers.CONTENT_DISPOSITION, fmt.Sprintf("%s; filename=\"%s\"", disposition, info.Name()))
-	own.WithResponseHeader(headers.CONTENT_LENGTH, strconv.FormatInt(info.Size(), 10))
-
-	// 设置 Content-Type
-	if disposition == "inline" {
-		own.WithResponseHeader(headers.CONTENT_TYPE, own.detectContentType(filename, file))
-	}
-
-	// 支持断点续传
-	http.ServeContent(own.Response, own.Request, info.Name(), info.ModTime(), file)
-	return nil
-}
-
-// detectContentType 检测文件内容类型
-func (own *Context) detectContentType(filename string, file *os.File) string {
-	// 优先使用文件扩展名检测
-	if ext := strings.ToLower(filepath.Ext(filename)); ext != "" {
-		if mimeType := mime.TypeByExtension(ext); mimeType != "" {
-			return mimeType
-		}
-	}
-
-	// 系统检测
-	buffer := make([]byte, 512)
-	if n, err := file.Read(buffer); err == nil {
-		return http.DetectContentType(buffer[:n])
-	}
-
-	// 直接返回
-	return "application/octet-stream"
-}
-
-// ResponseFileFromFS 将 http.FileSystem 中指定文件内容写入响应
-func (own *Context) ResponseFileFromFS(filepath string, fs http.FileSystem) {
+// ResponseFileContentFromFS 从指定的文件系统响应文件内容（页面显示）
+func (own *Context) ResponseFileContentFromFS(filepath string, fs http.FileSystem) {
 	defer func(old string) { own.Request.URL.Path = old }(own.Request.URL.Path)
 
 	own.Request.URL.Path = filepath
 	http.FileServer(fs).ServeHTTP(own.Response, own.Request)
+}
+
+// ResponseFileAttachment 响应文件附件（下载文件）
+func (own *Context) ResponseFileAttachment(filepath string) {
+	filename := path.Base(filepath)
+	if isASCII(filename) {
+		own.Response.Header().Set(headers.CONTENT_DISPOSITION, `attachment; filename="`+escapeQuotes(filename)+`"`)
+	} else {
+		own.Response.Header().Set(headers.CONTENT_DISPOSITION, `attachment; filename*=UTF-8''`+url.QueryEscape(filename))
+	}
+
+	http.ServeFile(own.Response, own.Request, filepath)
+}
+
+// ResponseFileAttachmentFromFS 从指定的文件系统响应文件附件（下载文件）
+func (own *Context) ResponseFileAttachmentFromFS(filepath string, fs http.FileSystem) {
+	defer func(old string) { own.Request.URL.Path = old }(own.Request.URL.Path)
+
+	filename := path.Base(filepath)
+	if isASCII(filename) {
+		own.Response.Header().Set(headers.CONTENT_DISPOSITION, `attachment; filename="`+escapeQuotes(filename)+`"`)
+	} else {
+		own.Response.Header().Set(headers.CONTENT_DISPOSITION, `attachment; filename*=UTF-8''`+url.QueryEscape(filename))
+	}
+
+	own.Request.URL.Path = filepath
+	http.FileServer(fs).ServeHTTP(own.Response, own.Request)
+}
+
+var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
+
+func escapeQuotes(s string) string {
+	return quoteEscaper.Replace(s)
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] > unicode.MaxASCII {
+			return false
+		}
+	}
+
+	return true
 }
 
 var templates = &sync.Map{}

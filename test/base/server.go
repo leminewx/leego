@@ -137,7 +137,7 @@ func main() {
 		group2.GET("/b", func(ctx *leego.Context) {
 			fmt.Println("*********ready response b*********")
 			fmt.Println("/v2/b ok")
-			_ = ctx.ResponseString(http.StatusOK, "this is a test")
+			_ = ctx.ResponsePlain(http.StatusOK, "this is a test")
 		}, "验证基本接口2", "v2", "字符串")
 	}
 
@@ -170,7 +170,7 @@ func main() {
 
 		group3.GET("/sse", func(ctx *leego.Context) {
 			fmt.Println("*********ready response sse*********")
-			_ = ctx.ResponseSSE(func(ctx context.Context) <-chan *sse.Message {
+			_ = ctx.ResponseSSEvent(func(ctx context.Context) <-chan *sse.Message {
 				events := make(chan *sse.Message, 1)
 				go func() {
 					for i := 0; i < 10; i++ {
@@ -192,16 +192,12 @@ func main() {
 
 		group3.GET("/files/download/*filepath", func(ctx *leego.Context) {
 			fmt.Println("*********ready download file*********")
-			if err := ctx.ResponseFile(ctx.GetPathValue("filepath")); err != nil {
-				fmt.Println("download file error: ", err)
-			}
+			ctx.ResponseFileAttachment(ctx.GetPathValue("filepath"))
 		}, "下载文件", "v2", "文件", "下载")
 
 		group3.GET("/files/show/*filepath", func(ctx *leego.Context) {
 			fmt.Println("*********ready response file content*********")
-			if err := ctx.ResponseContent(ctx.GetPathValue("filepath")); err != nil {
-				ctx.ResponseError(http.StatusInternalServerError, err.Error())
-			}
+			ctx.ResponseFileContent(ctx.GetPathValue("filepath"))
 		}, "显示文件", "v2", "文件", "前端显示")
 
 		//	路由组4，继承于路由组3

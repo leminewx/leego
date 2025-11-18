@@ -2,9 +2,12 @@ package logging
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
+
+var DefaultWriter io.Writer = os.Stdout
 
 const (
 	_LOG_IFNO = "[LEEGO] [INFO] "
@@ -26,5 +29,9 @@ func log(level string, format string, values ...any) {
 		format += "\n"
 	}
 
-	_, _ = fmt.Fprintf(os.Stdout, level+format, values...)
+	if DefaultWriter == nil {
+		DefaultWriter = os.Stdout
+	}
+
+	_, _ = fmt.Fprintf(DefaultWriter, level+format, values...)
 }

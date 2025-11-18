@@ -47,7 +47,7 @@ func TestRouterServeHTTP(t *testing.T) {
 	testHandler := &handler{
 		handle: func(ctx *Context) {
 			called = true
-			_ = ctx.ResponseString(200, "OK")
+			_ = ctx.ResponsePlain(200, "OK")
 		},
 		monitor: monitor.New("get user info", http.MethodGet, "users/:id"),
 	}
@@ -273,7 +273,7 @@ func BenchmarkRouterServeHTTP(b *testing.B) {
 	// 注册测试处理器
 	testHandler := &handler{
 		handle: func(ctx *Context) {
-			_ = ctx.ResponseString(200, "OK")
+			_ = ctx.ResponsePlain(200, "OK")
 		},
 	}
 
