@@ -50,7 +50,7 @@ func main() {
 			WithColor: true,
 			WithQuery: true,
 		}),
-		middleware.Recover(nil),
+		middleware.Recover(),
 	)
 	engine.UseMiddlewares(
 		middlewareLimiter,

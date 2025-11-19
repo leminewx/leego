@@ -10,18 +10,15 @@ import (
 	"gitee.com/leminewx/leego"
 )
 
-var DefaultWriter io.Writer = os.Stdout
-
 // 颜色常量
 const (
 	_COLOR_RED     = "\033[97;41m" // 红色
-	_COLOR_GREEN   = "\033[97;42m" // 绿色
-	_COLOR_YELLOW  = "\033[90;43m" // 黄色
 	_COLOR_BLUE    = "\033[97;44m" // 蓝色
-	_COLOR_MAGENTA = "\033[97;45m" // 品红
 	_COLOR_CYAN    = "\033[97;46m" // 青色
 	_COLOR_WHITE   = "\033[90;47m" // 白色
-	_COLOR_RESET   = "\033[0m"     // 无色
+	_COLOR_GREEN   = "\033[97;42m" // 绿色
+	_COLOR_YELLOW  = "\033[90;43m" // 黄色
+	_COLOR_MAGENTA = "\033[97;45m" // 品红
 
 	_FORMAT_DATETIME          = "2006-01-02 15:04:05.000"
 	_FORMAT_LOG_WITH_COLOR    = "[LEEGO] %v | %15s |%s %3d \033[0m|%s %11v \033[0m|%s %-7s \033[0m %#v\n"
@@ -51,10 +48,7 @@ func Log() leego.MiddlewareFunc {
 	}
 }
 
-/*
-LogWithConfig 记录请求响应信息
-  - config: 自定义的日志配置
-*/
+// LogWithConfig 通过指定配置，记录请求响应信息
 func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {

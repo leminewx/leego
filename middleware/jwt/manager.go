@@ -42,7 +42,7 @@ NewDefaultManager 创建一个默认配置的 JWT 令牌管理器
 func NewDefaultManager(key []byte) *Manager {
 	signer, _ := NewHMACSigner(NewHeader(HS256), key)
 	config := NewDefaultConfig()
-	config.Algorithm = HS256
+	config.Algorithm = signer.GetAlgorithm()
 	return NewManager(config, signer, NewParser())
 }
 

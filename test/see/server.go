@@ -24,7 +24,7 @@ func main() {
 	// 中间件
 	engine.UseMiddlewareFuncs(
 		middleware.Log(),
-		middleware.Recover(nil),
+		middleware.Recover(),
 	)
 	engine.UseMiddlewares(
 		cors.NewDefaultCORS(),
@@ -92,7 +92,7 @@ func main() {
 	}, "SSE综合管理", "SSE")
 
 	engine.GET("/sse/v2/:username", func(ctx *leego.Context) {
-		_ = ctx.ResponseSSE(func(ctx context.Context) <-chan *sse.Message {
+		_ = ctx.ResponseSSEvent(func(ctx context.Context) <-chan *sse.Message {
 			events := make(chan *sse.Message, 1)
 			go func() {
 				for i := 0; i < 10; i++ {

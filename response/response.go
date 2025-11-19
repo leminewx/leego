@@ -28,6 +28,7 @@ var _ Writer = &response{}
 
 // response 定义响应的数据结构
 type response struct {
+	size   int
 	status int
 	writer http.ResponseWriter
 }
@@ -58,7 +59,7 @@ func (own *response) Header() http.Header {
 	return own.writer.Header()
 }
 
-// WriteHeader 继承 http.ResponseWriter， 并重构逻辑
+// WriteHeader 继承 http.ResponseWriter
 func (own *response) WriteHeader(status int) {
 	own.status = status
 	own.writer.WriteHeader(own.status)
@@ -66,7 +67,9 @@ func (own *response) WriteHeader(status int) {
 
 // Write 继承 http.ResponseWriter
 func (own *response) Write(data []byte) (int, error) {
-	return own.writer.Write(data)
+	size, err := own.writer.Write(data)
+	own.size += size
+	return size, err
 }
 
 // GetStatusCode 获取响应状态码

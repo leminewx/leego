@@ -124,12 +124,8 @@ func (own *Engine) Run(addr string) error {
 		Handler: own.GetHandler(),
 	}
 
-	// 打印路由信息
-	own.printBuilder.WriteByte('\n')
-	logging.INFO(own.printBuilder.String())
-	own.printBuilder.Reset()
-
 	// 启动 HTTP 服务
+	own.printRoutes()
 	logging.INFO("Listening and serving HTTP %s ...\n\n", own.server.Addr)
 	return own.server.ListenAndServe()
 }
@@ -142,12 +138,8 @@ func (own *Engine) RunTLS(addr, certFile, keyFile string) error {
 		Handler: own.GetHandler(),
 	}
 
-	// 打印路由信息
-	own.printBuilder.WriteByte('\n')
-	logging.INFO(own.printBuilder.String())
-	own.printBuilder.Reset()
-
 	// 启动 HTTP 服务
+	own.printRoutes()
 	logging.INFO("Listening and serving HTTPS %s ...\n\n", own.server.Addr)
 	return own.server.ListenAndServeTLS(certFile, keyFile)
 }
@@ -164,12 +156,8 @@ func (own *Engine) RunUnix(file string) error {
 		_ = os.Remove(file)
 	}()
 
-	// 打印路由信息
-	own.printBuilder.WriteByte('\n')
-	logging.INFO(own.printBuilder.String())
-	own.printBuilder.Reset()
-
 	// 启动 HTTP 服务
+	own.printRoutes()
 	logging.INFO("Listening and serving HTTP on unix:%s ...\n\n", file)
 	return http.Serve(listener, own.GetHandler())
 }
@@ -185,14 +173,23 @@ func (own *Engine) RunFd(fd int) (err error) {
 	defer func() { _ = listener.Close() }()
 
 	// 启动 HTTP 服务
+	own.printRoutes()
 	logging.INFO("Listening and serving HTTP on fd@%s ...\n\n", fd)
 	return http.Serve(listener, own.GetHandler())
 }
 
 // RunListener 通过指定的网络监听和服务 HTTP 请求
 func (own *Engine) RunListener(listener net.Listener) (err error) {
+	own.printRoutes()
 	logging.INFO("Listening and serving HTTP on listener what's bind with address@%s", listener.Addr())
 	return http.Serve(listener, own.GetHandler())
+}
+
+// printRoutes 打印路由信息
+func (own *Engine) printRoutes() {
+	own.printBuilder.WriteByte('\n')
+	logging.INFO(own.printBuilder.String())
+	own.printBuilder.Reset()
 }
 
 // GetHandler 获取引擎处理器

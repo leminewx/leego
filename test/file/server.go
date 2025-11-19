@@ -11,7 +11,7 @@ func main() {
 	engine := leego.NewEngine()
 	engine.UseMiddlewareFuncs(
 		middleware.Log(),
-		middleware.Recover(nil),
+		middleware.Recover(),
 	)
 
 	engine.GET("/apis/files/show/*filepath", func(ctx *leego.Context) {
@@ -33,5 +33,5 @@ func main() {
 		ctx.ResponseFileAttachmentFromFS(filepath, fs)
 	})
 
-	engine.Run(":8080")
+	_ = engine.Run(":8080")
 }

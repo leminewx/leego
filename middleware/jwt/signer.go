@@ -14,7 +14,6 @@ type Signer interface {
 	Sign(token *Token) ([]byte, error)
 	// Verify 验证
 	Verify(src, dst []byte) bool
-
 	// GetAlgorithm 获取签名算法
 	GetAlgorithm() Algorithm
 	// GetHeaderEncodedString 获取 Header 编码后的字符串

@@ -406,8 +406,8 @@ func (own *Context) ResponseError(code int, error string) {
 }
 
 // ResponseSSEvent 发起 SSE 事件响应
-func (own *Context) ResponseSSEvent(handle func(ctx context.Context) <-chan *sse.Message) error {
-	return sse.Handle(own.Response, own.Request, handle)
+func (own *Context) ResponseSSEvent(event func(ctx context.Context) <-chan *sse.Message) error {
+	return sse.Handle(own.Response, own.Request, event)
 }
 
 // ResponseXML 响应 XML 格式的数据

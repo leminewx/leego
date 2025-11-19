@@ -24,8 +24,9 @@ type (
 		UseMiddlewareFuncs(fns ...MiddlewareFunc)
 		// SetStatic 处理文件请求
 		SetStatic(relativePath, rootPath string, cache bool, tags ...string) error
-		// SetStaticFS 通过 FS 处理文件请求
-		SetStaticFS(relativePath string, fs http.FileSystem, cache bool, tags ...string) error
+		// SetStaticFromFS 通过 FS 处理文件请求
+		SetStaticFromFS(relativePath string, fs http.FileSystem, cache bool, tags ...string) error
+
 		// GET 处理 GET 请求
 		GET(pattern string, handle HandleFunc, tags ...string)
 		// PUT 处理 PUT 请求
@@ -135,8 +136,8 @@ func (own *group) SetStatic(relativePath, rootPath string, cache bool, tags ...s
 	return
 }
 
-// SetStaticFS 通过 FS 设置静态文件服务
-func (own *group) SetStaticFS(relativePath string, fs http.FileSystem, cache bool, tags ...string) (err error) {
+// SetStaticFromFS 通过 FS 设置静态文件服务
+func (own *group) SetStaticFromFS(relativePath string, fs http.FileSystem, cache bool, tags ...string) (err error) {
 	// TODO
 	return nil
 }
