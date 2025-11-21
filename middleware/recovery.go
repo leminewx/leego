@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/response"
 )
 
 // Recover 当请求触发 panic 时的处理
@@ -62,7 +61,7 @@ func RecoverWithConfig(config *RecoveryConfig) leego.MiddlewareFunc {
 
 				// 若该请求还未处理响应，则响应错误
 				if ctx.GetStatusCode() == 0 {
-					ctx.ResponseError(http.StatusInternalServerError, response.STATUS_500_INTERNAL_SERVER_ERROR)
+					ctx.ResponseError(http.StatusInternalServerError, "500"+http.StatusText(http.StatusInternalServerError))
 				}
 			}()
 

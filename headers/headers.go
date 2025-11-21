@@ -42,3 +42,11 @@ func DetectContentType(file *os.File) string {
 	// 直接返回
 	return "application/octet-stream"
 }
+
+// IsContinuousResponse 判断响应是否为持续响应（下载、SSE、WebSocket、分块传输等）
+func IsContinuousResponse(header http.Header) bool {
+	return strings.HasPrefix(header.Get(TRANSFER_ENCODING), "chunked") || // 分块传输
+		strings.HasPrefix(header.Get(CONTENT_TYPE), "text/event-stream") || // SSE事件
+		strings.HasPrefix(header.Get(CONTENT_DISPOSITION), "attachment") || // 下载文件
+		(strings.HasPrefix(header.Get(UPGRADE), "websocket") && strings.HasPrefix(strings.ToLower(header.Get(CONNECTION)), "upgrade")) // WebSocket
+}

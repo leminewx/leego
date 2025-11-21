@@ -11,11 +11,9 @@ import (
 
 	"gitee.com/leminewx/gokit/ggid"
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/middleware"
 	"gitee.com/leminewx/leego/middleware/cors"
 	"gitee.com/leminewx/leego/middleware/jwt"
-	"gitee.com/leminewx/leego/middleware/limiter"
 	"gitee.com/leminewx/leego/response/sse"
 )
 
@@ -25,7 +23,7 @@ func main() {
 	engine := leego.NewEngine()
 
 	// Limiter 限流中间件
-	middlewareLimiter := limiter.NewDefaultFixedWindowLimiter(3)
+	// middlewareLimiter := limiter.NewDefaultFixedWindowLimiter(3)
 
 	// CORS 跨域中间件
 	middlewareCORS := cors.NewDefaultCORS().
@@ -46,14 +44,14 @@ func main() {
 
 	// 注册中间件
 	engine.UseMiddlewareFuncs(
-		middleware.LogWithConfig(&middleware.LoggerConfig{
-			WithColor: true,
-			WithQuery: true,
-		}),
+		// middleware.LogWithConfig(&middleware.LoggerConfig{
+		// 	WithColor: true,
+		// 	WithQuery: true,
+		// }),
 		middleware.Recover(),
 	)
 	engine.UseMiddlewares(
-		middlewareLimiter,
+		// middlewareLimiter,
 		middlewareCORS,
 		middlewareAuth,
 	)
@@ -74,45 +72,42 @@ func main() {
 			func(next leego.HandleFunc) leego.HandleFunc {
 				fmt.Println("Init middleware 2")
 				return func(ctx *leego.Context) {
-					fmt.Println("/v1 1 start")
+					// fmt.Println("/v1 1 start")
 					next(ctx)
-					fmt.Println("/v1 1 end")
+					// fmt.Println("/v1 1 end")
 				}
 			},
 			func(next leego.HandleFunc) leego.HandleFunc {
 				fmt.Println("Init middleware 3")
 				return func(ctx *leego.Context) {
-					fmt.Println("/v1 2 start")
+					// fmt.Println("/v1 2 start")
 					next(ctx)
-					fmt.Println("/v1 2 end")
+					// fmt.Println("/v1 2 end")
 				}
 			},
 		)
 
 		group1.GET("/test", func(ctx *leego.Context) {
-			fmt.Printf("/v1/a ok  -  request_id: %s\n", ctx.GetRequestHeader(headers.X_REQUEST_ID))
+			// fmt.Printf("/v1/a ok  -  request_id: %s\n", ctx.GetRequestHeader(headers.X_REQUEST_ID))
 			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 		}, "验证基本接口", "v1", "JSON")
 
 		group1.GET("/middlewares", func(ctx *leego.Context) {
-			middlewares := engine.GetAllMiddlewares()
-			configs := make([]any, 0, len(middlewares))
-			for _, m := range middlewares {
-				configs = append(configs, m.GetConfig())
-			}
-
+			configs := engine.GetAllMiddlewareConfigs()
 			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok", "data": configs})
 		}, "中间件查询接口", "v1", "中间件")
 
 		group1.GET("/metadata", func(ctx *leego.Context) {
-			collectors := engine.GetAllRouteMonitors()
+			collectors := engine.GetAllHandlerCollectors()
 			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok", "data": collectors})
 		}, "获取所有路由监控数据", "v1", "监控数据")
 
-		err := group1.SetStatic("/files", ".", false, "静态文件服务接口", "文件", "下载")
-		if err != nil {
-			panic(err)
-		}
+		group1.GET("/error", func(ctx *leego.Context) {
+			slice := make([]int, 0)
+			_ = slice[1]
+		}, "认证接口", "v1", "认证")
+
+		group1.SetStatic("/files", ".", "静态文件服务接口", "文件", "下载")
 	}
 
 	// 路由组2
@@ -164,7 +159,7 @@ func main() {
 				fmt.Println("sign error: ", err)
 			}
 
-			ctx.WithResponseHeader("Authorization", "Bearer "+string(signature))
+			ctx.SetResponseHeader("Authorization", "Bearer "+string(signature))
 			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 		}, "登录接口", "v2", "登录")
 
@@ -202,9 +197,7 @@ func main() {
 
 		//	路由组4，继承于路由组3
 		group4 := group3.Group("/admin")
-		if err := group4.SetStatic("views", "../../admin/views", false, "后台管理静态文件服务", "admin"); err != nil {
-			panic(err)
-		}
+		group4.SetStatic("views", "../../admin/views", "后台管理静态文件服务", "admin")
 	}
 
 	// 启动服务

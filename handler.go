@@ -4,7 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gitee.com/leminewx/leego/middleware/monitor"
+	"gitee.com/leminewx/leego/middleware/collector"
 	"gitee.com/leminewx/leego/tree"
 )
 
@@ -39,22 +39,24 @@ type (
 		ServeHTTP(ctx *Context)
 		// Enable 启用处理器
 		Enable()
-		// Disable 禁用处理器
+		/*Disable 禁用指定路由
+		  - 禁用指定路由后，也不会调用该路由上的任一中间件，且响应状态码为 423
+		*/
 		Disable()
 		// IsEnabled 是否启用该处理器
 		IsEnabled() bool
-		// GetMonitor 获取指标监控器
-		GetMonitor() *monitor.Monitor
+		// GetCollector 获取指标采集器
+		GetCollector() *collector.Collector
 	}
 
 	// handler 定义处理器的实现类型
 	handler struct {
 		group *group
 
-		handle      HandleFunc       // 处理函数
-		monitor     *monitor.Monitor // 监控器
-		paramNames  []string         // 模式中的参数名列表
-		middlewares []MiddlewareFunc // 中间件函数
+		handle      HandleFunc           // 处理函数
+		collector   *collector.Collector // 指标采集器
+		paramNames  []string             // 模式中的参数名列表
+		middlewares []MiddlewareFunc     // 中间件函数
 
 		initialized     bool // 标记是否已经初始化
 		initializedLock sync.Mutex
@@ -66,29 +68,32 @@ func newHandler(group *group, method, pattern string, handle HandleFunc, tags ..
 	return &handler{
 		group:      group,
 		handle:     handle,
-		monitor:    monitor.New(method, pattern, tags...),
+		collector:  collector.New(method, pattern, tags...),
 		paramNames: extractSegmentNames(tree.SplitPattern(pattern)),
 	}
 }
 
-// Enable 启用
+// Enable 启用处理器
 func (own *handler) Enable() {
-	atomic.StoreInt32(&own.monitor.Enabled, 1)
+	atomic.StoreInt32(&own.collector.Enabled, 1)
 }
 
-// Disable 禁用
+/*
+Disable 禁用处理器
+  - 禁用指定路由后，也不会调用该路由上的任一中间件，且响应状态码为 423
+*/
 func (own *handler) Disable() {
-	atomic.StoreInt32(&own.monitor.Enabled, 0)
+	atomic.StoreInt32(&own.collector.Enabled, 0)
 }
 
 // IsEnabled 检查处理器是否启用
 func (own *handler) IsEnabled() bool {
-	return atomic.LoadInt32(&own.monitor.Enabled) == 1
+	return atomic.LoadInt32(&own.collector.Enabled) == 1
 }
 
 // GetMonitor 获取指标监控器
-func (own *handler) GetMonitor() *monitor.Monitor {
-	return own.monitor
+func (own *handler) GetCollector() *collector.Collector {
+	return own.collector
 }
 
 // ServeHTTP 请求处理函数

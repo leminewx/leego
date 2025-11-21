@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego/logging"
-	"gitee.com/leminewx/leego/middleware/monitor"
+	"gitee.com/leminewx/leego/middleware/collector"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -34,11 +34,12 @@ type Engine struct {
 	// UseH2C 是否使用 HTTP2
 	UseH2C bool
 
-	router       Router                // 路由器
-	server       *http.Server          // 服务器
-	handlers     map[string]Handler    // 处理器
-	middlewares  map[string]Middleware // 中间件
-	printBuilder *strings.Builder
+	router          Router                // 路由器
+	server          *http.Server          // 服务器
+	handlers        map[string]Handler    // 处理器
+	middlewares     map[string]Middleware // 中间件
+	middlewareSlice []Middleware          // 中间件列表
+	printBuilder    *strings.Builder
 }
 
 // NewEngine 新建一个引擎
@@ -69,23 +70,30 @@ func (own *Engine) GetMiddleware(id string) (Middleware, bool) {
 }
 
 // GetAllMiddlewares 获取所有中间件
-func (own *Engine) GetAllMiddlewares() []Middleware {
-	middlewares := make([]Middleware, 0, len(own.middlewares))
+func (own *Engine) GetAllMiddlewareConfigs() []any {
+	configs := make([]any, 0, len(own.middlewares))
 	for _, m := range own.middlewares {
-		middlewares = append(middlewares, m)
+		configs = append(configs, m.GetConfig())
 	}
 
-	return middlewares
+	return configs
 }
 
-// GetAllRouteMonitors 获取所有路由的监控器
-func (own *Engine) GetAllRouteMonitors() []*monitor.Monitor {
-	monitors := make([]*monitor.Monitor, 0, len(own.handlers))
+// GetHandler 获取指定的处理器
+func (own *Engine) GetHandler(method, pattern string) (Handler, bool) {
+	key := method + " " + pattern
+	handler, ok := own.handlers[key]
+	return handler, ok
+}
+
+// GetAllHandlerMonitors 获取所有处理器的指标采集器
+func (own *Engine) GetAllHandlerCollectors() []*collector.Collector {
+	collectors := make([]*collector.Collector, 0, len(own.handlers))
 	for _, handler := range own.handlers {
-		monitors = append(monitors, handler.GetMonitor().Clone())
+		collectors = append(collectors, handler.GetCollector().Clone())
 	}
 
-	return monitors
+	return collectors
 }
 
 // AddURLBlacklist 添加路由黑名单
@@ -97,35 +105,16 @@ func (own *Engine) AddURLBlacklist(urls ...string) {
 	}
 }
 
-// EnableRoute 启用指定路由
-func (own *Engine) EnableRoute(method, path string) {
-	key := method + " " + path
-	if handler, ok := own.handlers[key]; ok {
-		handler.Enable()
-	}
-}
-
-/*
-DisableRoute 禁用指定路由
-  - 禁用指定路由后，也不会调用该路由上的任一中间件，且响应状态码为 423
-*/
-func (own *Engine) DisableRoute(method, path string) {
-	key := method + " " + path
-	if handler, ok := own.handlers[key]; ok {
-		handler.Disable()
-	}
-}
-
 // Run 通过指定端口监听和服务 HTTP 请求
 func (own *Engine) Run(addr string) error {
 	// 创建 HTTP 服务
 	own.server = &http.Server{
 		Addr:    addr,
-		Handler: own.GetHandler(),
+		Handler: own.GetHTTPHandler(),
 	}
 
 	// 启动 HTTP 服务
-	own.printRoutes()
+	own.initBeforeRun()
 	logging.INFO("Listening and serving HTTP %s ...\n\n", own.server.Addr)
 	return own.server.ListenAndServe()
 }
@@ -135,11 +124,11 @@ func (own *Engine) RunTLS(addr, certFile, keyFile string) error {
 	// 创建 HTTP 服务
 	own.server = &http.Server{
 		Addr:    addr,
-		Handler: own.GetHandler(),
+		Handler: own.GetHTTPHandler(),
 	}
 
 	// 启动 HTTP 服务
-	own.printRoutes()
+	own.initBeforeRun()
 	logging.INFO("Listening and serving HTTPS %s ...\n\n", own.server.Addr)
 	return own.server.ListenAndServeTLS(certFile, keyFile)
 }
@@ -157,9 +146,9 @@ func (own *Engine) RunUnix(file string) error {
 	}()
 
 	// 启动 HTTP 服务
-	own.printRoutes()
+	own.initBeforeRun()
 	logging.INFO("Listening and serving HTTP on unix:%s ...\n\n", file)
-	return http.Serve(listener, own.GetHandler())
+	return http.Serve(listener, own.GetHTTPHandler())
 }
 
 // RunFd 通过指定的文件描述符监听和服务 HTTP 请求
@@ -173,27 +162,34 @@ func (own *Engine) RunFd(fd int) (err error) {
 	defer func() { _ = listener.Close() }()
 
 	// 启动 HTTP 服务
-	own.printRoutes()
+	own.initBeforeRun()
 	logging.INFO("Listening and serving HTTP on fd@%s ...\n\n", fd)
-	return http.Serve(listener, own.GetHandler())
+	return http.Serve(listener, own.GetHTTPHandler())
 }
 
 // RunListener 通过指定的网络监听和服务 HTTP 请求
 func (own *Engine) RunListener(listener net.Listener) (err error) {
-	own.printRoutes()
+	own.initBeforeRun()
 	logging.INFO("Listening and serving HTTP on listener what's bind with address@%s", listener.Addr())
-	return http.Serve(listener, own.GetHandler())
+	return http.Serve(listener, own.GetHTTPHandler())
 }
 
-// printRoutes 打印路由信息
-func (own *Engine) printRoutes() {
+// initBeforeRun 初始化引擎
+func (own *Engine) initBeforeRun() {
+	// 获取所有中间件
+	own.middlewareSlice = make([]Middleware, 0, len(own.middlewares))
+	for _, middleware := range own.middlewares {
+		own.middlewareSlice = append(own.middlewareSlice, middleware)
+	}
+
+	// 打印路由信息
 	own.printBuilder.WriteByte('\n')
 	logging.INFO(own.printBuilder.String())
 	own.printBuilder.Reset()
 }
 
-// GetHandler 获取引擎处理器
-func (own *Engine) GetHandler() http.Handler {
+// GetHTTPHandler 获取 http.Handler
+func (own *Engine) GetHTTPHandler() http.Handler {
 	if !own.UseH2C {
 		return own
 	}
@@ -244,15 +240,24 @@ func checkGoVersion() {
 }
 
 // getGoVersionParts 获取 Go 版本信息
-func getGoVersionParts(ver string) (main, sub, revised uint64, err error) {
+func getGoVersionParts(ver string) (major, sub, revised uint64, err error) {
 	parts := strings.Split(ver, ".")
 	switch len(parts) {
 	case 2:
-		main, err = strconv.ParseUint(parts[0], 10, 64)
+		if major, err = strconv.ParseUint(parts[0], 10, 64); err != nil {
+			return
+		}
+
 		sub, err = strconv.ParseUint(parts[1], 10, 64)
 	case 3:
-		main, err = strconv.ParseUint(parts[0], 10, 64)
-		sub, err = strconv.ParseUint(parts[1], 10, 64)
+		if major, err = strconv.ParseUint(parts[0], 10, 64); err != nil {
+			return
+		}
+
+		if sub, err = strconv.ParseUint(parts[1], 10, 64); err != nil {
+			return
+		}
+
 		revised, err = strconv.ParseUint(parts[2], 10, 64)
 	default:
 		err = errors.New("invalid version")

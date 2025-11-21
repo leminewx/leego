@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"gitee.com/leminewx/leego/headers"
-	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/tree"
 )
 
@@ -22,10 +21,10 @@ type (
 		UseMiddlewares(middlewares ...Middleware)
 		// UseMiddlewareFuncs 使用路由中间件函数
 		UseMiddlewareFuncs(fns ...MiddlewareFunc)
-		// SetStatic 处理文件请求
-		SetStatic(relativePath, rootPath string, cache bool, tags ...string) error
-		// SetStaticFromFS 通过 FS 处理文件请求
-		SetStaticFromFS(relativePath string, fs http.FileSystem, cache bool, tags ...string) error
+		// SetStatic 设置静态文件服务
+		SetStatic(relativePath, rootPath string, tags ...string)
+		// SetStaticFS 设置静态文件服务
+		SetStaticFS(relativePath string, fs http.FileSystem, tags ...string)
 
 		// GET 处理 GET 请求
 		GET(pattern string, handle HandleFunc, tags ...string)
@@ -99,57 +98,68 @@ func (own *group) getAllMiddlewares(middlewares *[]MiddlewareFunc) {
 }
 
 /*
-SetStatic 设置路由组的静态文件服务接口
+SetStatic 设置静态文件服务
   - relativePath：URI 中的相对路径
   - rootPath：静态文件服务的根目录
-  - cache：是否允许前端缓存（最大缓存1小时）
   - tags：第1个参数为路由名称，后续参数为路由标签
 */
-func (own *group) SetStatic(relativePath, rootPath string, cache bool, tags ...string) (err error) {
-	// 检查是否已经设置过静态文件服务
-	if own.hasStatic {
-		return fmt.Errorf("leego: static: exists a has a static file service in group '%s'", own.prefix)
-	}
-
+func (own *group) SetStatic(relativePath, rootPath string, tags ...string) {
 	// 获取绝对路径
+	var err error
 	if rootPath, err = filepath.Abs(rootPath); err != nil {
-		return fmt.Errorf("leego: static: failed to get the absolute path for '%s': %w", rootPath, err)
+		panic(fmt.Sprintf("Failed to get the absolute path for '%s': %v", rootPath, err))
 	}
 
 	// 检查目录是否存在
 	if info, err := os.Stat(rootPath); err != nil {
-		return fmt.Errorf("leego: static: failed to access static directory '%s': %w", rootPath, err)
+		panic(fmt.Sprintf("Failed to access static directory '%s': %v", rootPath, err))
 	} else if !info.IsDir() {
-		return fmt.Errorf("leego: static: static path is not a directory '%s'", rootPath)
+		panic(fmt.Sprintf("Static path is not a directory '%s'", rootPath))
 	}
 
-	// 创建静态文件服务的处理器
-	relativePath = normalizePath(relativePath)
-	handler := own.createStaticHandler(path.Join(own.prefix, relativePath), http.Dir(rootPath), cache)
-
-	// 创建 GET 和 HEAD 服务接口
-	wildcardName := "*" + tree.WILDCARD_DEFAULT_NAME
-	own.addRoute(http.MethodGet, path.Join(relativePath, wildcardName), handler, rootPath, tags...)
-	own.addRoute(http.MethodHead, path.Join(relativePath, wildcardName), handler, rootPath, tags...)
-	own.hasStatic = true
-
-	return
+	own.setStaticFromFS(relativePath, rootPath, http.Dir(rootPath), tags...)
 }
 
-// SetStaticFromFS 通过 FS 设置静态文件服务
-func (own *group) SetStaticFromFS(relativePath string, fs http.FileSystem, cache bool, tags ...string) (err error) {
-	// TODO
-	return nil
+/*
+SetStaticFS 设置静态文件服务
+  - relativePath：URI 中的相对路径
+  - fs：http.FileSystem 文件系统
+  - tags：第1个参数为路由名称，后续参数为路由标签
+*/
+func (own *group) SetStaticFS(relativePath string, fs http.FileSystem, tags ...string) {
+	own.setStaticFromFS(relativePath, "", fs, tags...)
+}
+
+func (own *group) setStaticFromFS(relativePath, rootPath string, fs http.FileSystem, tags ...string) {
+	// 检查是否已经设置过静态文件服务
+	if own.hasStatic {
+		panic(fmt.Sprintf("Group '%s' already has a static file service", own.prefix))
+	}
+
+	// 检查是否已经设置过静态文件服务
+	if strings.Contains(relativePath, ":") || strings.Contains(relativePath, "*") {
+		panic("URL parameters can not be used when serving a static folder")
+	}
+
+	// 创建处理器
+	relativePath = normalizePath(relativePath)
+	handler := own.createStaticHandler(path.Join(own.prefix, relativePath), fs)
+
+	// 创建 GET 和 HEAD 服务接口
+	urlPattern := path.Join(relativePath, "/*"+tree.WILDCARD_DEFAULT_NAME)
+	own.addRoute(http.MethodGet, urlPattern, handler, rootPath, tags...)
+	own.addRoute(http.MethodHead, urlPattern, handler, rootPath, tags...)
+	own.hasStatic = true
 }
 
 // createStaticHandler 创建静态文件服务的处理器
-func (own *group) createStaticHandler(relativePath string, fileSystem http.FileSystem, cache bool) HandleFunc {
+func (own *group) createStaticHandler(relativePath string, fileSystem http.FileSystem) HandleFunc {
 	fileServer := http.StripPrefix(relativePath, http.FileServer(fileSystem))
 	return func(ctx *Context) {
 		// 获取请求的文件路径
 		requestedPath := ctx.GetPathValue(tree.WILDCARD_DEFAULT_NAME)
 		if requestedPath == "" {
-			ctx.ResponseError(http.StatusNotFound, response.STATUS_404_NOT_FOUND)
+			ctx.ResponseError(http.StatusBadRequest, "400"+http.StatusText(http.StatusBadRequest))
 			return
 		}
 
@@ -159,28 +169,21 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 
 		// 安全检查：防止路径遍历攻击
 		if containsPathTraversal(requestedPath) {
-			ctx.ResponseError(http.StatusForbidden, response.STATUS_403_FORBIDDEN)
+			ctx.ResponseError(http.StatusForbidden, "403"+http.StatusText(http.StatusForbidden))
 			return
 		}
 
 		// 检查文件是否存在且可访问
 		file, err := fileSystem.Open(requestedPath)
 		if err != nil {
-			ctx.ResponseError(http.StatusNotFound, response.STATUS_404_NOT_FOUND)
+			ctx.ResponseError(http.StatusNotFound, "404"+http.StatusText(http.StatusNotFound))
 			return
 		}
-		defer func() { _ = file.Close() }()
-
-		// 设置缓存头
-		if !cache {
-			ctx.WithResponseHeader(headers.CACHE_CONTROL, "no-store, no-cache, must-revalidate") // 不缓存
-		} else {
-			ctx.WithResponseHeader(headers.CACHE_CONTROL, "public, max-age=3600") // 缓存1小时
-		}
+		_ = file.Close()
 
 		// 设置安全头
-		ctx.WithResponseHeader(headers.X_CONTENT_TYPE_OPTIONS, "nosniff") // 防止 MIME 类型嗅探攻击
-		ctx.WithResponseHeader(headers.X_FRAME_OPTIONS, "DENY")           // 防止点击劫持（ClickJacking）攻击
+		ctx.SetResponseHeader(headers.X_CONTENT_TYPE_OPTIONS, "nosniff") // 防止 MIME 类型嗅探攻击
+		ctx.SetResponseHeader(headers.X_FRAME_OPTIONS, "DENY")           // 防止点击劫持（ClickJacking）攻击
 
 		// 响应文件
 		fileServer.ServeHTTP(ctx.Response, ctx.Request)
@@ -231,7 +234,7 @@ func (own *group) addRoute(method, pattern string, handle HandleFunc, desc strin
 	// 检查接口是否已经创建
 	key := method + " " + pattern
 	if _, ok := own.engine.handlers[key]; ok {
-		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Repeat | %-7s \033[0m %s\n", method, pattern))
+		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Repeat | %-7s %s\n", method, pattern))
 		return
 	}
 
@@ -242,10 +245,10 @@ func (own *group) addRoute(method, pattern string, handle HandleFunc, desc strin
 	// 关联到服务引擎
 	own.engine.handlers[key] = handler
 
-	if desc != "" {
-		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Create | %-7s \033[0m %s  -  filepath: %s\n", method, pattern, desc))
+	if desc == "" {
+		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Create | %-7s %s\n", method, pattern))
 	} else {
-		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Create | %-7s \033[0m %s\n", method, pattern))
+		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Create | %-7s %s  -  filepath: %s\n", method, pattern, desc))
 	}
 }
 

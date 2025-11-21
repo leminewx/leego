@@ -14,11 +14,11 @@ import (
 )
 
 // Handle 处理 sse 响应
-func Handle(resp response.Writer, req *http.Request, handle func(ctx context.Context) <-chan *Message) error {
+func Handle(resp response.Writer, req *http.Request, event func(ctx context.Context) <-chan *Message) error {
 	// 创建 SSE 客户端
 	client := NewClient("*")
 	// 处理 SSE 请求
-	return client.serve(resp, req, handle(req.Context()))
+	return client.serve(resp, req, event(req.Context()))
 }
 
 // Client 定义 SSE 客户端连接的数据结构

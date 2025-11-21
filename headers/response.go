@@ -57,16 +57,6 @@ const (
 	LOCATION = "Location"
 
 	/*
-		Content-Encoding
-
-		作用：
-		  - 告知客户端服务器对响应数据使用的压缩编码方式（对应请求头 Accept-Encoding）
-		示例：
-		  - Content-Encoding: gzip
-	*/
-	CONTENT_ENCODING = "Content-Encoding"
-
-	/*
 		ETag
 
 		作用：

@@ -21,8 +21,8 @@ const (
 	_COLOR_MAGENTA = "\033[97;45m" // 品红
 
 	_FORMAT_DATETIME          = "2006-01-02 15:04:05.000"
-	_FORMAT_LOG_WITH_COLOR    = "[LEEGO] %v | %15s |%s %3d \033[0m|%s %11v \033[0m|%s %-7s \033[0m %#v\n"
-	_FORMAT_LOG_WITHOUT_COLOR = "[LEEGO] %v | %15s | %3d | %10v | %-7s %#v\n"
+	_FORMAT_LOG_WITH_COLOR    = "[\033[1mLEEGO\033[0m] %v | %15s |%s %3d \033[0m|%s %13v \033[0m|%s %-7s \033[0m %#v\n"
+	_FORMAT_LOG_WITHOUT_COLOR = "[\033[1mLEEGO\033[0m] %v | %15s | %3d | %13v | %-7s %#v\n"
 )
 
 // Log 记录请求响应信息
@@ -76,7 +76,7 @@ func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
 			if !config.WithQuery {
 				// 带颜色
 				if config.WithColor {
-					_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITH_COLOR,
+					_, _ = fmt.Fprintf(out, _FORMAT_LOG_WITH_COLOR,
 						time.Now().Format(_FORMAT_DATETIME), ctx.GetClientIP(),
 						getStatusColor(status), status,
 						getLatencyColor(latency), latency,
@@ -85,7 +85,7 @@ func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
 				}
 
 				// 不带颜色
-				_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITHOUT_COLOR, time.Now().Format(_FORMAT_DATETIME),
+				_, _ = fmt.Fprintf(out, _FORMAT_LOG_WITHOUT_COLOR, time.Now().Format(_FORMAT_DATETIME),
 					ctx.GetClientIP(), status, latency, request.Method, request.URL.Path)
 				return
 			}
@@ -98,7 +98,7 @@ func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
 
 			// 带颜色
 			if config.WithColor {
-				_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITH_COLOR,
+				_, _ = fmt.Fprintf(out, _FORMAT_LOG_WITH_COLOR,
 					time.Now().Format(_FORMAT_DATETIME), ctx.GetClientIP(),
 					getStatusColor(status), status,
 					getLatencyColor(latency), latency,
@@ -107,7 +107,7 @@ func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
 			}
 
 			// 不带颜色
-			_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITHOUT_COLOR, time.Now().Format(_FORMAT_DATETIME),
+			_, _ = fmt.Fprintf(out, _FORMAT_LOG_WITHOUT_COLOR, time.Now().Format(_FORMAT_DATETIME),
 				ctx.GetClientIP(), status, latency, request.Method, request.URL.Path+query)
 		}
 	}

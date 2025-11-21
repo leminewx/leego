@@ -102,7 +102,7 @@ func (own *CORS) handlePreflight(ctx *leego.Context) bool {
 	own.writeResponseHeader(ctx)
 
 	// 设置状态码
-	ctx.WithStatusCode(http.StatusNoContent)
+	ctx.SetStatusCode(http.StatusNoContent)
 	return true
 }
 

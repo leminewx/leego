@@ -144,4 +144,40 @@ const (
 		  - 现在更常见的做法是使用 filename* 和 filename 两个参数，以便兼容新旧浏览器
 	*/
 	CONTENT_DISPOSITION = "Content-Disposition"
+
+	/*
+		Content-Encoding
+
+		作用：
+		  - 告知对端服务器对消息体数据使用的压缩编码方式，如 gzip、deflate 等
+		取值：
+		  - br：用 Brotli 压缩算法，是一种新的压缩算法，压缩比更高（新兴标准）
+		  - gzip：使用 LZ77 编码和32位CRC的格式。该编码方式在客户端和服务器中广泛支持，效率较高
+		  - deflate：使用 zlib 结构（在 RFC 1950 中定义）和 deflate 压缩算法（在 RFC 1951 中定义）
+		  - compress：压缩传输，采用 Lempel-Ziv-Welch (LZW) 算法对数据进行压缩，并使用 Huffman 码进行编码。由于专利问题（已过期）和性能问题，现在很少使用
+		  - identity：指示不进行编码。这是默认值，但除非明确指定，否则不会在头部中出现。如果客户端在请求中发送了包含 identity 的 TE 头部，表示客户端可以接受不编码的响应
+		示例：
+		  - Content-Encoding: gzip
+		  - Content-Encoding: gzip, br（组合压缩：原始内容 → br 压缩 → gzip 压缩 → 传输 → gzip 解压 -> br 解压 → 原始内容）
+	*/
+	CONTENT_ENCODING = "Content-Encoding"
+
+	/*
+		Transfer-Encoding
+
+		作用：
+		  - 指定了消息体在传输过程中使用的编码方式，主要用于在发送方和接收方之间安全地传输消息体
+		取值：
+		  - chunked：分块传输，每个块包含一个十六进制的块大小，后跟块数据，最后以一个大小为0的块结束。该编码允许发送方在不知道内容总长度的情况下开始传输，特别适用于动态生成的内容或流式数据
+		  - gzip：使用 LZ77 编码和32位CRC的格式。该编码方式在客户端和服务器中广泛支持，效率较高
+		  - deflate：使用 zlib 结构（在 RFC 1950 中定义）和 deflate 压缩算法（在 RFC 1951 中定义）
+		  - compress：压缩传输，采用 Lempel-Ziv-Welch (LZW) 算法对数据进行压缩，并使用 Huffman 码进行编码。由于专利问题（已过期）和性能问题，现在很少使用
+		  - identity：指示不进行编码。这是默认值，但除非明确指定，否则不会在头部中出现。如果客户端在请求中发送了包含 identity 的 TE 头部，表示客户端可以接受不编码的响应
+		示例：
+		  - Transfer-Encoding: gzip
+		注意：
+		  - Transfer-Encoding 是逐跳（hop-by-hop）头部，即它只适用于单个传输连接，而不是整个端到端路径，这意味着代理可能会修改它。
+			通常，Transfer-Encoding 取值主要是 chunked，而压缩通常通过 Content-Encoding 头部指定
+	*/
+	TRANSFER_ENCODING = "Transfer-Encoding"
 )

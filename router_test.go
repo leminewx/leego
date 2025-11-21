@@ -8,8 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"gitee.com/leminewx/leego/middleware/monitor"
-
+	"gitee.com/leminewx/leego/middleware/collector"
 	"gitee.com/leminewx/leego/tree"
 )
 
@@ -49,7 +48,7 @@ func TestRouterServeHTTP(t *testing.T) {
 			called = true
 			_ = ctx.ResponsePlain(200, "OK")
 		},
-		monitor: monitor.New("get user info", http.MethodGet, "users/:id"),
+		collector: collector.New("get user info", http.MethodGet, "users/:id"),
 	}
 
 	router.Insert("GET", "/test", testHandler)

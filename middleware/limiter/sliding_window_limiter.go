@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/response"
 )
 
 // SlidingWindowLimiter 定义滑动窗口限流器的数据结构
@@ -140,7 +139,7 @@ func (own *SlidingWindowLimiter) Handle(next leego.HandleFunc) leego.HandleFunc 
 
 		// 请求过多，触发限流
 		if !own.Allow() {
-			ctx.ResponseError(http.StatusTooManyRequests, response.STATUS_429_TOO_MANY_REQUESTS)
+			ctx.ResponseError(http.StatusTooManyRequests, "429"+http.StatusText(http.StatusTooManyRequests))
 			return
 		}
 

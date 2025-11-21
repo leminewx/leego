@@ -1,4 +1,4 @@
-package monitor
+package collector
 
 import (
 	"encoding/json"
@@ -46,6 +46,7 @@ func TestCollector(t *testing.T) {
 
 // cpu: Intel(R) Core(TM) i5-14600KF 						20    	24746859	        49.05 ns/op	       0 B/op	       0 allocs/op
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		17951575	        64.34 ns/op	       0 B/op	       0 allocs/op
+// cpu: QEMU Virtual CPU version 2.5+						2   	10788330	        95.14 ns/op	       0 B/op	       0 allocs/op
 func BenchmarkCollector(b *testing.B) {
 	c := New(http.MethodGet, "/api/v1/users/:id", "获取用户信息")
 
@@ -55,5 +56,20 @@ func BenchmarkCollector(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		c.Increase()
 		c.Decrease(200, 100*time.Microsecond)
+	}
+}
+
+// cpu: Intel(R) Core(TM) i5-14600KF
+// cpu: QEMU Virtual CPU version 2.5+		2   	 4123080	       290.6 ns/op	     384 B/op	       4 allocs/op
+func BenchmarkClone(b *testing.B) {
+	c := New(http.MethodGet, "/api/v1/users/:id", "获取用户信息")
+	c.Increase()
+	c.Decrease(200, 100*time.Microsecond)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_ = c.Clone()
 	}
 }

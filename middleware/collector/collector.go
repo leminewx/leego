@@ -1,4 +1,4 @@
-package monitor
+package collector
 
 import (
 	"strings"
@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// Monitor 定义监控器的数据结构
-type Monitor struct {
+// Collector 定义收集器的数据结构
+type Collector struct {
 	// 基本信息
 	Name    string   `json:"name" xml:"name"`       // 路由名称
 	Method  string   `json:"method" xml:"method"`   // 路由方法
@@ -28,13 +28,13 @@ type Monitor struct {
 }
 
 /*
-New 新建一个监控器
+New 新建一个收集器
   - method：请求方法
   - pattern：路由模式
   - tags：标签，第1个参数为路由名称，后续参数为路由标签（最多只接受前5路由标签）
 */
-func New(method, pattern string, tags ...string) *Monitor {
-	m := &Monitor{
+func New(method, pattern string, tags ...string) *Collector {
+	m := &Collector{
 		Method:    method,
 		Pattern:   pattern,
 		Enabled:   1,
@@ -60,12 +60,12 @@ func New(method, pattern string, tags ...string) *Monitor {
 }
 
 // Increase 请求时调用
-func (own *Monitor) Increase() {
+func (own *Collector) Increase() {
 	atomic.AddInt64(&own.Flights, 1) // 正在处理的请求量+1
 }
 
 // Decrease 响应时调用
-func (own *Monitor) Decrease(code int, cost time.Duration) {
+func (own *Collector) Decrease(code int, cost time.Duration) {
 	// 更新正在处理的请求量
 	atomic.AddInt64(&own.Flights, -1) // 正在处理的请求量-1
 
@@ -83,8 +83,8 @@ func (own *Monitor) Decrease(code int, cost time.Duration) {
 }
 
 // Clone 克隆一个指标收集器
-func (own *Monitor) Clone() *Monitor {
-	data := &Monitor{
+func (own *Collector) Clone() *Collector {
+	data := &Collector{
 		Name:    own.Name,
 		Method:  own.Method,
 		Pattern: own.Pattern,

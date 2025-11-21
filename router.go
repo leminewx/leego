@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/tree"
 )
 
@@ -84,18 +83,18 @@ func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
 	// 黑名单检查
 	if _, ok := own.backlist.Load(path); ok {
-		http.Error(resp, response.STATUS_403_FORBIDDEN, http.StatusForbidden)
+		http.Error(resp, "403"+http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
 
 	// 匹配路由
 	handler, params, ok := own.Search(req.Method, path)
 	if !ok || handler == nil {
-		http.Error(resp, response.STATUS_404_NOT_FOUND, http.StatusNotFound)
+		http.Error(resp, "404"+http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
 
-	monitor := handler.GetMonitor()
+	monitor := handler.GetCollector()
 
 	// 分配上下文，采集数据
 	monitor.Increase()
@@ -103,7 +102,7 @@ func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
 	// 禁用处理器
 	if !handler.IsEnabled() {
-		ctx.ResponseError(http.StatusLocked, response.STATUS_423_LOCKED)
+		ctx.ResponseError(http.StatusLocked, "423"+http.StatusText(http.StatusLocked))
 		monitor.Decrease(http.StatusLocked, time.Since(ctx.GetStartTime()))
 		return
 	}

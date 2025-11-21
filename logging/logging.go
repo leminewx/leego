@@ -10,8 +10,8 @@ import (
 var DefaultWriter io.Writer = os.Stdout
 
 const (
-	_LOG_IFNO = "[LEEGO] [INFO] "
-	_LOG_WARN = "[LEEGO] [WARN] "
+	_LOG_IFNO = "[\033[1mLEEGO\033[0m] [\033[1;32mINFO\033[0m] "
+	_LOG_WARN = "[\033[1mLEEGO\033[0m] [\033[1;33mWARN\033[0m] "
 )
 
 // INFO 记录 INFO 信息
