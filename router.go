@@ -94,9 +94,8 @@ func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	monitor := handler.GetCollector()
-
 	// 分配上下文，采集数据
+	monitor := handler.GetCollector()
 	monitor.Increase()
 	ctx := newContext(own.engine, resp, req, params)
 
