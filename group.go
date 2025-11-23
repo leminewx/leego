@@ -159,7 +159,7 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 		// 获取请求的文件路径
 		requestedPath := ctx.GetPathValue(tree.WILDCARD_DEFAULT_NAME)
 		if requestedPath == "" {
-			ctx.ResponseError(http.StatusBadRequest, "400"+http.StatusText(http.StatusBadRequest))
+			ctx.ResponseError(http.StatusBadRequest, "400 "+http.StatusText(http.StatusBadRequest))
 			return
 		}
 
@@ -169,14 +169,14 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 
 		// 安全检查：防止路径遍历攻击
 		if containsPathTraversal(requestedPath) {
-			ctx.ResponseError(http.StatusForbidden, "403"+http.StatusText(http.StatusForbidden))
+			ctx.ResponseError(http.StatusForbidden, "403 "+http.StatusText(http.StatusForbidden))
 			return
 		}
 
 		// 检查文件是否存在且可访问
 		file, err := fileSystem.Open(requestedPath)
 		if err != nil {
-			ctx.ResponseError(http.StatusNotFound, "404"+http.StatusText(http.StatusNotFound))
+			ctx.ResponseError(http.StatusNotFound, "404 "+http.StatusText(http.StatusNotFound))
 			return
 		}
 		_ = file.Close()

@@ -61,7 +61,7 @@ func RecoverWithConfig(config *RecoveryConfig) leego.MiddlewareFunc {
 
 				// 若该请求还未处理响应，则响应错误
 				if ctx.GetStatusCode() == 0 {
-					ctx.ResponseError(http.StatusInternalServerError, "500"+http.StatusText(http.StatusInternalServerError))
+					ctx.ResponseError(http.StatusInternalServerError, "500 "+http.StatusText(http.StatusInternalServerError))
 				}
 			}()
 

@@ -139,7 +139,7 @@ func (own *SlidingWindowLimiter) Handle(next leego.HandleFunc) leego.HandleFunc 
 
 		// 请求过多，触发限流
 		if !own.Allow() {
-			ctx.ResponseError(http.StatusTooManyRequests, "429"+http.StatusText(http.StatusTooManyRequests))
+			ctx.ResponseError(http.StatusTooManyRequests, "429 "+http.StatusText(http.StatusTooManyRequests))
 			return
 		}
 

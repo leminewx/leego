@@ -83,14 +83,14 @@ func (own *router) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
 	// 黑名单检查
 	if _, ok := own.backlist.Load(path); ok {
-		http.Error(resp, "403"+http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		http.Error(resp, "403 "+http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
 
 	// 匹配路由
 	handler, params, ok := own.Search(req.Method, path)
 	if !ok || handler == nil {
-		http.Error(resp, "404"+http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		http.Error(resp, "404 "+http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
 
