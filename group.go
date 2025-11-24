@@ -254,12 +254,7 @@ func (own *group) addRoute(method, pattern string, handle HandleFunc, desc strin
 
 // normalizePath 规范化路径，确保以 / 开头且不包含多余的斜杠
 func normalizePath(p string) string {
-	p = path.Clean("/" + strings.TrimSpace(p))
-	if p == "/" {
-		return ""
-	}
-
-	return p
+	return path.Clean("/" + strings.TrimSpace(p))
 }
 
 var pathTraversalPatterns = []string{"../", "..\\", "./", ".\\", "//", "\\"}
