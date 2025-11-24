@@ -410,6 +410,15 @@ func (own *Context) ResponseJSON(code int, data any) error {
 	return json.NewEncoder(own.Response).Encode(&data)
 }
 
+// ResponseRedirect 响应重定向
+func (own *Context) ResponseRedirect(code int, location string) {
+	if (code < http.StatusMultipleChoices || code > http.StatusPermanentRedirect) && code != http.StatusCreated {
+		panic(fmt.Sprintf("Cannot redirect with status code %d", code))
+	}
+
+	http.Redirect(own.Response, own.Request, location, code)
+}
+
 var templates = &sync.Map{}
 
 // ResponseHTML 响应 HTML 内容
