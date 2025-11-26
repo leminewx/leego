@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/tree"
 )
 
@@ -154,38 +153,8 @@ func (own *group) setStaticFromFS(relativePath, rootPath string, fs http.FileSys
 
 // createStaticHandler 创建静态文件服务的处理器
 func (own *group) createStaticHandler(relativePath string, fileSystem http.FileSystem) HandleFunc {
-	fileServer := http.StripPrefix(relativePath, http.FileServer(fileSystem))
+	fileServer := http.StripPrefix(relativePath, newOnlyFileFS(relativePath, fileSystem))
 	return func(ctx *Context) {
-		// 获取请求的文件路径
-		requestedPath := ctx.GetPathValue(tree.WILDCARD_DEFAULT_NAME)
-		if requestedPath == "" {
-			ctx.ResponseError(http.StatusBadRequest, "400 "+http.StatusText(http.StatusBadRequest))
-			return
-		}
-
-		// 规范化路径：移除开头的斜杠，防止路径遍历攻击
-		requestedPath = strings.TrimPrefix(requestedPath, "/")
-		requestedPath = strings.TrimPrefix(requestedPath, "\\")
-
-		// 安全检查：防止路径遍历攻击
-		if containsPathTraversal(requestedPath) {
-			ctx.ResponseError(http.StatusForbidden, "403 "+http.StatusText(http.StatusForbidden))
-			return
-		}
-
-		// 检查文件是否存在且可访问
-		file, err := fileSystem.Open(requestedPath)
-		if err != nil {
-			ctx.ResponseError(http.StatusNotFound, "404 "+http.StatusText(http.StatusNotFound))
-			return
-		}
-		_ = file.Close()
-
-		// 设置安全头
-		ctx.SetResponseHeader(headers.X_CONTENT_TYPE_OPTIONS, "nosniff") // 防止 MIME 类型嗅探攻击
-		ctx.SetResponseHeader(headers.X_FRAME_OPTIONS, "DENY")           // 防止点击劫持（ClickJacking）攻击
-
-		// 响应文件
 		fileServer.ServeHTTP(ctx.Response, ctx.Request)
 	}
 }
