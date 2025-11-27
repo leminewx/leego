@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/tree"
 )
 
@@ -98,9 +99,14 @@ func (own *group) getAllMiddlewares(middlewares *[]MiddlewareFunc) {
 
 /*
 SetStatic 设置静态文件服务
+
+参数：
   - relativePath：URI 中的相对路径
   - rootPath：静态文件服务的根目录
   - tags：第1个参数为路由名称，后续参数为路由标签
+
+注意：
+  - 在处理 index.html 这类默认索引文件时，会尝试重定向到目录路径
 */
 func (own *group) SetStatic(relativePath, rootPath string, tags ...string) {
 	// 获取绝对路径
@@ -121,9 +127,14 @@ func (own *group) SetStatic(relativePath, rootPath string, tags ...string) {
 
 /*
 SetStaticFS 设置静态文件服务
+
+参数：
   - relativePath：URI 中的相对路径
   - fs：http.FileSystem 文件系统
   - tags：第1个参数为路由名称，后续参数为路由标签
+
+注意：
+  - 在处理 index.html 这类默认索引文件时，会尝试重定向到目录路径
 */
 func (own *group) SetStaticFS(relativePath string, fs http.FileSystem, tags ...string) {
 	own.setStaticFromFS(relativePath, "", fs, tags...)
@@ -153,8 +164,44 @@ func (own *group) setStaticFromFS(relativePath, rootPath string, fs http.FileSys
 
 // createStaticHandler 创建静态文件服务的处理器
 func (own *group) createStaticHandler(relativePath string, fileSystem http.FileSystem) HandleFunc {
-	fileServer := http.StripPrefix(relativePath, newOnlyFileFS(relativePath, fileSystem))
+	fileServer := http.StripPrefix(relativePath, http.FileServer(fileSystem))
 	return func(ctx *Context) {
+		// 获取请求文件
+		requestedPath := path.Clean(ctx.GetPathValue(tree.WILDCARD_DEFAULT_NAME))
+		if requestedPath == "" {
+			ctx.ResponseError(http.StatusNotFound, "404 "+http.StatusText(http.StatusNotFound))
+		}
+
+		requestedPath = strings.TrimPrefix(requestedPath, "/")
+		requestedPath = strings.TrimPrefix(requestedPath, "\\")
+		requestedPath = path.Clean(requestedPath)
+
+		// 安全检查：防止路径遍历攻击
+		if containsPathTraversal(requestedPath) {
+			ctx.ResponseError(http.StatusForbidden, "403 "+http.StatusText(http.StatusForbidden))
+			return
+		}
+
+		// 检查文件是否存在且可访问
+		file, err := fileSystem.Open(requestedPath)
+		if err != nil {
+			ctx.ResponseError(http.StatusNotFound, "404 "+http.StatusText(http.StatusNotFound))
+			return
+		}
+		_ = file.Close()
+
+		// 检查文件状态
+		stat, err := file.Stat()
+		if err != nil || stat.IsDir() {
+			ctx.ResponseError(http.StatusNotFound, "404 "+http.StatusText(http.StatusNotFound))
+			return
+		}
+
+		// 设置安全头
+		ctx.SetResponseHeader(headers.X_CONTENT_TYPE_OPTIONS, "nosniff") // 防止 MIME 类型嗅探攻击
+		ctx.SetResponseHeader(headers.X_FRAME_OPTIONS, "DENY")           // 防止点击劫持（ClickJacking）攻击
+
+		// 响应文件（http.FileServer 在处理 index.html 这类默认索引文件时，会尝试重定向到目录路径）
 		fileServer.ServeHTTP(ctx.Response, ctx.Request)
 	}
 }
