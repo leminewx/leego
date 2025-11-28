@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego"
+	"gitee.com/leminewx/leego/response"
 )
 
 // FixedWindowLimiter 定义固定窗口限流器的数据结构
@@ -115,7 +116,7 @@ func (own *FixedWindowLimiter) Handle(next leego.HandleFunc) leego.HandleFunc {
 
 		// 请求过多，触发限流
 		if !own.Allow() {
-			ctx.ResponseError(http.StatusTooManyRequests, "429 "+http.StatusText(http.StatusTooManyRequests))
+			ctx.ResponseError(http.StatusTooManyRequests, response.GetStatusLowerText(http.StatusTooManyRequests))
 			return
 		}
 

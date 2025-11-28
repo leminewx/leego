@@ -21,10 +21,6 @@ type (
 		UseMiddlewares(middlewares ...Middleware)
 		// UseMiddlewareFuncs 使用路由中间件函数
 		UseMiddlewareFuncs(fns ...MiddlewareFunc)
-		// SetStatic 设置静态文件服务
-		SetStatic(relativePath, rootPath string, tags ...string)
-		// SetStaticFS 设置静态文件服务
-		SetStaticFS(relativePath string, fs http.FileSystem, tags ...string)
 
 		// GET 处理 GET 请求
 		GET(pattern string, handle HandleFunc, tags ...string)
@@ -40,6 +36,10 @@ type (
 		DELETE(pattern string, handle HandleFunc, tags ...string)
 		// OPTIONS 处理 OPTIONS 请求
 		OPTIONS(pattern string, handle HandleFunc, tags ...string)
+		// SetStatic 设置静态文件服务
+		SetStatic(relativePath, rootPath string, tags ...string)
+		// SetStaticFS 设置静态文件服务
+		SetStaticFS(relativePath string, fs http.FileSystem, tags ...string)
 	}
 
 	// group 定义路由组的实现类型
@@ -97,6 +97,41 @@ func (own *group) getAllMiddlewares(middlewares *[]MiddlewareFunc) {
 	*middlewares = append(*middlewares, own.middlewares...)
 }
 
+// GET 处理 GET 请求
+func (own *group) GET(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodGet, pattern, handle, "", tags...)
+}
+
+// PUT 处理 PUT 请求
+func (own *group) PUT(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodPut, pattern, handle, "", tags...)
+}
+
+// POST 处理 POST 请求
+func (own *group) POST(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodPost, pattern, handle, "", tags...)
+}
+
+// HEAD 处理 HEAD 请求
+func (own *group) HEAD(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodHead, pattern, handle, "", tags...)
+}
+
+// PATCH 处理 PATCH 请求
+func (own *group) PATCH(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodPatch, pattern, handle, "", tags...)
+}
+
+// DELETE 处理 DELETE 请求
+func (own *group) DELETE(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodDelete, pattern, handle, "", tags...)
+}
+
+// OPTIONS 处理 OPTIONS 请求
+func (own *group) OPTIONS(pattern string, handle HandleFunc, tags ...string) {
+	own.addRoute(http.MethodOptions, pattern, handle, "", tags...)
+}
+
 /*
 SetStatic 设置静态文件服务
 
@@ -143,7 +178,7 @@ func (own *group) SetStaticFS(relativePath string, fs http.FileSystem, tags ...s
 func (own *group) setStaticFromFS(relativePath, rootPath string, fs http.FileSystem, tags ...string) {
 	// 检查是否已经设置过静态文件服务
 	if own.hasStatic {
-		panic(fmt.Sprintf("Group '%s' already has a static file service", own.prefix))
+		panic(fmt.Sprintf("Group '%s' is serving a static folder", own.prefix))
 	}
 
 	// 检查是否已经设置过静态文件服务
@@ -152,7 +187,7 @@ func (own *group) setStaticFromFS(relativePath, rootPath string, fs http.FileSys
 	}
 
 	// 创建处理器
-	relativePath = normalizePath(relativePath)
+	relativePath = path.Clean("/" + strings.TrimSpace(relativePath))
 	handler := own.createStaticHandler(path.Join(own.prefix, relativePath), fs)
 
 	// 创建 GET 和 HEAD 服务接口
@@ -167,33 +202,17 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 	fileServer := http.StripPrefix(relativePath, http.FileServer(fileSystem))
 	return func(ctx *Context) {
 		// 获取请求文件
-		requestedPath := path.Clean(ctx.GetPathValue(tree.WILDCARD_DEFAULT_NAME))
+		requestedPath := ctx.GetPathValue(tree.WILDCARD_DEFAULT_NAME)
 		if requestedPath == "" {
-			ctx.ResponseError(http.StatusNotFound, "404 "+http.StatusText(http.StatusNotFound))
+			ctx.ResponseError(http.StatusNotFound, http.StatusText(http.StatusNotFound))
+			return
 		}
-
-		requestedPath = strings.TrimPrefix(requestedPath, "/")
-		requestedPath = strings.TrimPrefix(requestedPath, "\\")
-		requestedPath = path.Clean(requestedPath)
 
 		// 安全检查：防止路径遍历攻击
+		requestedPath = strings.TrimPrefix(strings.TrimPrefix(requestedPath, "/"), "\\")
+		requestedPath = path.Clean(requestedPath)
 		if containsPathTraversal(requestedPath) {
-			ctx.ResponseError(http.StatusForbidden, "403 "+http.StatusText(http.StatusForbidden))
-			return
-		}
-
-		// 检查文件是否存在且可访问
-		file, err := fileSystem.Open(requestedPath)
-		if err != nil {
-			ctx.ResponseError(http.StatusNotFound, "404 "+http.StatusText(http.StatusNotFound))
-			return
-		}
-		_ = file.Close()
-
-		// 检查文件状态
-		stat, err := file.Stat()
-		if err != nil || stat.IsDir() {
-			ctx.ResponseError(http.StatusNotFound, "404 "+http.StatusText(http.StatusNotFound))
+			ctx.ResponseError(http.StatusForbidden, http.StatusText(http.StatusForbidden))
 			return
 		}
 
@@ -201,51 +220,16 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 		ctx.SetResponseHeader(headers.X_CONTENT_TYPE_OPTIONS, "nosniff") // 防止 MIME 类型嗅探攻击
 		ctx.SetResponseHeader(headers.X_FRAME_OPTIONS, "DENY")           // 防止点击劫持（ClickJacking）攻击
 
-		// 响应文件（http.FileServer 在处理 index.html 这类默认索引文件时，会尝试重定向到目录路径）
+		// 响应文件
 		fileServer.ServeHTTP(ctx.Response, ctx.Request)
 	}
-}
-
-// GET 处理 GET 请求
-func (own *group) GET(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodGet, pattern, handle, "", tags...)
-}
-
-// PUT 处理 PUT 请求
-func (own *group) PUT(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodPut, pattern, handle, "", tags...)
-}
-
-// POST 处理 POST 请求
-func (own *group) POST(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodPost, pattern, handle, "", tags...)
-}
-
-// HEAD 处理 HEAD 请求
-func (own *group) HEAD(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodHead, pattern, handle, "", tags...)
-}
-
-// PATCH 处理 PATCH 请求
-func (own *group) PATCH(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodPatch, pattern, handle, "", tags...)
-}
-
-// DELETE 处理 DELETE 请求
-func (own *group) DELETE(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodDelete, pattern, handle, "", tags...)
-}
-
-// OPTIONS 处理 OPTIONS 请求
-func (own *group) OPTIONS(pattern string, handle HandleFunc, tags ...string) {
-	own.addRoute(http.MethodOptions, pattern, handle, "", tags...)
 }
 
 // addRoute 添加处理器到当前路由组
 func (own *group) addRoute(method, pattern string, handle HandleFunc, desc string, tags ...string) {
 	// 规范化路径
-	pattern = path.Join(own.prefix, normalizePath(pattern))
-	pattern = strings.ReplaceAll(pattern, "//", "/") // 移除可能出现的双斜杠
+	pattern = path.Join(own.prefix, path.Clean(strings.TrimSpace(pattern)))
+	pattern = strings.ReplaceAll(pattern, "//", "/")
 
 	// 检查接口是否已经创建
 	key := method + " " + pattern
@@ -266,11 +250,6 @@ func (own *group) addRoute(method, pattern string, handle HandleFunc, desc strin
 	} else {
 		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Create | %-7s %s  -  filepath: %s\n", method, pattern, desc))
 	}
-}
-
-// normalizePath 规范化路径，确保以 / 开头且不包含多余的斜杠
-func normalizePath(p string) string {
-	return path.Clean("/" + strings.TrimSpace(p))
 }
 
 var pathTraversalPatterns = []string{"../", "..\\", "./", ".\\", "//", "\\"}

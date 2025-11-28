@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego"
+	"gitee.com/leminewx/leego/response"
 )
 
 var (
@@ -156,7 +157,7 @@ func (own *Manager) Handle(next leego.HandleFunc) leego.HandleFunc {
 
 			// 未指定状态码，需额外处理响应
 			if ctx.GetStatusCode() == 0 {
-				ctx.ResponseError(http.StatusUnauthorized, "401 "+http.StatusText(http.StatusUnauthorized))
+				ctx.ResponseError(http.StatusUnauthorized, response.GetStatusLowerText(http.StatusUnauthorized))
 			}
 
 			return
@@ -179,7 +180,7 @@ func (own *Manager) Handle(next leego.HandleFunc) leego.HandleFunc {
 
 			// 未指定状态码，需额外处理响应
 			if ctx.GetStatusCode() == 0 {
-				ctx.ResponseError(http.StatusUnauthorized, "401 "+http.StatusText(http.StatusUnauthorized))
+				ctx.ResponseError(http.StatusUnauthorized, response.GetStatusLowerText(http.StatusUnauthorized))
 			}
 
 			return
