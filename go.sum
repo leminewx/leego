@@ -1,5 +1,7 @@
 gitee.com/leminewx/gokit v0.0.0-20251109161709-702546ed38cb h1:LCiP1AVfuBvaVGpyZwV4N/a4LUmFgToTJman7KSaRHs=
 gitee.com/leminewx/gokit v0.0.0-20251109161709-702546ed38cb/go.mod h1:g/O9Vr3XhTNwjSFaS/8l8IpIuciuEZyzxJ7PHDQNNKM=
+golang.org/x/crypto v0.44.0 h1:A97SsFvM3AIwEEmTBiaxPPTYpDC47w720rdiiUvgoAU=
+golang.org/x/crypto v0.44.0/go.mod h1:013i+Nw79BMiQiMsOPcVCB5ZIJbYkerPrGnOa00tvmc=
 golang.org/x/net v0.47.0 h1:Mx+4dIFzqraBXUugkia1OOvlD6LemFo1ALMHjrXDOhY=
 golang.org/x/net v0.47.0/go.mod h1:/jNxtkgq5yWUGYkaZGqo27cfGZ1c5Nen03aYrrKpVRU=
 golang.org/x/text v0.31.0 h1:aC8ghyu4JhP8VojJ2lEHBnochRno1sgL6nEi9WGFGMM=
