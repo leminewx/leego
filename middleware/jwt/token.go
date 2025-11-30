@@ -25,6 +25,15 @@ func NewToken(claims *StandardClaims) *Token {
 	return &Token{stdClaims: claims}
 }
 
+// SetClaim 设置声明字段
+func (own *Token) SetClaim(key string, value any) {
+	if own.claims == nil {
+		own.claims = make(map[string]any)
+	}
+
+	own.claims[key] = value
+}
+
 // GetClaim 获取指定声明
 func (own *Token) GetClaim(key string) (any, bool) {
 	if len(own.claims) > 0 {
@@ -43,16 +52,6 @@ func (own *Token) GetAllClaims() map[string]any {
 // GetStandardClaims 获取标准声明字段
 func (own *Token) GetStandardClaims() *StandardClaims {
 	return own.stdClaims
-}
-
-// WithClaim 设置声明字段
-func (own *Token) WithClaim(key string, value any) *Token {
-	if own.claims == nil {
-		own.claims = make(map[string]any)
-	}
-
-	own.claims[key] = value
-	return own
 }
 
 // encodeClaims 编码声明

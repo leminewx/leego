@@ -123,26 +123,22 @@ func (own *Client) serve(resp response.Writer, req *http.Request, msgChan <-chan
 	}
 }
 
-// WithWriteTimeout 设置写超时时间
-func (own *Client) WithWriteTimeout(timeout time.Duration) *Client {
+// SetWriteTimeout 设置写超时时间
+func (own *Client) SetWriteTimeout(timeout time.Duration) {
 	if timeout > 0 {
 		own.lock.Lock()
 		own.writeTimeout = timeout
 		own.lock.Unlock()
 	}
-
-	return own
 }
 
-// WithHeartbeatPeriod 设置连接发送心跳的周期（默认30s）
-func (own *Client) WithHeartbeatPeriod(period time.Duration) *Client {
+// SetHeartbeatPeriod 设置连接发送心跳的周期（默认30s）
+func (own *Client) SetHeartbeatPeriod(period time.Duration) {
 	if period > 0 {
 		own.lock.Lock()
 		own.heartbeatPeriod = period
 		own.lock.Unlock()
 	}
-
-	return own
 }
 
 // WriteResponseHeader 写入 SSE 响应头

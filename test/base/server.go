@@ -26,21 +26,21 @@ func main() {
 	// middlewareLimiter := limiter.NewDefaultFixedWindowLimiter(3)
 
 	// CORS 跨域中间件
-	middlewareCORS := cors.NewDefaultCORS().
-		WithMaxAge(100).
-		WithAllowOrigins("*")
+	middlewareCORS := cors.NewDefaultCORS()
+	middlewareCORS.SetMaxAge(100)
+	middlewareCORS.SetAllowOrigins("*")
 
 	// JWT 认证中间件
-	middlewareAuth := jwt.NewDefaultManager([]byte("secret")).
-		WithSkipPaths("/v*").
-		WithExceptedIssuer("leego").
-		WithExceptedAudience("leego").
-		WithNotBeforeSeconds(30).
-		WithExpiresAfterSeconds(50).
-		WithValidateStandardClaims(true).
-		WithErrorHandler(func(_ *leego.Context, err error) {
-			log.Printf("Faild to authorizate: %v", err)
-		})
+	middlewareAuth := jwt.NewDefaultManager([]byte("secret"))
+	middlewareAuth.SetSkipPaths("/v*")
+	middlewareAuth.SetExceptedIssuer("leego")
+	middlewareAuth.SetExceptedAudience("leego")
+	middlewareAuth.SetNotBeforeSeconds(30)
+	middlewareAuth.SetExpiresAfterSeconds(50)
+	middlewareAuth.SetValidateStandardClaims(true)
+	middlewareAuth.SetErrorHandler(func(_ *leego.Context, err error) {
+		log.Printf("Faild to authorizate: %v", err)
+	})
 
 	// 注册中间件
 	engine.UseMiddlewareFuncs(
@@ -153,7 +153,8 @@ func main() {
 			fmt.Println("*********ready response login*********")
 			fmt.Printf("%s is logged in\n", ctx.GetPathValue("name"))
 
-			token := middlewareAuth.GenerateToken(&jwt.StandardClaims{}).WithClaim("username", "tester")
+			token := middlewareAuth.GenerateToken(&jwt.StandardClaims{})
+			token.SetClaim("username", "tester")
 			signature, err := middlewareAuth.Sign(token)
 			if err != nil {
 				fmt.Println("sign error: ", err)

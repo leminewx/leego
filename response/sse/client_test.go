@@ -101,7 +101,7 @@ func TestWriteMessage(t *testing.T) {
 	}
 
 	// 测试关闭后的客户端
-	client.Close()
+	_ = client.Close()
 	err = client.WriteMessage(msg)
 	if err == nil {
 		t.Error("Expected error when writing to closed client")
@@ -181,7 +181,8 @@ func TestClientDisconnect(t *testing.T) {
 
 // TestWriteTimeout 测试写超时
 func TestWriteTimeout(t *testing.T) {
-	client := NewClient("test-client").WithWriteTimeout(10 * time.Millisecond)
+	client := NewClient("test-client")
+	client.SetWriteTimeout(10 * time.Millisecond)
 
 	// 填充消息通道使其阻塞
 	for i := 0; i < 8; i++ {
@@ -205,25 +206,25 @@ func TestConfigurationMethods(t *testing.T) {
 
 	// 测试写超时配置
 	newTimeout := 200 * time.Millisecond
-	client.WithWriteTimeout(newTimeout)
+	client.SetWriteTimeout(newTimeout)
 	if client.writeTimeout != newTimeout {
 		t.Errorf("Expected write timeout %v, got %v", newTimeout, client.writeTimeout)
 	}
 
 	// 测试心跳周期配置
 	newHeartbeat := 60 * time.Second
-	client.WithHeartbeatPeriod(newHeartbeat)
+	client.SetWriteTimeout(newHeartbeat)
 	if client.heartbeatPeriod != newHeartbeat {
 		t.Errorf("Expected heartbeat period %v, got %v", newHeartbeat, client.heartbeatPeriod)
 	}
 
 	// 测试无效配置（应该保持原值）
-	client.WithWriteTimeout(0)
+	client.SetWriteTimeout(0)
 	if client.writeTimeout != newTimeout {
 		t.Errorf("Expected write timeout to remain %v with invalid input, got %v", newTimeout, client.writeTimeout)
 	}
 
-	client.WithHeartbeatPeriod(0)
+	client.SetWriteTimeout(0)
 	if client.heartbeatPeriod != newHeartbeat {
 		t.Errorf("Expected heartbeat period to remain %v with invalid input, got %v", newHeartbeat, client.heartbeatPeriod)
 	}

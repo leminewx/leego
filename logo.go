@@ -1,10 +1,10 @@
 package leego
 
 import (
-	"fmt"
 	"os"
 	"text/template"
-	"time"
+
+	"gitee.com/leminewx/leego/logging"
 )
 
 // logo 模板
@@ -34,7 +34,8 @@ func show() {
 	// 解析模板
 	tmpl, err := template.New("logo").Parse(logoTemplate)
 	if err != nil {
-		fmt.Printf("\033[35mERROR\033[0m -  %s  -  %v", time.Now().Format(_FORMAT_DATETIME), err)
+		logging.WARN("Failed to load logo template: %v", err)
+		return
 	}
 
 	// 写入数据
@@ -47,6 +48,6 @@ func show() {
 		Version: version,
 		Release: release,
 	}); err != nil {
-		fmt.Printf("\033[35mERROR\033[0m -  %s  -  %v", time.Now().Format(_FORMAT_DATETIME), err)
+		logging.WARN("Failed to write logo data to template: %v", err)
 	}
 }

@@ -40,28 +40,6 @@ func NewFixedWindowLimiterWithWindowSize(limit int, size time.Duration) *FixedWi
 	}
 }
 
-// WithLimit 设置限流阈值
-func (own *FixedWindowLimiter) WithLimit(limit int) *FixedWindowLimiter {
-	own.lock.Lock()
-	own.config.Limit = limit
-	own.lock.Unlock()
-	return own
-}
-
-// WithWindowSize 设置窗口大小
-func (own *FixedWindowLimiter) WithWindowSize(size time.Duration) *FixedWindowLimiter {
-	if size <= 0 {
-		size = time.Second // 默认1秒
-	}
-
-	own.lock.Lock()
-	own.count = 0
-	own.lastTime = time.Now()
-	own.config.WindowSize = size
-	own.lock.Unlock()
-	return own
-}
-
 // Enable 启用中间件
 func (own *FixedWindowLimiter) Enable() {
 	atomic.StoreInt32(&own.config.IsEnabled, 1)
@@ -80,6 +58,26 @@ func (own *FixedWindowLimiter) SetScope(scope string) {
 
 	own.lock.Lock()
 	own.config.Scope = scope
+	own.lock.Unlock()
+}
+
+// SetLimit 设置限流阈值
+func (own *FixedWindowLimiter) SetLimit(limit int) {
+	own.lock.Lock()
+	own.config.Limit = limit
+	own.lock.Unlock()
+}
+
+// SetWindowSize 设置窗口大小
+func (own *FixedWindowLimiter) SetWindowSize(size time.Duration) {
+	if size <= 0 {
+		size = time.Second // 默认1秒
+	}
+
+	own.lock.Lock()
+	own.count = 0
+	own.lastTime = time.Now()
+	own.config.WindowSize = size
 	own.lock.Unlock()
 }
 

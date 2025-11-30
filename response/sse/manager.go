@@ -31,34 +31,30 @@ func NewManager() *Manager {
 	}
 }
 
-// WithWriteTimeout 设置写超时时间
-func (own *Manager) WithWriteTimeout(timeout time.Duration) *Manager {
+// SetWriteTimeout 设置写超时时间
+func (own *Manager) SetWriteTimeout(timeout time.Duration) {
 	if timeout > 0 {
 		own.lock.Lock()
 		own.writeTimeout = timeout
 		own.lock.Unlock()
 	}
-
-	return own
 }
 
-// WithHeartbeatPeriod 设置连接发送心跳的周期（默认30s）
-func (own *Manager) WithHeartbeatPeriod(period time.Duration) *Manager {
+// SetHeartbeatPeriod 设置连接发送心跳的周期（默认30s）
+func (own *Manager) SetHeartbeatPeriod(period time.Duration) {
 	if period > 0 {
 		own.lock.Lock()
 		own.heartbeatPeriod = period
 		own.lock.Unlock()
 	}
-
-	return own
 }
 
 // Register 注册新的SSE客户端
 func (own *Manager) Register(resp response.Writer, req *http.Request, clientId string) (*Client, error) {
 	// 创建客户端
-	client := NewClient(clientId).
-		WithWriteTimeout(own.writeTimeout).
-		WithHeartbeatPeriod(own.heartbeatPeriod)
+	client := NewClient(clientId)
+	client.SetWriteTimeout(own.writeTimeout)
+	client.SetHeartbeatPeriod(own.heartbeatPeriod)
 
 	own.lock.RLock()
 	defer own.lock.RUnlock()

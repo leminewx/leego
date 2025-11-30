@@ -65,8 +65,8 @@ func (own *CORS) SetScope(scope string) {
 	own.lock.Unlock()
 }
 
-// WithMaxAge 设置前端缓存信息的最大时间（单位：秒）
-func (own *CORS) WithMaxAge(seconds int64) *CORS {
+// SetMaxAge 设置前端缓存信息的最大时间（单位：秒）
+func (own *CORS) SetMaxAge(seconds int64) {
 	if seconds < 0 {
 		seconds = 0
 	}
@@ -75,22 +75,19 @@ func (own *CORS) WithMaxAge(seconds int64) *CORS {
 	own.config.MaxAge = seconds
 	own.maxAgeString = strconv.Itoa(int(own.config.MaxAge))
 	own.lock.Unlock()
-
-	return own
 }
 
-// WithAllowOrigins 指定可跨域访问的源，若不指定，则允许所有源访问
-func (own *CORS) WithAllowOrigins(origins ...string) *CORS {
+// SetAllowOrigins 设置可跨域访问的源，若不设置，则允许所有源访问
+func (own *CORS) SetAllowOrigins(origins ...string) {
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
-	// 如果不指定源，则允许所有源，重置配置
+	// 如果不设置源，则允许所有源，重置配置
 	if len(origins) == 0 {
 		own.allowAllOrigins = true   // 允许所有源
 		own.allowCredentials = false // 通配符源不能使用凭证
 		own.config.AllowOrigins = make([]string, 0)
 		own.allowOrigins = make(map[string]struct{})
-		return own
 	}
 
 	// 添加源，则在原有基础上添加
@@ -104,7 +101,6 @@ func (own *CORS) WithAllowOrigins(origins ...string) *CORS {
 			own.allowCredentials = false
 			own.config.AllowOrigins = make([]string, 0)
 			own.allowOrigins = make(map[string]struct{})
-			return own
 		}
 
 		if _, ok := own.allowOrigins[origin]; !ok {
@@ -117,12 +113,10 @@ func (own *CORS) WithAllowOrigins(origins ...string) *CORS {
 	if len(own.allowOrigins) > 0 {
 		own.allowCredentials = true
 	}
-
-	return own
 }
 
-// WithAllowMethods 指定可跨域访问的请求方法
-func (own *CORS) WithAllowMethods(methods ...string) *CORS {
+// SetAllowMethods 设置可跨域访问的请求方法
+func (own *CORS) SetAllowMethods(methods ...string) {
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
@@ -136,12 +130,10 @@ func (own *CORS) WithAllowMethods(methods ...string) *CORS {
 	if len(own.config.AllowMethods) > 0 {
 		own.allowMethodString = strings.Join(own.config.AllowMethods, ", ")
 	}
-
-	return own
 }
 
-// WithAllowHeaders 指定可跨域访问的请求头字段
-func (own *CORS) WithAllowHeaders(headers ...string) *CORS {
+// SetAllowHeaders 设置可跨域访问的请求头字段
+func (own *CORS) SetAllowHeaders(headers ...string) {
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
@@ -155,12 +147,10 @@ func (own *CORS) WithAllowHeaders(headers ...string) *CORS {
 	if len(own.config.AllowHeaders) > 0 {
 		own.allowHeaderString = strings.Join(own.config.AllowHeaders, ", ")
 	}
-
-	return own
 }
 
-// WithExposeHeaders 指定响应跨域请求的额外响应头字段
-func (own *CORS) WithExposeHeaders(headers ...string) *CORS {
+// SetExposeHeaders 设置响应跨域请求的额外响应头字段
+func (own *CORS) SetExposeHeaders(headers ...string) {
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
@@ -174,8 +164,6 @@ func (own *CORS) WithExposeHeaders(headers ...string) *CORS {
 	if len(own.config.ExposeHeaders) > 0 {
 		own.exposeHeaderString = strings.Join(own.config.ExposeHeaders, ", ")
 	}
-
-	return own
 }
 
 // SyncConfig 同步配置
@@ -200,11 +188,11 @@ func (own *CORS) SyncConfig(config any) error {
 		own.Enable()
 	}
 
-	own.WithMaxAge(conf.MaxAge).
-		WithAllowOrigins(conf.AllowOrigins...).
-		WithAllowHeaders(conf.AllowHeaders...).
-		WithAllowMethods(conf.AllowMethods...).
-		WithExposeHeaders(conf.ExposeHeaders...)
+	own.SetMaxAge(conf.MaxAge)
+	own.SetAllowOrigins(conf.AllowOrigins...)
+	own.SetAllowHeaders(conf.AllowHeaders...)
+	own.SetAllowMethods(conf.AllowMethods...)
+	own.SetExposeHeaders(conf.ExposeHeaders...)
 	return nil
 }
 
@@ -262,6 +250,6 @@ func (own *CORS) GetConfig() any {
 		config.ExposeHeaders = append(config.ExposeHeaders, header)
 	}
 	own.lock.RUnlock()
-	
+
 	return config
 }

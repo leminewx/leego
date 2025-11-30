@@ -20,8 +20,6 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
-const _FORMAT_DATETIME = "2006-01-02 15:04:05.000"
-
 // Engine 定义引擎的结构
 type Engine struct {
 	// 继承路由组，所以引擎本身也是一个路由组
@@ -69,7 +67,7 @@ func (own *Engine) GetMiddleware(id string) (Middleware, bool) {
 	return m, ok
 }
 
-// GetAllMiddlewares 获取所有中间件
+// GetAllMiddlewareConfigs 获取所有中间件
 func (own *Engine) GetAllMiddlewareConfigs() []any {
 	configs := make([]any, 0, len(own.middlewares))
 	for _, m := range own.middlewares {
@@ -86,7 +84,7 @@ func (own *Engine) GetHandler(method, pattern string) (Handler, bool) {
 	return handler, ok
 }
 
-// GetAllHandlerMonitors 获取所有处理器的指标采集器
+// GetAllHandlerCollectors 获取所有处理器的指标采集器
 func (own *Engine) GetAllHandlerCollectors() []*collector.Collector {
 	collectors := make([]*collector.Collector, 0, len(own.handlers))
 	for _, handler := range own.handlers {
@@ -98,11 +96,7 @@ func (own *Engine) GetAllHandlerCollectors() []*collector.Collector {
 
 // AddURLBlacklist 添加路由黑名单
 func (own *Engine) AddURLBlacklist(urls ...string) {
-	for _, url := range urls {
-		if url = strings.TrimSpace(url); url != "" {
-			own.router.AddBlacklist(url)
-		}
-	}
+	own.router.AddBlacklist(urls...)
 }
 
 // Run 通过指定端口监听和服务 HTTP 请求

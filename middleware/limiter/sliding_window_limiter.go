@@ -49,41 +49,6 @@ func NewSlidingWindowLimiterWithBucketsAndWindowSize(limit int, bucketCount int,
 	}
 }
 
-// WithLimit 设置限流阈值
-func (own *SlidingWindowLimiter) WithLimit(limit int) *SlidingWindowLimiter {
-	own.lock.Lock()
-	own.config.Limit = limit
-	own.lock.Unlock()
-	return own
-}
-
-// WithWindowSize 设置窗口大小
-func (own *SlidingWindowLimiter) WithWindowSize(size time.Duration) *SlidingWindowLimiter {
-	if size < time.Second {
-		size = time.Second
-	}
-
-	own.lock.Lock()
-	defer own.lock.Unlock()
-
-	if own.config.WindowSize == size {
-		return own
-	}
-
-	// 如果窗口大小改变，需要重置所有桶
-	own.config.WindowSize = size
-	own.bucketSize = size / time.Duration(len(own.buckets))
-
-	// 重置窗口状态
-	for i := range own.buckets {
-		own.buckets[i] = 0
-	}
-
-	own.index = 0
-	own.lastSlide = time.Now()
-	return own
-}
-
 // Enable 启用中间件
 func (own *SlidingWindowLimiter) Enable() {
 	atomic.StoreInt32(&own.config.IsEnabled, 1)
@@ -103,6 +68,39 @@ func (own *SlidingWindowLimiter) SetScope(scope string) {
 	own.lock.Lock()
 	own.config.Scope = scope
 	own.lock.Unlock()
+}
+
+// SetLimit 设置限流阈值
+func (own *SlidingWindowLimiter) SetLimit(limit int) {
+	own.lock.Lock()
+	own.config.Limit = limit
+	own.lock.Unlock()
+}
+
+// SetWindowSize 设置窗口大小
+func (own *SlidingWindowLimiter) SetWindowSize(size time.Duration) {
+	if size < time.Second {
+		size = time.Second
+	}
+
+	own.lock.Lock()
+	defer own.lock.Unlock()
+
+	if own.config.WindowSize == size {
+		return
+	}
+
+	// 如果窗口大小改变，需要重置所有桶
+	own.config.WindowSize = size
+	own.bucketSize = size / time.Duration(len(own.buckets))
+
+	// 重置窗口状态
+	for i := range own.buckets {
+		own.buckets[i] = 0
+	}
+
+	own.index = 0
+	own.lastSlide = time.Now()
 }
 
 // GetID 获取ID

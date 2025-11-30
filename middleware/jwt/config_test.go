@@ -41,7 +41,7 @@ func TestNewDefaultConfig(t *testing.T) {
 	}
 }
 
-func TestManager_WithScope(t *testing.T) {
+func TestManager_SetScope(t *testing.T) {
 	auth := &Manager{config: &Config{StandardClaimsConfig: &StandardClaimsConfig{}}}
 	scope := "test-scope"
 
@@ -51,99 +51,82 @@ func TestManager_WithScope(t *testing.T) {
 	}
 }
 
-func TestManager_WithExceptedIssuer(t *testing.T) {
+func TestManager_SetExceptedIssuer(t *testing.T) {
 	auth := &Manager{config: &Config{StandardClaimsConfig: &StandardClaimsConfig{}}}
 	issuer := "test-issuer"
 
-	result := auth.WithExceptedIssuer(issuer)
-
-	if result != auth {
-		t.Error("WithExceptedIssuer should return the same authenticator instance")
-	}
+	auth.SetExceptedIssuer(issuer)
 
 	if auth.config.ExceptedIssuer != strings.TrimSpace(issuer) {
 		t.Errorf("Expected issuer %s, got %s", issuer, auth.config.ExceptedIssuer)
 	}
 
 	// Test with spaces
-	auth.WithExceptedIssuer("  issuer-with-spaces  ")
+	auth.SetExceptedIssuer("  issuer-with-spaces  ")
 	if auth.config.ExceptedIssuer != "issuer-with-spaces" {
 		t.Errorf("Expected trimmed issuer, got %s", auth.config.ExceptedIssuer)
 	}
 }
 
-func TestManager_WithExceptedAudience(t *testing.T) {
+func TestManager_SetExceptedAudience(t *testing.T) {
 	auth := &Manager{config: &Config{StandardClaimsConfig: &StandardClaimsConfig{}}}
 	audience := "test-audience"
-
-	result := auth.WithExceptedAudience(audience)
-
-	if result != auth {
-		t.Error("WithExceptedAudience should return the same authenticator instance")
-	}
+	auth.SetExceptedAudience(audience)
 
 	if auth.config.ExceptedAudience != strings.TrimSpace(audience) {
 		t.Errorf("Expected audience %s, got %s", audience, auth.config.ExceptedAudience)
 	}
 }
 
-func TestManager_WithNotBeforeSeconds(t *testing.T) {
+func TestManager_SetNotBeforeSeconds(t *testing.T) {
 	auth := &Manager{config: &Config{StandardClaimsConfig: &StandardClaimsConfig{}}}
 
 	// Test positive value
 	seconds := int64(300)
-	result := auth.WithNotBeforeSeconds(seconds)
-
-	if result != auth {
-		t.Error("WithNotBeforeSeconds should return the same authenticator instance")
-	}
+	auth.SetNotBeforeSeconds(seconds)
 
 	if auth.config.NotBeforeSeconds != seconds {
 		t.Errorf("Expected NotBeforeSeconds=%d, got %d", seconds, auth.config.NotBeforeSeconds)
 	}
 
 	// Test zero value (should not update)
-	auth.WithNotBeforeSeconds(0)
+	auth.SetNotBeforeSeconds(0)
 	if auth.config.NotBeforeSeconds != seconds {
 		t.Errorf("NotBeforeSeconds should not change when setting zero value, expected %d, got %d", seconds, auth.config.NotBeforeSeconds)
 	}
 
 	// Test negative value (should not update)
-	auth.WithNotBeforeSeconds(-100)
+	auth.SetNotBeforeSeconds(-100)
 	if auth.config.NotBeforeSeconds != seconds {
 		t.Errorf("NotBeforeSeconds should not change when setting negative value, expected %d, got %d", seconds, auth.config.NotBeforeSeconds)
 	}
 }
 
-func TestManager_WithExpiresAfterSeconds(t *testing.T) {
+func TestManager_SetExpiresAfterSeconds(t *testing.T) {
 	auth := &Manager{config: &Config{StandardClaimsConfig: &StandardClaimsConfig{}}}
 
 	// Test positive value
 	seconds := int64(3600)
-	result := auth.WithExpiresAfterSeconds(seconds)
-
-	if result != auth {
-		t.Error("WithExpiresAfterSeconds should return the same authenticator instance")
-	}
+	auth.SetExpiresAfterSeconds(seconds)
 
 	if auth.config.ExpiresAfterSeconds != seconds {
 		t.Errorf("Expected ExpiresAfterSeconds=%d, got %d", seconds, auth.config.ExpiresAfterSeconds)
 	}
 
 	// Test zero value (should not update)
-	auth.WithExpiresAfterSeconds(0)
+	auth.SetExpiresAfterSeconds(0)
 	if auth.config.ExpiresAfterSeconds != seconds {
 		t.Errorf("ExpiresAfterSeconds should not change when setting zero value, expected %d, got %d", seconds, auth.config.ExpiresAfterSeconds)
 	}
 
 	// Test negative value (should not update)
-	auth.WithExpiresAfterSeconds(-100)
+	auth.SetExpiresAfterSeconds(-100)
 	if auth.config.ExpiresAfterSeconds != seconds {
 		t.Errorf("ExpiresAfterSeconds should not change when setting negative value, expected %d, got %d", seconds, auth.config.ExpiresAfterSeconds)
 	}
 }
 
-func TestManager_WithSkipPaths(t *testing.T) {
+func TestManager_SetSkipPaths(t *testing.T) {
 	auth := &Manager{
 		config: &Config{
 			SkipAbsolutePaths: make(map[string]struct{}),
@@ -160,11 +143,7 @@ func TestManager_WithSkipPaths(t *testing.T) {
 		"",   // empty path
 	}
 
-	result := auth.WithSkipPaths(paths...)
-
-	if result != auth {
-		t.Error("WithSkipPaths should return the same authenticator instance")
-	}
+	auth.SetSkipPaths(paths...)
 
 	// Check absolute paths
 	if _, exists := auth.config.SkipAbsolutePaths["/api/health"]; !exists {
@@ -229,7 +208,9 @@ func TestManager_Sync(t *testing.T) {
 		},
 	}
 
-	auth.SyncConfig(config)
+	if err := auth.SyncConfig(config); err != nil {
+		t.Error(err)
+	}
 
 	// Test path synchronization
 	if len(auth.config.SkipAbsolutePaths) != 2 {
@@ -267,7 +248,7 @@ func TestManager_Sync(t *testing.T) {
 	}
 }
 
-func TestManager_Sync_WithNilJWTConfig(t *testing.T) {
+func TestManager_Sync_SetNilJWTConfig(t *testing.T) {
 	auth := &Manager{
 		config: &Config{
 			StandardClaimsConfig: &StandardClaimsConfig{
@@ -282,7 +263,9 @@ func TestManager_Sync_WithNilJWTConfig(t *testing.T) {
 		// StandardClaimsConfig is nil
 	}
 
-	auth.SyncConfig(config)
+	if err := auth.SyncConfig(config); err != nil {
+		t.Error(err)
+	}
 
 	if auth.config.StandardClaimsConfig == nil {
 		t.Error("StandardClaimsConfig should not be nil after sync with nil config")

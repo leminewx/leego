@@ -30,13 +30,11 @@ type JSON map[string]any
 
 // Context 定义上下文的结构
 type Context struct {
-	url    *url.URL // URL 消息
-	engine *Engine  // 绑定引擎
-
-	// 原始请求何响应
 	Request  *http.Request   // 原始请求
 	Response response.Writer // 原始响应
 
+	url         *url.URL          // URL 消息
+	engine      *Engine           // 绑定引擎
 	clientIP    string            // 客户端 IP
 	sameSite    http.SameSite     // 允许服务器定义 cookie 属性，使浏览器无法将此cookie与跨站点请求一起发送
 	startTime   time.Time         // 创建时间
@@ -137,10 +135,35 @@ func (own *Context) GetJWTClaim(key string) (any, bool) {
 
 /****************************************************** Context *******************************************************/
 
-// SetContext 设置请求上下文
-func (own *Context) SetContext(ctx context.Context) {
-	if ctx != nil {
-		own.Request = own.Request.WithContext(ctx)
+// WithContext 返回一个携带指定上下文的请求
+func (own *Context) WithContext(ctx context.Context) *Context {
+	errorChain := make([]error, 0, len(own.errorChain))
+	for _, err := range own.errorChain {
+		errorChain = append(errorChain, err)
+	}
+
+	pathValues := make(map[string]string)
+	for key, value := range own.pathValues {
+		pathValues[key] = value
+	}
+
+	tokenValues := make(map[string]any)
+	for key, value := range own.tokenValues {
+		tokenValues[key] = value
+	}
+
+	request := own.Request.WithContext(ctx)
+	return &Context{
+		url:         request.URL,
+		engine:      own.engine,
+		Request:     request,
+		Response:    own.Response,
+		clientIP:    own.clientIP,
+		sameSite:    own.sameSite,
+		startTime:   own.startTime,
+		errorChain:  errorChain,
+		pathValues:  pathValues,
+		tokenValues: tokenValues,
 	}
 }
 

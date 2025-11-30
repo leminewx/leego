@@ -80,57 +80,49 @@ func (own *Manager) SetScope(scope string) {
 	own.lock.Unlock()
 }
 
-// WithValidateStandardClaims 设置是否验证标准声明
-func (own *Manager) WithValidateStandardClaims(validation bool) *Manager {
+// SetValidateStandardClaims 设置是否验证标准声明
+func (own *Manager) SetValidateStandardClaims(validation bool) {
 	if validation {
 		atomic.StoreInt32(&own.config.Validation, 1)
 	} else {
 		atomic.StoreInt32(&own.config.Validation, 0)
 	}
-
-	return own
 }
 
-// WithExceptedIssuer 设置期望的签发者
-func (own *Manager) WithExceptedIssuer(issuer string) *Manager {
+// SetExceptedIssuer 设置期望的签发者
+func (own *Manager) SetExceptedIssuer(issuer string) {
 	own.lock.Lock()
 	own.config.ExceptedIssuer = strings.TrimSpace(issuer)
 	own.lock.Unlock()
-	return own
 }
 
-// WithExceptedAudience 设置期望的接收者
-func (own *Manager) WithExceptedAudience(audience string) *Manager {
+// SetExceptedAudience 设置期望的接收者
+func (own *Manager) SetExceptedAudience(audience string) {
 	own.lock.Lock()
 	own.config.ExceptedAudience = strings.TrimSpace(audience)
 	own.lock.Unlock()
-	return own
 }
 
-// WithNotBeforeSeconds 设置令牌在多少秒之后开始生效（签发时间之后）
-func (own *Manager) WithNotBeforeSeconds(seconds int64) *Manager {
+// SetNotBeforeSeconds 设置令牌在多少秒之后开始生效（签发时间之后）
+func (own *Manager) SetNotBeforeSeconds(seconds int64) {
 	if seconds > 0 {
 		own.lock.Lock()
 		own.config.NotBeforeSeconds = seconds
 		own.lock.Unlock()
 	}
-
-	return own
 }
 
-// WithExpiresAfterSeconds 设置令牌在生效多少秒之后过期
-func (own *Manager) WithExpiresAfterSeconds(seconds int64) *Manager {
+// SetExpiresAfterSeconds 设置令牌在生效多少秒之后过期
+func (own *Manager) SetExpiresAfterSeconds(seconds int64) {
 	if seconds > 0 {
 		own.lock.Lock()
 		own.config.ExpiresAfterSeconds = seconds
 		own.lock.Unlock()
 	}
-
-	return own
 }
 
-// WithSkipPaths 设置跳过路径（白名单）
-func (own *Manager) WithSkipPaths(paths ...string) *Manager {
+// SetSkipPaths 设置跳过路径（白名单）
+func (own *Manager) SetSkipPaths(paths ...string) {
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
@@ -146,8 +138,6 @@ func (own *Manager) WithSkipPaths(paths ...string) *Manager {
 
 		own.config.SkipAbsolutePaths[path] = struct{}{}
 	}
-
-	return own
 }
 
 // GetID 获取ID

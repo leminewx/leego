@@ -91,7 +91,7 @@ func (own *handler) IsEnabled() bool {
 	return atomic.LoadInt32(&own.collector.Enabled) == 1
 }
 
-// GetMonitor 获取指标监控器
+// GetCollector 获取指标监控器
 func (own *handler) GetCollector() *collector.Collector {
 	return own.collector
 }

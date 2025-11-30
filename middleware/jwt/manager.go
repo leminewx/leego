@@ -29,7 +29,7 @@ type Manager struct {
 	lock             sync.RWMutex
 }
 
-var _ leego.Middleware = &Manager{}
+var _ leego.Middleware = (*Manager)(nil)
 
 /*
 NewDefaultManager 创建一个默认配置的 JWT 令牌管理器
@@ -62,19 +62,8 @@ func NewManager(config *Config, signer Signer, parser Parser) *Manager {
 	}
 }
 
-// WithErrorHandler 设置错误处理函数
-func (own *Manager) WithErrorHandler(handler func(ctx *leego.Context, err error)) *Manager {
-	if handler != nil {
-		own.lock.Lock()
-		own.errorHandler = handler
-		own.lock.Unlock()
-	}
-
-	return own
-}
-
-// WithExtractors 设置令牌提取器（当所有令牌提取器都无效时，默认使用 Bearer 令牌提取器）
-func (own *Manager) WithExtractors(extractors ...Extractor) *Manager {
+// SetExtractors 设置令牌提取器（当所有令牌提取器都无效时，默认使用 Bearer 令牌提取器）
+func (own *Manager) SetExtractors(extractors ...Extractor) *Manager {
 	own.lock.Lock()
 	for _, extractor := range extractors {
 		if extractor != nil {
@@ -84,6 +73,15 @@ func (own *Manager) WithExtractors(extractors ...Extractor) *Manager {
 	own.lock.Unlock()
 
 	return own
+}
+
+// SetErrorHandler 设置错误处理函数
+func (own *Manager) SetErrorHandler(handler func(ctx *leego.Context, err error)) {
+	if handler != nil {
+		own.lock.Lock()
+		own.errorHandler = handler
+		own.lock.Unlock()
+	}
 }
 
 // GenerateToken 生成 JWT 令牌
@@ -166,7 +164,7 @@ func (own *Manager) Handle(next leego.HandleFunc) leego.HandleFunc {
 		// 验证令牌
 		var token *Token
 		if atomic.LoadInt32(&own.config.Validation) > 0 { // 验证签名和标准声明
-			token, err = own.VerifyWithStandardClaims(tokenString)
+			token, err = own.VerifySetStandardClaims(tokenString)
 		} else { // 仅验证签名
 			token, err = own.Verify(tokenString)
 		}
@@ -245,8 +243,8 @@ func (own *Manager) Verify(tokenString string) (*Token, error) {
 	return own.parser.Parse(own.signer, tokenString)
 }
 
-// VerifyWithStandardClaims 验证签名并验证标准声明（签发时间允许1分钟时间偏差）
-func (own *Manager) VerifyWithStandardClaims(tokenString string) (*Token, error) {
+// VerifySetStandardClaims 验证签名并验证标准声明（签发时间允许1分钟时间偏差）
+func (own *Manager) VerifySetStandardClaims(tokenString string) (*Token, error) {
 	if len(tokenString) == 0 {
 		return nil, errTokenStringEmpty
 	}

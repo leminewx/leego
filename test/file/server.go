@@ -54,7 +54,7 @@ func main() {
 		for {
 			n, err := file.Read(buffer)
 			if n > 0 {
-				ctx.Response.Write(buffer[:n])
+				_, _ = ctx.Response.Write(buffer[:n])
 				ctx.Response.Flush()
 			}
 			if err == io.EOF {

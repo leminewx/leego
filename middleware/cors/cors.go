@@ -44,13 +44,14 @@ type CORS struct {
 	lock sync.RWMutex
 }
 
-var _ leego.Middleware = &CORS{}
+var _ leego.Middleware = (*CORS)(nil)
 
 // NewDefaultCORS 创建一个带默认配置的 CORS 中间件（允许所有源、所有请求头和常用方法）
 func NewDefaultCORS() *CORS {
-	return NewCORS(NewDefaultConfig()).
-		WithAllowOrigins().
-		WithAllowMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+	c := NewCORS(NewDefaultConfig())
+	c.SetAllowOrigins()
+	c.SetAllowMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+	return c
 }
 
 // NewCORS 新建一个 CORS 中间件
