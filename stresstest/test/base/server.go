@@ -15,11 +15,6 @@ func main() {
 		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 	}, "验证基本接口", "v1", "JSON")
 
-	engine.GET("/middlewares", func(ctx *leego.Context) {
-		configs := engine.GetAllMiddlewareConfigs()
-		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok", "data": configs})
-	}, "中间件查询接口", "v1", "中间件")
-
 	engine.GET("/metadata", func(ctx *leego.Context) {
 		collectors := engine.GetAllHandlerCollectors()
 		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok", "data": collectors})

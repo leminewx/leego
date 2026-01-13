@@ -43,19 +43,13 @@ func main() {
 	})
 
 	// 注册中间件
-	engine.UseMiddlewareFuncs(
-		// middleware.LogWithConfig(&middleware.LoggerConfig{
-		// 	WithColor: true,
-		// 	WithQuery: true,
-		// }),
-		middleware.Recover(),
-	)
 	engine.UseMiddlewares(
+		middleware.Recover(),
 		// middlewareLimiter,
-		middlewareCORS,
-		middlewareAuth,
+		middlewareCORS.GetMiddleware(),
 	)
-	engine.UseMiddlewareFuncs(
+
+	engine.UseMiddlewares(
 		func(next leego.HandleFunc) leego.HandleFunc {
 			fmt.Println("Init middleware 1")
 			return func(ctx *leego.Context) {
@@ -68,7 +62,7 @@ func main() {
 	// 路由组1 - 基本功能
 	{
 		group1 := engine.Group("/v1")
-		group1.UseMiddlewareFuncs(
+		group1.UseMiddlewares(
 			func(next leego.HandleFunc) leego.HandleFunc {
 				fmt.Println("Init middleware 2")
 				return func(ctx *leego.Context) {
@@ -92,11 +86,6 @@ func main() {
 			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 		}, "验证基本接口", "v1", "JSON")
 
-		group1.GET("/middlewares", func(ctx *leego.Context) {
-			configs := engine.GetAllMiddlewareConfigs()
-			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok", "data": configs})
-		}, "中间件查询接口", "v1", "中间件")
-
 		group1.GET("/metadata", func(ctx *leego.Context) {
 			collectors := engine.GetAllHandlerCollectors()
 			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok", "data": collectors})
@@ -113,7 +102,7 @@ func main() {
 	// 路由组2
 	{
 		group2 := engine.Group("/v2")
-		group2.UseMiddlewareFuncs(
+		group2.UseMiddlewares(
 			func(handle leego.HandleFunc) leego.HandleFunc {
 				return func(ctx *leego.Context) {
 					fmt.Println("/v2 1 start")
@@ -139,7 +128,7 @@ func main() {
 	// 路由组3
 	{
 		group3 := engine.Group("/login")
-		group3.UseMiddlewareFuncs(
+		group3.UseMiddlewares(
 			func(handle leego.HandleFunc) leego.HandleFunc {
 				return func(ctx *leego.Context) {
 					fmt.Println("/v2/login 1 start")

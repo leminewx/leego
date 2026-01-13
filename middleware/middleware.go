@@ -27,28 +27,6 @@ func WarpFromHTTPHandlerFunc(handle http.HandlerFunc) leego.MiddlewareFunc {
 	}
 }
 
-// UnwarpFromMiddlewareToHTTPHandler 将 leego.Middleware 解包为 http.Handler
-func UnwarpFromMiddlewareToHTTPHandler(handler leego.Middleware) http.Handler {
-	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-		next := handler.Handle(func(ctx *leego.Context) {})
-		next(&leego.Context{
-			Response: response.NewWriter(resp),
-			Request:  req,
-		})
-	})
-}
-
-// UnwarpFromMiddlewareToHTTPHandlerFunc 将 leego.MiddlewareFunc 解包为 http.HandlerFunc
-func UnwarpFromMiddlewareToHTTPHandlerFunc(handler leego.Middleware) http.HandlerFunc {
-	return func(resp http.ResponseWriter, req *http.Request) {
-		next := handler.Handle(func(ctx *leego.Context) {})
-		next(&leego.Context{
-			Response: response.NewWriter(resp),
-			Request:  req,
-		})
-	}
-}
-
 // UnwarpFromMiddlewareFuncToHTTPHandler 将 leego.MiddlewareFunc 解包为 http.Handler
 func UnwarpFromMiddlewareFuncToHTTPHandler(handle leego.MiddlewareFunc) http.Handler {
 	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {

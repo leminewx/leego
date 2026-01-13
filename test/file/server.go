@@ -12,7 +12,7 @@ import (
 
 func main() {
 	engine := leego.NewEngine()
-	engine.UseMiddlewareFuncs(
+	engine.UseMiddlewares(
 		middleware.Log(),
 		middleware.Recover(),
 	)

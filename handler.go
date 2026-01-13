@@ -15,24 +15,6 @@ type (
 	// MiddlewareFunc 定义中间件函数的类型
 	MiddlewareFunc func(next HandleFunc) HandleFunc
 
-	// Middleware 定义中间件的接口类型
-	Middleware interface {
-		// Handle 处理函数
-		Handle(next HandleFunc) HandleFunc
-		// Enable 启用中间件
-		Enable()
-		// Disable 禁用中间件
-		Disable()
-		// SetScope 设置中间件的作用域
-		SetScope(scope string)
-		// SyncConfig 同步中间件的配置
-		SyncConfig(config any) error
-		// GetConfig 获取中间件的配置
-		GetConfig() any
-		// GetID 获取中间件ID
-		GetID() string
-	}
-
 	// Handler 定义处理器的接口类型
 	Handler interface {
 		// ServeHTTP 处理 HTTP 请求

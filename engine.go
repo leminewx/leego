@@ -32,12 +32,10 @@ type Engine struct {
 	// UseH2C 是否使用 HTTP2
 	UseH2C bool
 
-	router          Router                // 路由器
-	server          *http.Server          // 服务器
-	handlers        map[string]Handler    // 处理器
-	middlewares     map[string]Middleware // 中间件
-	middlewareSlice []Middleware          // 中间件列表
-	printBuilder    *strings.Builder
+	router       Router             // 路由器
+	server       *http.Server       // 服务器
+	handlers     map[string]Handler // 处理器
+	printBuilder *strings.Builder
 }
 
 // NewEngine 新建一个引擎
@@ -47,7 +45,6 @@ func NewEngine() *Engine {
 	engine := &Engine{
 		MaxMultipartMemory: 32 << 20, // 默认 32 MB
 		handlers:           make(map[string]Handler),
-		middlewares:        make(map[string]Middleware),
 		printBuilder:       &strings.Builder{},
 	}
 
@@ -59,22 +56,6 @@ func NewEngine() *Engine {
 	engine.router = newRouter(engine)
 	engine.printBuilder.WriteString("Creating routes:\n")
 	return engine
-}
-
-// GetMiddleware 获取指定的中间件
-func (own *Engine) GetMiddleware(id string) (Middleware, bool) {
-	m, ok := own.middlewares[id]
-	return m, ok
-}
-
-// GetAllMiddlewareConfigs 获取所有中间件
-func (own *Engine) GetAllMiddlewareConfigs() []any {
-	configs := make([]any, 0, len(own.middlewares))
-	for _, m := range own.middlewares {
-		configs = append(configs, m.GetConfig())
-	}
-
-	return configs
 }
 
 // GetHandler 获取指定的处理器
@@ -170,12 +151,6 @@ func (own *Engine) RunListener(listener net.Listener) (err error) {
 
 // initBeforeRun 初始化引擎
 func (own *Engine) initBeforeRun() {
-	// 获取所有中间件
-	own.middlewareSlice = make([]Middleware, 0, len(own.middlewares))
-	for _, middleware := range own.middlewares {
-		own.middlewareSlice = append(own.middlewareSlice, middleware)
-	}
-
 	// 打印路由信息
 	own.printBuilder.WriteByte('\n')
 	logging.INFO(own.printBuilder.String())

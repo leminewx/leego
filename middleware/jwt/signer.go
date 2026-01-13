@@ -3,6 +3,8 @@ package jwt
 import (
 	"crypto"
 	"crypto/hmac"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"sync"
@@ -11,7 +13,7 @@ import (
 // Signer 定义签名器的接口类型
 type Signer interface {
 	// Sign 签名
-	Sign(token *Token) ([]byte, error)
+	Sign(claims Claims) ([]byte, error)
 	// Verify 验证
 	Verify(src, dst []byte) bool
 	// GetAlgorithm 获取签名算法
@@ -44,38 +46,34 @@ func NewHMACSigner(header Header, key []byte) (Signer, error) {
 		return nil, fmt.Errorf("leego: jwt: unsupported algorithm: %s", header.Algorithm)
 	}
 
-	var err error
-	signer.headerEncodedString, err = header.Encode()
+	// 先序列化，在进行 Base64 编码
+	headerBytes, err := json.Marshal(&header)
+	if err != nil {
+		return nil, fmt.Errorf("leego: jwt: failed to marshal header: %v", err)
+	}
 
+	signer.headerEncodedString = base64.RawURLEncoding.EncodeToString(headerBytes)
 	return signer, err
 }
 
-// GetAlgorithm 获取算法类型
-func (own *hmacSigner) GetAlgorithm() Algorithm {
-	return own.header.Algorithm
-}
-
-// GetHeaderEncodedString 获取 Header 的编码字符串
-func (own *hmacSigner) GetHeaderEncodedString() string {
-	return own.headerEncodedString
-}
-
 // Sign 对数据进行签名
-func (own *hmacSigner) Sign(token *Token) ([]byte, error) {
-	if token == nil {
-		return nil, errTokenNil
+func (own *hmacSigner) Sign(claims Claims) ([]byte, error) {
+	if claims == nil {
+		return nil, fmt.Errorf("leego: jwt: claims is nil")
 	}
 
-	// 同步声明
-	token.syncClaims()
-	// 编码声明
-	encodedClaims, err := token.encodeClaims()
+	// 序列化
+	claimsBytes, err := json.Marshal(claims)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("leego: jwt: failed to marshal claims: %v", err)
 	}
+
+	// Base64 编码
+	claimsBase64String := base64.RawURLEncoding.EncodeToString(claimsBytes)
 
 	// 拼接前缀
-	signingInput := own.headerEncodedString + "." + encodedClaims
+	signingInput := own.headerEncodedString + "." + claimsBase64String
+
 	// 生成签名
 	signature, err := own.sign([]byte(signingInput))
 	if err != nil {
@@ -83,7 +81,7 @@ func (own *hmacSigner) Sign(token *Token) ([]byte, error) {
 	}
 
 	// 编码签名，并返回完整的 JWT 字符串
-	return []byte(signingInput + "." + EncodeBase64(signature)), nil
+	return []byte(signingInput + "." + base64.RawURLEncoding.EncodeToString(signature)), nil
 
 }
 
@@ -91,6 +89,8 @@ func (own *hmacSigner) Sign(token *Token) ([]byte, error) {
 func (own *hmacSigner) sign(data []byte) ([]byte, error) {
 	hasher := own.pool.Get().(hash.Hash)
 	if _, err := hasher.Write(data); err != nil {
+		hasher.Reset()
+		own.pool.Put(hasher)
 		return nil, fmt.Errorf("leego: jwt: failed to sign token: %w", err)
 	}
 
@@ -108,4 +108,14 @@ func (own *hmacSigner) Verify(src, dst []byte) bool {
 	}
 
 	return false
+}
+
+// GetAlgorithm 获取算法类型
+func (own *hmacSigner) GetAlgorithm() Algorithm {
+	return own.header.Algorithm
+}
+
+// GetHeaderEncodedString 获取 Header 的编码字符串
+func (own *hmacSigner) GetHeaderEncodedString() string {
+	return own.headerEncodedString
 }

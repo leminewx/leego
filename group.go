@@ -17,10 +17,8 @@ type (
 	Group interface {
 		// Group 路由分组
 		Group(prefix string) Group
-		// UseMiddlewares 使用路由中间件
-		UseMiddlewares(middlewares ...Middleware)
-		// UseMiddlewareFuncs 使用路由中间件函数
-		UseMiddlewareFuncs(fns ...MiddlewareFunc)
+		// UseMiddlewares 使用路由中间件函数
+		UseMiddlewares(middlewares ...MiddlewareFunc)
 
 		// GET 处理 GET 请求
 		GET(pattern string, handle HandleFunc, tags ...string)
@@ -63,24 +61,11 @@ func (own *group) Group(prefix string) Group {
 	}
 }
 
-// UseMiddlewares 使用路由组中间件
-func (own *group) UseMiddlewares(middlewares ...Middleware) {
-	for _, middleware := range middlewares {
-		if middleware == nil {
-			continue
-		}
-
-		middleware.SetScope(own.prefix)
-		own.middlewares = append(own.middlewares, middleware.Handle)
-		own.engine.middlewares[middleware.GetID()] = middleware
-	}
-}
-
 // UseMiddlewareFuncs 使用路由组中间件处理函数
-func (own *group) UseMiddlewareFuncs(fns ...MiddlewareFunc) {
-	for _, fn := range fns {
-		if fn != nil {
-			own.middlewares = append(own.middlewares, fn)
+func (own *group) UseMiddlewares(middlewares ...MiddlewareFunc) {
+	for _, middleware := range middlewares {
+		if middleware != nil {
+			own.middlewares = append(own.middlewares, middleware)
 		}
 	}
 

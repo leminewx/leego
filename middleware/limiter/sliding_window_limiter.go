@@ -12,15 +12,15 @@ import (
 
 // SlidingWindowLimiter 定义滑动窗口限流器的数据结构
 type SlidingWindowLimiter struct {
+	limit      int
+	isEnabled  int32
 	index      int           // 当前桶索引
 	buckets    []int         // 时间桶数组
-	config     *Config       // 配置信息
 	lastSlide  time.Time     // 上次滑动时间
+	windowSize time.Duration // 窗口大小
 	bucketSize time.Duration // 每个桶的时间间隔
 	lock       sync.RWMutex
 }
-
-var _ leego.Middleware = &SlidingWindowLimiter{}
 
 /*
 NewDefaultSlidingWindowLimiter 新建一个默认的滑动窗口限流器
@@ -38,42 +38,29 @@ func NewSlidingWindowLimiterWithBucketsAndWindowSize(limit int, bucketCount int,
 		bucketCount = 10
 	}
 
-	config := newConfig(limit)
-	config.WindowSize = windowSize
-
 	return &SlidingWindowLimiter{
 		buckets:    make([]int, bucketCount),
-		config:     config,
+		limit:      limit,
 		lastSlide:  time.Now(),
+		windowSize: windowSize,
 		bucketSize: windowSize / time.Duration(bucketCount),
 	}
 }
 
 // Enable 启用中间件
 func (own *SlidingWindowLimiter) Enable() {
-	atomic.StoreInt32(&own.config.IsEnabled, 1)
+	atomic.StoreInt32(&own.isEnabled, 1)
 }
 
 // Disable 禁用中间件
 func (own *SlidingWindowLimiter) Disable() {
-	atomic.StoreInt32(&own.config.IsEnabled, 0)
-}
-
-// SetScope 设置作用域
-func (own *SlidingWindowLimiter) SetScope(scope string) {
-	if scope == "" {
-		scope = "/"
-	}
-
-	own.lock.Lock()
-	own.config.Scope = scope
-	own.lock.Unlock()
+	atomic.StoreInt32(&own.isEnabled, 0)
 }
 
 // SetLimit 设置限流阈值
 func (own *SlidingWindowLimiter) SetLimit(limit int) {
 	own.lock.Lock()
-	own.config.Limit = limit
+	own.limit = limit
 	own.lock.Unlock()
 }
 
@@ -86,12 +73,12 @@ func (own *SlidingWindowLimiter) SetWindowSize(size time.Duration) {
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
-	if own.config.WindowSize == size {
+	if own.windowSize == size {
 		return
 	}
 
 	// 如果窗口大小改变，需要重置所有桶
-	own.config.WindowSize = size
+	own.windowSize = size
 	own.bucketSize = size / time.Duration(len(own.buckets))
 
 	// 重置窗口状态
@@ -103,47 +90,25 @@ func (own *SlidingWindowLimiter) SetWindowSize(size time.Duration) {
 	own.lastSlide = time.Now()
 }
 
-// GetID 获取ID
-func (own *SlidingWindowLimiter) GetID() string {
-	return own.config.Id
-}
+// GetMiddleware 获取中间件函数
+func (own *SlidingWindowLimiter) GetMiddleware() leego.MiddlewareFunc {
+	return func(next leego.HandleFunc) leego.HandleFunc {
+		return func(ctx *leego.Context) {
+			// 未启用，直接跳过
+			if atomic.LoadInt32(&own.isEnabled) == 0 {
+				next(ctx)
+				return
+			}
 
-// GetConfig 获取配置信息（线程安全）
-func (own *SlidingWindowLimiter) GetConfig() any {
-	own.lock.RLock()
-	config := own.config.Clone()
-	for _, count := range own.buckets {
-		config.Requests += count
-	}
-	own.lock.RUnlock()
-	return config
-}
+			// 请求过多，触发限流
+			if !own.Allow() {
+				ctx.ResponseError(http.StatusTooManyRequests, response.GetStatusLowerText(http.StatusTooManyRequests))
+				return
+			}
 
-// SyncConfig 同步配置
-func (own *SlidingWindowLimiter) SyncConfig(config any) error {
-	own.lock.Lock()
-	err := own.config.Sync(config)
-	own.lock.Unlock()
-	return err
-}
-
-// Handle 中间件处理函数
-func (own *SlidingWindowLimiter) Handle(next leego.HandleFunc) leego.HandleFunc {
-	return func(ctx *leego.Context) {
-		// 未启用，直接跳过
-		if atomic.LoadInt32(&own.config.IsEnabled) == 0 {
+			// 调用下一个处理器
 			next(ctx)
-			return
 		}
-
-		// 请求过多，触发限流
-		if !own.Allow() {
-			ctx.ResponseError(http.StatusTooManyRequests, response.GetStatusLowerText(http.StatusTooManyRequests))
-			return
-		}
-
-		// 调用下一个处理器
-		next(ctx)
 	}
 }
 
@@ -175,7 +140,7 @@ func (own *SlidingWindowLimiter) Allow() bool {
 	}
 
 	// 检查是否超过限流阈值
-	if total >= own.config.Limit {
+	if total >= own.limit {
 		return false
 	}
 

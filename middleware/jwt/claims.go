@@ -1,23 +1,25 @@
 package jwt
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 )
 
 var (
-	errTokenNil          = errors.New("leego: jwt: token is nil")
-	errTokenExpired      = errors.New("leego: jwt: token is expired")
-	errTokenNotValidYet  = errors.New("leego: jwt: token is not valid yet")
-	errTokenIssuedFuture = errors.New("leego: jwt: token issued in the future")
+	ErrTokenNil             = errors.New("leego: jwt: token is nil")
+	ErrTokenExpired         = errors.New("leego: jwt: token is expired")
+	ErrTokenNotValidYet     = errors.New("leego: jwt: token is not valid yet")
+	ErrTokenIssuedFuture    = errors.New("leego: jwt: token issued in the future")
+	ErrTokenIssuerInvalid   = errors.New("leego: jwt: token issuer is invalid")
+	ErrTokenAudienceInvalid = errors.New("leego: jwt: token audience is invalid")
 )
 
 // Claims 定义验证 JWT 令牌的接口类型
 type Claims interface {
+	// Validate 校验令牌
 	Validate() error
+	// ValidateWithIssuerAndAudiences 校验令牌（包含颁发者和受众）
+	ValidateWithIssuerAndAudiences(issuer, audience string) error
 }
 
 var _ Claims = &StandardClaims{}
@@ -151,44 +153,50 @@ type StandardClaims struct {
 	ExpiresAt int64 `json:"exp,omitempty"`
 }
 
-func (own *StandardClaims) Encode() (string, error) {
-	bytes, err := json.Marshal(own)
-	if err != nil {
-		return "", fmt.Errorf("leego: jwt: failed to marshal standard claims: %v", err)
-	}
-
-	return EncodeBase64(bytes), nil
-}
-
 // Validate 验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）
 func (own *StandardClaims) Validate() error {
 	now := time.Now().Unix()
 
 	// 检查过期时间
 	if own.ExpiresAt > 0 && own.ExpiresAt <= now {
-		return errTokenExpired
+		return ErrTokenExpired
 	}
 
 	// 检查生效时间
 	if own.NotBefore > 0 && own.NotBefore > now {
-		return errTokenNotValidYet
+		return ErrTokenNotValidYet
 	}
 
 	// 检查签发时间（如果签发时间在未来，视为无效）
 	// 允许1分钟时钟偏差
 	if own.IssuedAt > 0 && own.IssuedAt > now+60 {
-		return errTokenIssuedFuture
+		return ErrTokenIssuedFuture
 	}
 
 	return nil
 }
 
-// EncodeBase64 对数据进行 Base64 URL 编码
-func EncodeBase64(data []byte) string {
-	return base64.RawURLEncoding.EncodeToString(data)
-}
+func (own *StandardClaims) ValidateWithIssuerAndAudiences(issuer, audience string) error {
+	// 校验令牌
+	if err := own.Validate(); err != nil {
+		return err
+	}
 
-// DecodeBase64 解码 Base64 URL 编码的数据
-func DecodeBase64(s string) ([]byte, error) {
-	return base64.RawURLEncoding.DecodeString(s)
+	// 校验颁发者
+	if issuer != "" && own.Issuer != issuer {
+		return ErrTokenIssuerInvalid
+	}
+
+	// 校验受众
+	if audience == "" {
+		return nil
+	}
+
+	for _, aud := range own.Audiences {
+		if audience == aud {
+			return nil
+		}
+	}
+
+	return ErrTokenAudienceInvalid
 }

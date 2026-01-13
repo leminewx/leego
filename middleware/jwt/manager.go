@@ -85,7 +85,7 @@ func (own *Manager) SetErrorHandler(handler func(ctx *leego.Context, err error))
 }
 
 // GenerateToken 生成 JWT 令牌
-func (own *Manager) GenerateToken(claims *StandardClaims) *Token {
+func (own *Manager) GenerateToken(claims Claims) (string, error) {
 	own.lock.RLock()
 	defer own.lock.RUnlock()
 
@@ -121,7 +121,7 @@ func (own *Manager) GenerateToken(claims *StandardClaims) *Token {
 }
 
 // GenerateTokenString 生成 JWT 令牌字符串
-func (own *Manager) GenerateTokenString(claims *StandardClaims) (string, error) {
+func (own *Manager) GenerateToken(claims *StandardClaims) (string, error) {
 	tokenBytes, err := own.Sign(own.GenerateToken(claims))
 	if err != nil {
 		return "", err

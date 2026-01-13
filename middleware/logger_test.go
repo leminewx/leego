@@ -9,10 +9,10 @@ import (
 
 func TestLogger(t *testing.T) {
 	engine := leego.NewEngine()
-	engine.UseMiddlewareFuncs(Log())
+	engine.UseMiddlewares(Log())
 
 	group := engine.Group("/v1")
-	group.UseMiddlewareFuncs(func(next leego.HandleFunc) leego.HandleFunc {
+	group.UseMiddlewares(func(next leego.HandleFunc) leego.HandleFunc {
 		fmt.Println("init middleware 1")
 		return func(ctx *leego.Context) {
 			fmt.Println("get in group v1")

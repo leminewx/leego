@@ -11,15 +11,17 @@ import (
 
 // CORS 定义跨域处理器的数据结构
 type CORS struct {
-	config *Config
+	// 是否启用
+	isEnabled int32
 
 	// 表示可以缓存 Access-Control-Allow-Methods 和 Access-Control-Allow-Headers 提供的信息多长时间，单位秒，一般为24小时（86400）
 	maxAgeString string
+	maxAge       int64
 
 	// 允许访问的源
-	allowCredentials bool                // 是否需要指定源，设置为 true 时，Access-Control-Allow-Origin 不能设置为 *
-	allowAllOrigins  bool                // 是否允许所有源
-	allowOrigins     map[string]struct{} // 具体允许的源列表
+	allowCredentials bool // 是否需要指定源，设置为 true 时，Access-Control-Allow-Origin 不能设置为 *
+	allowAllOrigins  bool // 是否允许所有源
+	allowOrigins     map[string]struct{}
 
 	// 允许访问的方法
 	allowMethods      map[string]struct{}
@@ -44,46 +46,35 @@ type CORS struct {
 	lock sync.RWMutex
 }
 
-var _ leego.Middleware = (*CORS)(nil)
-
 // NewDefaultCORS 创建一个带默认配置的 CORS 中间件（允许所有源、所有请求头和常用方法）
 func NewDefaultCORS() *CORS {
-	c := NewCORS(NewDefaultConfig())
+	c := &CORS{}
 	c.SetAllowOrigins()
-	c.SetAllowMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+	c.SetAllowMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
 	return c
 }
 
-// NewCORS 新建一个 CORS 中间件
-func NewCORS(config *Config) *CORS {
-	cors := &CORS{
-		config: config,
-	}
+// GetMiddleware 获取中间件函数
+func (own *CORS) GetMiddleware() leego.MiddlewareFunc {
+	return func(next leego.HandleFunc) leego.HandleFunc {
+		return func(ctx *leego.Context) {
+			// 未启用，直接跳过
+			if atomic.LoadInt32(&own.isEnabled) == 0 {
+				next(ctx)
+				return
+			}
 
-	_ = cors.SyncConfig(config) // 直接同步
-	return cors
+			// 处理预检请求
+			if own.handlePreflight(ctx) {
+				return
+			}
 
-}
+			// 处理普通请求
+			own.writeResponseHeader(ctx)
 
-// Handle 创建一个处理函数
-func (own *CORS) Handle(next leego.HandleFunc) leego.HandleFunc {
-	return func(ctx *leego.Context) {
-		// 未启用，直接跳过
-		if atomic.LoadInt32(&own.config.IsEnabled) == 0 {
+			// 调用下一个处理器
 			next(ctx)
-			return
 		}
-
-		// 处理预检请求
-		if own.handlePreflight(ctx) {
-			return
-		}
-
-		// 处理普通请求
-		own.writeResponseHeader(ctx)
-
-		// 调用下一个处理器
-		next(ctx)
 	}
 }
 
@@ -107,7 +98,7 @@ func (own *CORS) handlePreflight(ctx *leego.Context) bool {
 	return true
 }
 
-const _DEFAULT_ALLOW_METHODS = "GET, PUT, POST, DELETE, OPTIONS, PATCH"
+const _DEFAULT_ALLOW_METHODS = "GET, PUT, POST, DELETE, OPTIONS"
 
 // writeResponseHeader 写入响应头
 func (own *CORS) writeResponseHeader(ctx *leego.Context) {
@@ -145,7 +136,7 @@ func (own *CORS) writeResponseHeader(ctx *leego.Context) {
 	}
 
 	// 设置 Access-Control-Max-Age
-	if own.config.MaxAge > 0 {
+	if own.maxAge > 0 {
 		header.Set(headers.ACCESS_CONTROL_MAX_AGE, own.maxAgeString)
 	}
 

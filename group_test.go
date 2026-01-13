@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-func TestGroup_UseMiddlewareFuncs(t *testing.T) {
+func TestGroup_UseMiddlewares(t *testing.T) {
 	group := mockGroup(NewEngine(), nil, "/")
-	group.UseMiddlewareFuncs(func(next HandleFunc) HandleFunc {
+	group.UseMiddlewares(func(next HandleFunc) HandleFunc {
 		t.Log("init middleware 1")
 		return func(ctx *Context) {
 			next(ctx)
@@ -19,7 +19,7 @@ func TestGroup_UseMiddlewareFuncs(t *testing.T) {
 		}
 	})
 
-	group.UseMiddlewareFuncs(func(next HandleFunc) HandleFunc {
+	group.UseMiddlewares(func(next HandleFunc) HandleFunc {
 		t.Log("init middleware 3")
 		return func(ctx *Context) {
 			next(ctx)

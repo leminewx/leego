@@ -22,14 +22,10 @@ func main() {
 	engine := leego.NewEngine()
 
 	// 中间件
-	engine.UseMiddlewareFuncs(
+	engine.UseMiddlewares(
 		middleware.Log(),
 		middleware.Recover(),
-	)
-	engine.UseMiddlewares(
-		cors.NewDefaultCORS(),
-	)
-	engine.UseMiddlewareFuncs(
+		cors.NewDefaultCORS().GetMiddleware(),
 		func(next leego.HandleFunc) leego.HandleFunc {
 			return func(ctx *leego.Context) {
 				ctx.Response.Header().Set(headers.X_REQUEST_ID, ggid.New().String())
