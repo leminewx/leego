@@ -57,6 +57,11 @@ func (own *SlidingWindowLimiter) Disable() {
 	atomic.StoreInt32(&own.isEnabled, 0)
 }
 
+// IsEnabled 检查是否启用
+func (own *SlidingWindowLimiter) IsEnabled() bool {
+	return atomic.LoadInt32(&own.isEnabled) == 1
+}
+
 // SetLimit 设置限流阈值
 func (own *SlidingWindowLimiter) SetLimit(limit int) {
 	own.lock.Lock()
@@ -88,6 +93,15 @@ func (own *SlidingWindowLimiter) SetWindowSize(size time.Duration) {
 
 	own.index = 0
 	own.lastSlide = time.Now()
+}
+
+// GetConfig 获取配置
+func (own *SlidingWindowLimiter) GetConfig() (limit int, windowSize time.Duration) {
+	own.lock.RLock()
+	limit = own.limit
+	windowSize = own.windowSize
+	own.lock.RUnlock()
+	return
 }
 
 // GetMiddleware 获取中间件函数

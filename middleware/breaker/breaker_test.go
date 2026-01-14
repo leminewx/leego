@@ -57,7 +57,7 @@ func TestCircuitBreaker(t *testing.T) {
 }
 
 // cpu: QEMU Virtual CPU version 2.5+		80    	33131412	        36.19 ns/op	       0 B/op	       0 allocs/op
-func BenchmarkCircuitBreaker(b *testing.B) {
+func BenchmarkCircuitBreaker_Open(b *testing.B) {
 	// 创建熔断器：失败3次后熔断，5秒后尝试恢复，需要2次成功才能完全恢复
 	breaker := NewCircuitBreaker(3, 2, 5*time.Second)
 
@@ -74,5 +74,26 @@ func BenchmarkCircuitBreaker(b *testing.B) {
 
 	for range b.N {
 		_ = breaker.Execute(serviceCall(false))
+	}
+}
+
+// cpu: QEMU Virtual CPU version 2.5+		80    	33131412	        36.19 ns/op	       0 B/op	       0 allocs/op
+func BenchmarkCircuitBreaker_Closed(b *testing.B) {
+	// 创建熔断器：失败3次后熔断，5秒后尝试恢复，需要2次成功才能完全恢复
+	breaker := NewCircuitBreaker(3, 2, 5*time.Second)
+
+	// 模拟服务调用
+	serviceCall := func(fail bool) func() error {
+		return func() error {
+			if fail {
+				return errors.New("服务调用失败")
+			}
+
+			return nil
+		}
+	}
+
+	for range b.N {
+		_ = breaker.Execute(serviceCall(true))
 	}
 }

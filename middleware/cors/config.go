@@ -6,6 +6,50 @@ import (
 	"sync/atomic"
 )
 
+// Config 定义 CORS 配置信息的结构类型
+type Config struct {
+	IsEnabled        bool     `json:"is_enabled"`        // 是否启用
+	AllowCredentials bool     `json:"allow_credentials"` // 是否允许使用凭证
+	MaxAgeSeconds    int64    `json:"max_age_seconds"`   // 前端缓存信息最大时间
+	AllowOrigins     []string `josn:"allow_origins"`     // 允许的源
+	AllowMethods     []string `json:"allow_methods"`     // 允许的请求方法
+	AllowHeaders     []string `json:"allow_headers"`     // 允许的请求头字段
+	ExposeHeaders    []string `josn:"expose_headers"`    // 响应的额外响应头字段
+}
+
+// GetConfig 获取配置信息
+func (own *CORS) GetConfig() Config {
+	config := Config{
+		IsEnabled:    own.IsEnabled(),
+		AllowOrigins: make([]string, 0),
+		AllowMethods: make([]string, 0),
+		AllowHeaders: make([]string, 0),
+	}
+
+	own.lock.RLock()
+	config.AllowCredentials = own.allowCredentials
+	config.MaxAgeSeconds = own.maxAge
+
+	for origin := range own.allowOrigins {
+		config.AllowOrigins = append(config.AllowOrigins, origin)
+	}
+
+	for method := range own.allowMethods {
+		config.AllowMethods = append(config.AllowMethods, method)
+	}
+
+	for header := range own.allowHeaders {
+		config.AllowHeaders = append(config.AllowHeaders, header)
+	}
+
+	for header := range own.exposeHeaders {
+		config.ExposeHeaders = append(config.ExposeHeaders, header)
+	}
+	own.lock.RUnlock()
+
+	return config
+}
+
 // Enable 启用
 func (own *CORS) Enable() {
 	atomic.StoreInt32(&own.isEnabled, 1)
@@ -14,7 +58,11 @@ func (own *CORS) Enable() {
 // Disable 禁用
 func (own *CORS) Disable() {
 	atomic.StoreInt32(&own.isEnabled, 0)
+}
 
+// IsEnabled 检查是否启用
+func (own *CORS) IsEnabled() bool {
+	return atomic.LoadInt32(&own.isEnabled) == 1
 }
 
 // SetMaxAge 设置前端缓存信息的最大时间（单位：秒）

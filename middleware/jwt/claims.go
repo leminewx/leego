@@ -6,12 +6,28 @@ import (
 )
 
 var (
-	ErrTokenNil             = errors.New("leego: jwt: token is nil")
-	ErrTokenExpired         = errors.New("leego: jwt: token is expired")
-	ErrTokenNotValidYet     = errors.New("leego: jwt: token is not valid yet")
-	ErrTokenIssuedFuture    = errors.New("leego: jwt: token issued in the future")
-	ErrTokenIssuerInvalid   = errors.New("leego: jwt: token issuer is invalid")
-	ErrTokenAudienceInvalid = errors.New("leego: jwt: token audience is invalid")
+	// 令牌错误
+	ErrInvalidToken      = errors.New("jwt: invalid token")
+	ErrMalformedToken    = errors.New("jwt: malformed token")
+	ErrUnsupportedMethod = errors.New("jwt: unsupported signing method")
+
+	// 签名错误
+	ErrInvalidSignature = errors.New("jwt: invalid signature")
+	ErrMissingSignature = errors.New("jwt: missing signature")
+
+	// 声明错误
+	ErrInvalidIssuer   = errors.New("jwt: invalid issuer")
+	ErrInvalidClaims   = errors.New("jwt: invalid claims")
+	ErrInvalidAudience = errors.New("jwt: invalid audience")
+	ErrExpiredToken    = errors.New("jwt: token has expired")
+	ErrNotValidYet     = errors.New("jwt: token not valid yet")
+
+	// 算法错误
+	ErrInvalidAlgorithm  = errors.New("jwt: invalid algorithm")
+	ErrAlgorithmMismatch = errors.New("jwt: algorithm mismatch")
+
+	// 校验错误
+	ErrValidationFailed = errors.New("jwt: validation failed")
 )
 
 // Claims 定义验证 JWT 令牌的接口类型
@@ -159,23 +175,24 @@ func (own *StandardClaims) Validate() error {
 
 	// 检查过期时间
 	if own.ExpiresAt > 0 && own.ExpiresAt <= now {
-		return ErrTokenExpired
+		return ErrExpiredToken
 	}
 
 	// 检查生效时间
 	if own.NotBefore > 0 && own.NotBefore > now {
-		return ErrTokenNotValidYet
+		return ErrNotValidYet
 	}
 
 	// 检查签发时间（如果签发时间在未来，视为无效）
 	// 允许1分钟时钟偏差
 	if own.IssuedAt > 0 && own.IssuedAt > now+60 {
-		return ErrTokenIssuedFuture
+		return ErrNotValidYet
 	}
 
 	return nil
 }
 
+// ValidateWithIssuerAndAudiences 验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）和 Issuer 和 Audiences
 func (own *StandardClaims) ValidateWithIssuerAndAudiences(issuer, audience string) error {
 	// 校验令牌
 	if err := own.Validate(); err != nil {
@@ -184,7 +201,7 @@ func (own *StandardClaims) ValidateWithIssuerAndAudiences(issuer, audience strin
 
 	// 校验颁发者
 	if issuer != "" && own.Issuer != issuer {
-		return ErrTokenIssuerInvalid
+		return ErrInvalidIssuer
 	}
 
 	// 校验受众
@@ -198,5 +215,5 @@ func (own *StandardClaims) ValidateWithIssuerAndAudiences(issuer, audience strin
 		}
 	}
 
-	return ErrTokenAudienceInvalid
+	return ErrInvalidAudience
 }
