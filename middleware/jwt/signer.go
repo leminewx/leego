@@ -1,8 +1,9 @@
 package jwt
 
 import (
-	"crypto"
 	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -20,36 +21,27 @@ type Signer interface {
 	GetHeader() Header
 }
 
-const (
-	HS256 Algorithm = "HS256" // HMAC-SHA256
-	HS384 Algorithm = "HS384" // HMAC-SHA384
-	HS512 Algorithm = "HS512" // HMAC-SHA512
-)
-
-// hmacSigner 定义 HMAC 签名器的数据结构
+// hmacSigner 定义 HMAC 签名器的结构类型
 type hmacSigner struct {
 	header   Header
 	hashPool *sync.Pool
 }
 
-/*
-NewHMACSigner 创建 HMAC 签名器
-  - alg：签名算法（仅支持：HS256, HS384, HS512），若算法不支持，则默认使用 HS256
-*/
-func NewHMACSigner(header Header, key []byte) (Signer, error) {
-	signer := &hmacSigner{header: header}
-	switch header.GetAlgorithm() {
-	case HS256:
-		signer.hashPool = &sync.Pool{New: func() any { return hmac.New(crypto.SHA256.New, key) }}
-	case HS384:
-		signer.hashPool = &sync.Pool{New: func() any { return hmac.New(crypto.SHA384.New, key) }}
+// NewHMACSigner 创建 HMAC 签名器（签名算法仅支持：HS256, HS384, HS512，默认使用 HS256）
+func NewHMACSigner(algorithm Algorithm, key []byte) Signer {
+	signer := &hmacSigner{}
+	switch algorithm {
 	case HS512:
-		signer.hashPool = &sync.Pool{New: func() any { return hmac.New(crypto.SHA512.New, key) }}
+		signer.hashPool = &sync.Pool{New: func() any { return hmac.New(sha512.New, key) }}
+	case HS384:
+		signer.hashPool = &sync.Pool{New: func() any { return hmac.New(sha512.New384, key) }}
 	default:
-		return nil, fmt.Errorf("jwt: HMAC signer unsupported algorithm: %s", header.GetAlgorithm())
+		algorithm = HS256
+		signer.hashPool = &sync.Pool{New: func() any { return hmac.New(sha256.New, key) }}
 	}
 
-	return signer, nil
+	signer.header = NewHeader(algorithm)
+	return signer
 }
 
 // GetHeader 获取签名头信息
@@ -59,8 +51,9 @@ func (own *hmacSigner) GetHeader() Header {
 
 // Sign 对数据进行签名
 func (own *hmacSigner) Sign(claims Claims) ([]byte, error) {
+	// 检查声明
 	if claims == nil {
-		return nil, ErrInvalidClaims
+		return nil, ErrNilClaims
 	}
 
 	// 序列化
@@ -104,7 +97,7 @@ func (own *hmacSigner) sign(data []byte) (signature []byte, err error) {
 	if _, err = hasher.Write(data); err == nil {
 		signature = hasher.Sum(nil)
 	} else {
-		err = fmt.Errorf("jwt: failed to sign token: %w", err)
+		err = fmt.Errorf("jwt: failed to sign token: %v", err)
 	}
 
 	// 释放签名函数

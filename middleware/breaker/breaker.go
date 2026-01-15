@@ -10,7 +10,7 @@ import (
 	"gitee.com/leminewx/leego"
 )
 
-var ErrCircuitBreakerIsOpen = errors.New("circuit breaker is open, refuse to execute the request")
+var ErrCircuitBreakerIsOpen = errors.New("breaker: circuit breaker is open, refuse to execute the request")
 
 // CircuitBreaker 定义熔断器的数据结构
 type CircuitBreaker struct {

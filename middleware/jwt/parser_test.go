@@ -2,182 +2,171 @@ package jwt
 
 import (
 	"testing"
-	"time"
 )
 
 func TestParser_Parse(t *testing.T) {
-	now := time.Now()
-	tokenSrc := NewToken(&StandardClaims{
-		Id:        "test",
-		Issuer:    "test",
-		Subject:   "test",
-		Audiences: []string{"test"},
-		IssuedAt:  now.Unix(),
-		NotBefore: now.Add(-time.Hour).Unix(),
-		ExpiresAt: now.Add(+time.Hour).Unix(),
-	})
+	signer := NewHMACSigner(HS512, []byte("1234567890."))
+	parser := NewParser()
+
+	// ***************************************************** 标准声明 *****************************************************
 
 	// 签名
-	signer, err := NewHMACSigner(NewHeader(HS256), []byte("test"))
+	token, err := signer.Sign(testStandardClaims)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	signature, err := signer.Sign(tokenSrc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	signatureString := string(signature)
-	t.Log(signatureString)
+	t.Logf("JWT Token: %s", token)
 
 	// 验签
-	parser := NewParser()
-	tokenDst, err := parser.Parse(signer, signatureString)
-	if err != nil {
+	var claims Claims = &StandardClaims{}
+	if err = parser.Parse(signer, string(token), claims); err != nil {
 		t.Fatal(err)
 	}
-	t.Log(tokenDst.GetClaim("uid"))
-	t.Log(tokenDst.GetStandardClaims())
+	t.Logf("User Info: %v", claims)
 
-	//	自定义声明
-	tokenSrc.WithClaim("uid", "test")
-
-	// 重新签名
-	if signature, err = signer.Sign(tokenSrc); err != nil {
-		t.Fatal(err)
-	}
-	signatureString = string(signature)
-	t.Log(signatureString)
-
-	//	重新验签
-	if tokenDst, err = parser.Parse(signer, signatureString); err != nil {
-		t.Fatal(err)
-	}
-	t.Log(tokenDst.GetClaim("uid"))
-	t.Log(tokenDst.GetStandardClaims())
-}
-
-func TestParser_ParseWithClaims(t *testing.T) {
-	now := time.Now()
-	tokenSrc := NewToken(&StandardClaims{
-		Id:        "test",
-		Issuer:    "test",
-		Subject:   "test",
-		Audiences: []string{"test"},
-		IssuedAt:  now.Unix(),
-		NotBefore: now.Add(-time.Hour).Unix(),
-		ExpiresAt: now.Add(+time.Hour).Unix(),
-	})
+	// ***************************************************** 自定义声明 *****************************************************
 
 	// 签名
-	signer, err := NewHMACSigner(NewHeader(HS256), []byte("test"))
+	token, err = signer.Sign(testCustomizedClaims)
 	if err != nil {
 		t.Fatal(err)
 	}
-	signature, err := signer.Sign(tokenSrc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	signatureString := string(signature)
-	t.Log(signatureString)
+	t.Logf("JWT Token: %s", token)
 
 	// 验签
-	parser := NewParser()
-	tokenDst, err := parser.ParseAndValidateStandardClaims(signer, signatureString, "test", "test")
-	if err != nil {
+	claims = &customizedClaims{}
+	if err = parser.Parse(signer, string(token), claims); err != nil {
 		t.Fatal(err)
 	}
-	t.Log(tokenDst.GetClaim("uid"))
-	t.Log(tokenDst.GetStandardClaims())
-
-	//	自定义声明
-	tokenSrc.WithClaim("uid", "test")
-
-	// 重新签名
-	if signature, err = signer.Sign(tokenSrc); err != nil {
-		t.Fatal(err)
-	}
-	signatureString = string(signature)
-	t.Log(signatureString)
-
-	//	重新验签
-	if tokenDst, err = parser.ParseAndValidateStandardClaims(signer, signatureString, "test", "test"); err != nil {
-		t.Fatal(err)
-	}
-	t.Log(tokenDst.GetClaim("uid"))
-	t.Log(tokenDst.GetStandardClaims())
+	t.Logf("User Info1: %v", claims.(*customizedClaims).StandardClaims)
+	t.Logf("User Info2: %v", claims)
 }
 
-// cpu: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz		20		419414	      2801 ns/op	    1769 B/op	      54 allocs/op
+// cpu: QEMU Virtual CPU version 2.5+	standard		2   	  186280	      6018 ns/op	     848 B/op	      17 allocs/op
+// cpu: QEMU Virtual CPU version 2.5+	customized		2   	  140084	      8204 ns/op	    1072 B/op	      22 allocs/op
 func BenchmarkParser_Parse(b *testing.B) {
-	now := time.Now()
-	tokenSrc := NewToken(&StandardClaims{
-		Id:        "test",
-		Issuer:    "test",
-		Subject:   "test",
-		Audiences: []string{"test"},
-		IssuedAt:  now.Unix(),
-		NotBefore: now.Add(-time.Hour).Unix(),
-		ExpiresAt: now.Add(+time.Hour).Unix(),
-	})
-
-	// 签名
-	signer, err := NewHMACSigner(NewHeader(HS256), []byte("test"))
-	if err != nil {
-		b.Fatal(err)
-	}
-	tokenString, err := signer.Sign(tokenSrc)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	// 验签
+	signer := NewHMACSigner(HS384, []byte("1234567890."))
 	parser := NewParser()
 
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	// 压测
-	for range b.N {
-		if _, err := parser.Parse(signer, string(tokenString)); err != nil {
+	b.Run("标准声明", func(b *testing.B) {
+		token, err := signer.Sign(testStandardClaims)
+		if err != nil {
 			b.Fatal(err)
 		}
-	}
+		tokenString := string(token)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for range b.N {
+			claims := &StandardClaims{}
+			if err = parser.Parse(signer, tokenString, claims); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("自定义声明", func(b *testing.B) {
+		token, err := signer.Sign(testCustomizedClaims)
+		if err != nil {
+			b.Fatal(err)
+		}
+		tokenString := string(token)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for range b.N {
+			claims := &customizedClaims{}
+			if err = parser.Parse(signer, tokenString, claims); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
-// cpu: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz		20		413990	      2923 ns/op	    1937 B/op	      55 allocs/op
-func BenchmarkParser_ParseWithClaims(b *testing.B) {
-	now := time.Now()
-	tokenSrc := NewToken(&StandardClaims{
-		Id:        "test",
-		Issuer:    "test",
-		Subject:   "test",
-		Audiences: []string{"test"},
-		IssuedAt:  now.Unix(),
-		NotBefore: now.Add(-time.Hour).Unix(),
-		ExpiresAt: now.Add(+time.Hour).Unix(),
-	})
-
-	// 签名
-	signer, err := NewHMACSigner(NewHeader(HS256), []byte("test"))
-	if err != nil {
-		b.Fatal(err)
-	}
-	tokenString, err := signer.Sign(tokenSrc)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	// 验签
+// cpu: QEMU Virtual CPU version 2.5+	standard		2   	  184634	      6052 ns/op	     848 B/op	      17 allocs/op
+// cpu: QEMU Virtual CPU version 2.5+	customized		2   	  140335	      8207 ns/op	    1072 B/op	      22 allocs/op
+func BenchmarkParser_ParseAndValidateStandardClaims(b *testing.B) {
+	signer := NewHMACSigner(HS384, []byte("1234567890."))
 	parser := NewParser()
 
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	// 压测
-	for range b.N {
-		if _, err := parser.ParseAndValidateStandardClaims(signer, string(tokenString), "test", "test"); err != nil {
+	b.Run("标准声明", func(b *testing.B) {
+		token, err := signer.Sign(testStandardClaims)
+		if err != nil {
 			b.Fatal(err)
 		}
-	}
+		tokenString := string(token)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for range b.N {
+			claims := &StandardClaims{}
+			if err = parser.ParseAndValidateStandardClaims(signer, tokenString, claims); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("自定义声明", func(b *testing.B) {
+		token, err := signer.Sign(testCustomizedClaims)
+		if err != nil {
+			b.Fatal(err)
+		}
+		tokenString := string(token)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for range b.N {
+			claims := &customizedClaims{}
+			if err = parser.ParseAndValidateStandardClaims(signer, tokenString, claims); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+// cpu: QEMU Virtual CPU version 2.5+	standard		2   	  181467	      6137 ns/op	     848 B/op	      17 allocs/op
+// cpu: QEMU Virtual CPU version 2.5+	customized		2   	  127566	      8269 ns/op	    1072 B/op	      22 allocs/op
+func BenchmarkParser_ParseAndValidateStandardClaimsWithIssuerAndAudiences(b *testing.B) {
+	signer := NewHMACSigner(HS384, []byte("1234567890."))
+	parser := NewParser()
+
+	b.Run("标准声明", func(b *testing.B) {
+		token, err := signer.Sign(testStandardClaims)
+		if err != nil {
+			b.Fatal(err)
+		}
+		tokenString := string(token)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for range b.N {
+			claims := &StandardClaims{}
+			if err = parser.ParseAndValidateStandardClaimsWithIssuerAndAudiences(signer, tokenString, "issuer", "audience", claims); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("自定义声明", func(b *testing.B) {
+		token, err := signer.Sign(testCustomizedClaims)
+		if err != nil {
+			b.Fatal(err)
+		}
+		tokenString := string(token)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for range b.N {
+			claims := &customizedClaims{}
+			if err = parser.ParseAndValidateStandardClaimsWithIssuerAndAudiences(signer, tokenString, "issuer", "audience", claims); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }

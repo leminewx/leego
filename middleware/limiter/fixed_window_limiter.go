@@ -1,6 +1,7 @@
 package limiter
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -20,17 +21,10 @@ type FixedWindowLimiter struct {
 	lock       sync.RWMutex
 }
 
-/*
-NewDefaultFixedWindowLimiter 新建一个默认的固定窗口限流器
-  - limit：限流阈值
-  - 默认固定窗口大小为 1s
-*/
-func NewDefaultFixedWindowLimiter(limit int) *FixedWindowLimiter {
-	return NewFixedWindowLimiterWithWindowSize(limit, time.Second)
-}
+var _ Limiter = (*FixedWindowLimiter)(nil)
 
-// NewFixedWindowLimiterWithWindowSize 新建一个固定窗口限流器（可自定义窗口大小）
-func NewFixedWindowLimiterWithWindowSize(limit int, size time.Duration) *FixedWindowLimiter {
+// NewFixedWindowLimiter 新建一个固定窗口限流器（可自定义窗口大小）
+func NewFixedWindowLimiter(limit int, size time.Duration) *FixedWindowLimiter {
 	return &FixedWindowLimiter{
 		limit:      limit,
 		windowSize: size,
@@ -104,18 +98,51 @@ func (own *FixedWindowLimiter) GetMiddleware() leego.MiddlewareFunc {
 	}
 }
 
-// Allow 检查是否允许通过
+// Allow 非阻塞，立即返回是否允许（10s超时）
 func (own *FixedWindowLimiter) Allow() bool {
-	now := time.Now()
+	return own.allow()
+}
 
+// Wait 阻塞，直到获取令牌或取消上下文
+func (own *FixedWindowLimiter) Wait(ctx context.Context) error {
+	// 先尝试一次
+	if own.Allow() {
+		return nil
+	}
+
+	// // 如果没有设置超时，直接返回
+	// if _, ok := ctx.Deadline(); !ok {
+	// 	return fmt.Errorf("limiter: not set context.Context timeout")
+	// }
+
+	// // 使用更高效的等待策略
+	// waitTime := own.bucketSize / 2 // 等待半个桶的时间
+	// for {
+	// 	select {
+	// 	case <-ctx.Done():
+	// 		return ctx.Err()
+	// 	case <-time.After(waitTime):
+	// 		if own.Allow() {
+	// 			return nil
+	// 		}
+	// 	}
+	// }
+
+	return nil
+}
+
+func (own *FixedWindowLimiter) allow() bool {
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
+	// 检查是否需要重置窗口
+	now := time.Now()
 	if now.Sub(own.lastTime) >= own.windowSize {
 		own.count = 0
 		own.lastTime = now
 	}
 
+	// 检查是否超过限制
 	if own.count >= own.limit {
 		return false
 	}

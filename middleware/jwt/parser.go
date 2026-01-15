@@ -3,79 +3,75 @@ package jwt
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"strings"
+	"time"
 )
 
 // Parser 定义用于解析和验证 JWT 的解析器的接口类型
 type Parser interface {
-	// Parse 解析 JWT
+	// Parse 解析 JWT，不验证
 	Parse(signer Signer, tokenString string, claims Claims) error
-	// ParseAndValidateStandardClaims 解析 JWT 并验证标准声明
-	ParseAndValidateStandardClaims(signer Signer, tokenString, expectedIssuer, expectedAudience string, claims Claims) error
+	// ParseAndValidateStandardClaims 解析 JWT 并验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）
+	ParseAndValidateStandardClaims(signer Signer, tokenString string, claims Claims) error
+	// ParseAndValidateStandardClaimsWithIssuerAndAudiences 解析 JWT 并验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）、签发者和受众
+	ParseAndValidateStandardClaimsWithIssuerAndAudiences(signer Signer, tokenString, expectedIssuer, expectedAudience string, claims Claims) error
 }
 
-// parser 定义用于解析和验证 JWT 的解析器的数据结构
-type parser struct{}
+// parser 定义用于解析和验证 JWT 的解析器的结构类型
+type parser struct {
+	ClockSkew        time.Duration // 时钟误差
+	ExpectedIssuer   string        // 期望签发者
+	ExpectedAudience string        // 期望受众，通常是当前服务端
+}
 
 // NewParser 新建一个 JWT 解析器
-func NewParser() Parser {
-	return &parser{}
-}
+func NewParser() Parser { return &parser{} }
 
-// Parse 解析 JWT 字符串
+// Parse 解析令牌，不验证
 func (own *parser) Parse(signer Signer, tokenString string, claims Claims) error {
+	// 解析令牌
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
-		return fmt.Errorf("leego: jwt: token contains an invalid number of segments")
+		return ErrInvalidToken
 	}
 
-	// 解析头部
-	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	// 验证头部
+	if signer.GetHeader().GetEncodedString() != parts[0] {
+		return ErrInvalidHeader
+	}
+
+	// 解析签名
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return fmt.Errorf("leego: jwt: failed to decode header: %v", err)
-	}
-
-	header := &Header{}
-	if err := json.Unmarshal(headerJSON, &header); err != nil {
-		return fmt.Errorf("leego: jwt: failed to unmarshal header: %v", err)
-	}
-
-	// 验证算法
-	if signer.GetAlgorithm() != header.Algorithm {
-		return fmt.Errorf("leego: jwt: invalid signing algorithm: %s", header.Algorithm)
-	}
-
-	if header.Algorithm != signer.GetAlgorithm() {
-		return fmt.Errorf("leego: jwt: signing algorithm mismatch")
+		return ErrInvalidSignature
 	}
 
 	// 验证签名
-	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil {
-		return fmt.Errorf("leego: jwt: failed to decode signature: %v", err)
-	}
-
-	signingInput := []byte(parts[0] + "." + parts[1])
-	if !signer.Verify(signingInput, signature) {
-		return fmt.Errorf("leego: jwt: failed to verify signature")
+	if !signer.Verify([]byte(parts[0]+"."+parts[1]), signature) {
+		return ErrInvalidToken
 	}
 
 	// 解析声明
 	claimsJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return fmt.Errorf("leego: jwt: failed to decode claims: %v", err)
+		return ErrInvalidPayload
 	}
 
-	if err := json.Unmarshal(claimsJSON, &claims); err != nil {
-		return fmt.Errorf("leego: jwt: failed to unmarshal claims: %v", err)
-	}
-
-	return nil
+	// 反序列化声明
+	return json.Unmarshal(claimsJSON, &claims)
 }
 
-// ParseAndValidateStandardClaims 解析 JWT 并验证标准声明
-func (own *parser) ParseAndValidateStandardClaims(signer Signer, tokenString string, expectedIssuer, expectedAudience string, claims Claims) error {
+// ParseAndValidateStandardClaims 解析 JWT 并验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）
+func (own *parser) ParseAndValidateStandardClaims(signer Signer, tokenString string, claims Claims) error {
+	if err := own.Parse(signer, tokenString, claims); err != nil {
+		return err
+	}
+
+	return claims.Validate()
+}
+
+// ParseAndValidateStandardClaimsWithIssuerAndAudiences 解析 JWT 并验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）、签发者和受众
+func (own *parser) ParseAndValidateStandardClaimsWithIssuerAndAudiences(signer Signer, tokenString string, expectedIssuer, expectedAudience string, claims Claims) error {
 	if err := own.Parse(signer, tokenString, claims); err != nil {
 		return err
 	}
