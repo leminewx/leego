@@ -33,7 +33,7 @@ func main() {
 		_ = server.ListenAndServe()
 	}()
 
-	if err := engine.Shutdown(5 * time.Second); err != nil {
+	if err := engine.WaitSignalAndShutdown(5*time.Second, nil); err != nil {
 		log.Printf("Faild to shutdown service: %v", err)
 	}
 }

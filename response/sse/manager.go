@@ -13,21 +13,32 @@ import (
 
 // Manager 定义 SSE 客户端连接管理器的数据结构
 type Manager struct {
+	messageChanNum  int
+	isClosed        int32
 	clients         sync.Map // map[string]*Client
 	errorChan       chan error
 	writeTimeout    time.Duration
 	heartbeatPeriod time.Duration
-	isClosed        int32
 	lock            sync.RWMutex
 }
 
-// NewManager 新建一个的 SSE 连接管理器
+// NewManager 创建 SSE 连接管理器（默认写超时300ms、心跳周期30s）
 func NewManager() *Manager {
 	return &Manager{
+		messageChanNum:  16,
 		clients:         sync.Map{},
-		errorChan:       make(chan error, 8),
+		errorChan:       make(chan error, 16),
 		writeTimeout:    300 * time.Millisecond,
 		heartbeatPeriod: 30 * time.Second,
+	}
+}
+
+// SetMessageCacheNumber 设置消息缓存大小
+func (own *Manager) SetMessageCacheNumber(number int) {
+	if number > 0 {
+		own.lock.Lock()
+		own.messageChanNum = number
+		own.lock.Unlock()
 	}
 }
 
@@ -52,7 +63,7 @@ func (own *Manager) SetHeartbeatPeriod(period time.Duration) {
 // Register 注册新的SSE客户端
 func (own *Manager) Register(resp response.Writer, req *http.Request, clientId string) (*Client, error) {
 	// 创建客户端
-	client := NewClient(clientId)
+	client := NewClient(clientId, own.messageChanNum)
 	client.SetWriteTimeout(own.writeTimeout)
 	client.SetHeartbeatPeriod(own.heartbeatPeriod)
 
@@ -61,7 +72,7 @@ func (own *Manager) Register(resp response.Writer, req *http.Request, clientId s
 
 	// 管理器已关闭
 	if own.IsClosed() {
-		return nil, errors.New("leego: sse: manager is closed")
+		return nil, errors.New("sse: manager is closed")
 	}
 
 	// 检查客户端是否已存在
@@ -71,7 +82,7 @@ func (own *Manager) Register(resp response.Writer, req *http.Request, clientId s
 			defer func() {
 				// 确保在发生 panic 时也能注销客户端
 				if err := recover(); err != nil {
-					own.sendError(errors.New(fmt.Sprintln(err)))
+					own.sendError(fmt.Errorf("sse: failed to serve client: %v", err))
 				}
 
 				// 注销客户端
@@ -89,7 +100,7 @@ func (own *Manager) Register(resp response.Writer, req *http.Request, clientId s
 		return client, nil
 	}
 
-	return nil, fmt.Errorf("leego: sse: client already exists: %s", clientId)
+	return nil, fmt.Errorf("sse: client already exists: %s", clientId)
 }
 
 // Unregister 注销 SSE 客户端
@@ -104,14 +115,14 @@ func (own *Manager) Unregister(clientId string) error {
 // SendTo 向指定客户端发送消息
 func (own *Manager) SendTo(clientId string, msg *Message) error {
 	if own.IsClosed() {
-		return errors.New("leego: sse: server is closed")
+		return errors.New("sse: server is closed")
 	}
 
 	if client, ok := own.clients.Load(clientId); ok {
 		return client.(*Client).WriteMessage(msg)
 	}
 
-	return fmt.Errorf("leego: sse: not found client: %s", clientId)
+	return fmt.Errorf("sse: not found client: %s", clientId)
 }
 
 // Broadcast 向所有客户端广播消息
@@ -122,7 +133,7 @@ func (own *Manager) Broadcast(msg *Message) error {
 	}
 
 	if own.IsClosed() {
-		return errors.New("leego: sse: server is closed")
+		return errors.New("sse: server is closed")
 	}
 
 	var wg sync.WaitGroup
@@ -157,7 +168,7 @@ func (own *Manager) BroadcastTo(clientIds []string, msg *Message) error {
 	}
 
 	if own.IsClosed() {
-		return errors.New("leego: sse: server is closed")
+		return errors.New("sse: server is closed")
 	}
 
 	var wg sync.WaitGroup
@@ -247,40 +258,36 @@ func (own *Manager) IsClosed() bool {
 // Close 关闭 SSE 管理器
 func (own *Manager) Close() error {
 	own.lock.Lock()
-	defer own.lock.Unlock()
-
-	// 已经关闭，则直接返回
-	if own.IsClosed() {
-		return nil
+	if atomic.LoadInt32(&own.isClosed) == 1 {
+		own.lock.Unlock()
+		return nil // 防止重复关闭
 	}
-
-	// 向所有客户端发送关闭消息
-	err := own.Broadcast(&Message{
-		Event: "shutdown",
-		Data:  []byte(fmt.Sprintf(_MSG_SERVER_SHUTDOWN, time.Now().Format(time.DateTime))),
-	})
 
 	// 关闭标志位置为1
 	atomic.StoreInt32(&own.isClosed, 1)
+	own.lock.Unlock()
 
-	// 关闭所有客户端连接
-	msg := &Message{
-		Event: "shutdown",
-		Data:  []byte(fmt.Sprintf(_MSG_SERVER_SHUTDOWN, time.Now().Format(time.DateTime))),
-	}
+	// 广播服务器关闭消息
+	shudownMessage := NewShutdownMessage()
 
+	// 并发关闭所有客户端
 	var wg sync.WaitGroup
+	var mutex sync.Mutex
+	var errors []error
 	own.clients.Range(func(key, value any) bool {
 		wg.Go(func() {
 			// 发送关闭消息
 			client := value.(*Client)
-			if err := client.WriteMessage(msg); err != nil {
+			if err := client.WriteMessage(shudownMessage); err != nil {
 				own.sendError(err)
 			}
 
 			// 关闭客户端
 			if err := client.Close(); err != nil {
-				own.sendError(err)
+				own.sendError(fmt.Errorf("sse: failed to close client %s: %v", key.(string), err))
+				mutex.Lock()
+				errors = append(errors, err)
+				mutex.Unlock()
 			}
 
 			// 注销客户端
@@ -289,12 +296,17 @@ func (own *Manager) Close() error {
 
 		return true
 	})
-	wg.Wait()
 
+	// 等待所有客户端关闭完成
+	wg.Wait()
 	// 给一点时间让消息发送完成
 	time.Sleep(300 * time.Millisecond)
-
+	// 关闭错误通道
 	close(own.errorChan)
 
-	return err
+	if len(errors) > 0 {
+		return fmt.Errorf("sse: errors occurred during close: %v", errors)
+	}
+
+	return nil
 }

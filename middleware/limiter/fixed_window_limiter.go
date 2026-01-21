@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -13,8 +14,8 @@ import (
 
 // FixedWindowLimiter 定义固定窗口限流器的数据结构
 type FixedWindowLimiter struct {
-	count      int
-	limit      int
+	limit      int32
+	count      int32
 	isEnabled  int32
 	windowSize time.Duration
 	lastTime   time.Time
@@ -23,11 +24,15 @@ type FixedWindowLimiter struct {
 
 var _ Limiter = (*FixedWindowLimiter)(nil)
 
-// NewFixedWindowLimiter 新建一个固定窗口限流器（可自定义窗口大小）
-func NewFixedWindowLimiter(limit int, size time.Duration) *FixedWindowLimiter {
+/*
+NewFixedWindowLimiter 新建一个固定窗口限流器
+  - limit: 限制数量
+  - windowSize: 窗口大小
+*/
+func NewFixedWindowLimiter(limit int, windowSize time.Duration) *FixedWindowLimiter {
 	return &FixedWindowLimiter{
-		limit:      limit,
-		windowSize: size,
+		limit:      int32(limit),
+		windowSize: windowSize,
 		lastTime:   time.Now(),
 	}
 }
@@ -49,9 +54,7 @@ func (own *FixedWindowLimiter) IsEnabled() bool {
 
 // SetLimit 设置限流阈值
 func (own *FixedWindowLimiter) SetLimit(limit int) {
-	own.lock.Lock()
-	own.limit = limit
-	own.lock.Unlock()
+	atomic.StoreInt32(&own.limit, int32(limit))
 }
 
 // SetWindowSize 设置窗口大小
@@ -61,23 +64,44 @@ func (own *FixedWindowLimiter) SetWindowSize(size time.Duration) {
 	}
 
 	own.lock.Lock()
-	own.count = 0
-	own.lastTime = time.Now()
+	defer own.lock.Unlock()
+
+	// 计算新窗口的起始时间
+	now := time.Now()
+	elapsed := now.Sub(own.lastTime)
+
+	// 如果当前窗口已经过期，重置
+	if elapsed >= own.windowSize {
+		own.count = 0
+		own.lastTime = now
+	} else if own.windowSize != 0 {
+		// 调整计数以匹配新的窗口大小
+		ratio := float64(size) / float64(own.windowSize)
+		adjustedCount := float64(own.count) * ratio
+		own.count = int32(adjustedCount)
+		if own.count < 0 {
+			own.count = 0
+		}
+	}
+
 	own.windowSize = size
-	own.lock.Unlock()
 }
 
 // GetConfig 获取配置
 func (own *FixedWindowLimiter) GetConfig() (limit int, windowSize time.Duration) {
 	own.lock.RLock()
-	limit = own.limit
+	limit = int(own.limit)
 	windowSize = own.windowSize
 	own.lock.RUnlock()
 	return
 }
 
 // GetMiddleware 获取中间件函数
-func (own *FixedWindowLimiter) GetMiddleware() leego.MiddlewareFunc {
+func (own *FixedWindowLimiter) GetMiddleware(timeout time.Duration) leego.MiddlewareFunc {
+	if timeout < 0 {
+		timeout = 3 * time.Second
+	}
+
 	return func(next leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
 			// 未启用，直接跳过
@@ -86,8 +110,8 @@ func (own *FixedWindowLimiter) GetMiddleware() leego.MiddlewareFunc {
 				return
 			}
 
-			// 请求过多，触发限流
-			if !own.Allow() {
+			// 限流检查
+			if !own.AllowWithTimeout(ctx.Request.Context(), timeout) {
 				ctx.ResponseError(http.StatusTooManyRequests, response.GetStatusLowerText(http.StatusTooManyRequests))
 				return
 			}
@@ -98,55 +122,79 @@ func (own *FixedWindowLimiter) GetMiddleware() leego.MiddlewareFunc {
 	}
 }
 
-// Allow 非阻塞，立即返回是否允许（10s超时）
+// Allow 非阻塞的允许检查，立即返回是否允许
 func (own *FixedWindowLimiter) Allow() bool {
 	return own.allow()
 }
 
-// Wait 阻塞，直到获取令牌或取消上下文
+// AllowWithTimeout 带超时的允许检查
+func (own *FixedWindowLimiter) AllowWithTimeout(ctx context.Context, timeout time.Duration) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	return own.Wait(timeoutCtx) == nil
+}
+
+// Wait 带上下文的允许检查，直到允许或取消上下文
 func (own *FixedWindowLimiter) Wait(ctx context.Context) error {
 	// 先尝试一次
-	if own.Allow() {
+	if own.allow() {
 		return nil
 	}
 
-	// // 如果没有设置超时，直接返回
-	// if _, ok := ctx.Deadline(); !ok {
-	// 	return fmt.Errorf("limiter: not set context.Context timeout")
-	// }
+	// 如果没有设置超时，直接返回错误
+	if _, ok := ctx.Deadline(); !ok {
+		return fmt.Errorf("limiter: context has no deadline")
+	}
 
-	// // 使用更高效的等待策略
-	// waitTime := own.bucketSize / 2 // 等待半个桶的时间
-	// for {
-	// 	select {
-	// 	case <-ctx.Done():
-	// 		return ctx.Err()
-	// 	case <-time.After(waitTime):
-	// 		if own.Allow() {
-	// 			return nil
-	// 		}
-	// 	}
-	// }
-
-	return nil
+	// 阻塞等待允许或超时
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+			if own.allow() {
+				return nil
+			}
+		}
+	}
 }
 
 func (own *FixedWindowLimiter) allow() bool {
+	// 快速路径尝试
+	if own.fastAllow() {
+		return true
+	}
+
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
 	// 检查是否需要重置窗口
 	now := time.Now()
 	if now.Sub(own.lastTime) >= own.windowSize {
-		own.count = 0
+		atomic.StoreInt32(&own.count, 0)
 		own.lastTime = now
 	}
 
 	// 检查是否超过限制
-	if own.count >= own.limit {
+	current := atomic.LoadInt32(&own.count)
+	if current >= atomic.LoadInt32(&own.limit) {
 		return false
 	}
 
-	own.count++
+	atomic.AddInt32(&own.count, 1)
 	return true
+}
+
+// fastAllow 使用原子操作的快速路径
+func (own *FixedWindowLimiter) fastAllow() bool {
+	current := atomic.LoadInt32(&own.count)
+	if current >= atomic.LoadInt32(&own.limit) {
+		return false
+	}
+	return atomic.CompareAndSwapInt32(&own.count, current, current+1)
 }

@@ -172,12 +172,19 @@ func (own *Engine) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	own.router.ServeHTTP(resp, req)
 }
 
-// Shutdown 优雅关闭服务
-func (own *Engine) Shutdown(timeout time.Duration) error {
+// WaitSignalAndShutdown 优雅关闭服务
+func (own *Engine) WaitSignalAndShutdown(timeout time.Duration, doBeforeShutdown func() error) error {
 	// 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+
+	// 退出前执行函数
+	if doBeforeShutdown != nil {
+		if err := doBeforeShutdown(); err != nil {
+			return err
+		}
+	}
 
 	// 创建一个超时 context.Context
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -186,7 +193,7 @@ func (own *Engine) Shutdown(timeout time.Duration) error {
 	// 优雅关闭服务器
 	fmt.Println()
 	if err := own.server.Shutdown(ctx); err != nil {
-		logging.WARN("Failed to shutdown server : %v\n", err)
+		logging.WARN("Failed to shutdown server: %v\n", err)
 		return err
 	}
 

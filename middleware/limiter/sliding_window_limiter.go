@@ -14,9 +14,9 @@ import (
 
 // SlidingWindowLimiter 定义滑动窗口限流器的数据结构
 type SlidingWindowLimiter struct {
-	limit      int
+	limit      int32
 	isEnabled  int32
-	total      int           // 窗口内总请求数（缓存）
+	total      int32         // 窗口内总请求数（缓存）
 	index      int           // 当前桶索引
 	buckets    []int         // 时间桶数组
 	lastSlide  time.Time     // 上次滑动时间
@@ -27,7 +27,12 @@ type SlidingWindowLimiter struct {
 
 var _ Limiter = (*SlidingWindowLimiter)(nil)
 
-// NewSlidingWindowLimite 新建一个滑动窗口限流器，可自定义桶的数量和窗口大小
+/*
+NewSlidingWindowLimite 新建一个滑动窗口限流器
+  - limit: 限制数量
+  - bucketCount: 桶的数量
+  - windowSize: 窗口大小
+*/
 func NewSlidingWindowLimite(limit int, bucketCount int, windowSize time.Duration) *SlidingWindowLimiter {
 	if bucketCount <= 0 {
 		bucketCount = 10
@@ -38,7 +43,7 @@ func NewSlidingWindowLimite(limit int, bucketCount int, windowSize time.Duration
 
 	return &SlidingWindowLimiter{
 		buckets:    make([]int, bucketCount),
-		limit:      limit,
+		limit:      int32(limit),
 		lastSlide:  time.Now(),
 		windowSize: windowSize,
 		bucketSize: windowSize / time.Duration(bucketCount),
@@ -62,9 +67,8 @@ func (own *SlidingWindowLimiter) IsEnabled() bool {
 
 // SetLimit 设置限流阈值
 func (own *SlidingWindowLimiter) SetLimit(limit int) {
-	own.lock.Lock()
-	own.limit = limit
-	own.lock.Unlock()
+	atomic.StoreInt32(&own.limit, int32(limit))
+
 }
 
 // SetBucketCount 设置桶的数量
@@ -106,7 +110,7 @@ func (own *SlidingWindowLimiter) SetWindowSize(size time.Duration) {
 // GetConfig 获取配置
 func (own *SlidingWindowLimiter) GetConfig() (limit, bucketCount int, windowSize time.Duration) {
 	own.lock.RLock()
-	limit = own.limit
+	limit = int(own.limit)
 	bucketCount = len(own.buckets)
 	windowSize = own.windowSize
 	own.lock.RUnlock()
@@ -114,7 +118,11 @@ func (own *SlidingWindowLimiter) GetConfig() (limit, bucketCount int, windowSize
 }
 
 // GetMiddleware 获取中间件函数
-func (own *SlidingWindowLimiter) GetMiddleware() leego.MiddlewareFunc {
+func (own *SlidingWindowLimiter) GetMiddleware(timeout time.Duration) leego.MiddlewareFunc {
+	if timeout < 0 {
+		timeout = 3 * time.Second
+	}
+
 	return func(next leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
 			// 未启用，直接跳过
@@ -123,8 +131,8 @@ func (own *SlidingWindowLimiter) GetMiddleware() leego.MiddlewareFunc {
 				return
 			}
 
-			// 请求过多，触发限流
-			if !own.Allow() {
+			// 限流检查
+			if !own.AllowWithTimeout(ctx.Request.Context(), timeout) {
 				ctx.ResponseError(http.StatusTooManyRequests, response.GetStatusLowerText(http.StatusTooManyRequests))
 				return
 			}
@@ -135,32 +143,42 @@ func (own *SlidingWindowLimiter) GetMiddleware() leego.MiddlewareFunc {
 	}
 }
 
-// Allow 非阻塞，立即返回是否允许（10s超时）
+// Allow 非阻塞的允许检查，立即返回是否允许
 func (own *SlidingWindowLimiter) Allow() bool {
 	return own.allow()
-
 }
 
-// Wait 阻塞，直到获取令牌或取消上下文
+// AllowWithTimeout 带超时的允许检查
+func (own *SlidingWindowLimiter) AllowWithTimeout(ctx context.Context, timeout time.Duration) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	return own.Wait(timeoutCtx) == nil
+}
+
+// Wait 带上下文的允许检查，直到允许或取消上下文
 func (own *SlidingWindowLimiter) Wait(ctx context.Context) error {
 	// 先尝试一次
-	if own.Allow() {
+	if own.allow() {
 		return nil
 	}
 
 	// 如果没有设置超时，直接返回
 	if _, ok := ctx.Deadline(); !ok {
-		return fmt.Errorf("limiter: not set context.Context timeout")
+		return fmt.Errorf("limiter: context has no deadline")
 	}
 
-	// 使用更高效的等待策略
-	waitTime := own.bucketSize / 2 // 等待半个桶的时间
+	// 阻塞等待允许或超时
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(waitTime):
-			if own.Allow() {
+		case <-time.After(300 * time.Millisecond):
+			if own.allow() {
 				return nil
 			}
 		}
@@ -190,7 +208,7 @@ func (own *SlidingWindowLimiter) allow() bool {
 			// 只重置过期的桶
 			for i := 0; i < slideBuckets; i++ {
 				own.index = (own.index + 1) % len(own.buckets) // 移动到下一个桶
-				own.total -= own.buckets[own.index]            // 减去被移除桶的计数
+				own.total -= int32(own.buckets[own.index])     // 减去被移除桶的计数
 				own.buckets[own.index] = 0                     // 重置该桶
 			}
 		}

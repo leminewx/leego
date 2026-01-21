@@ -37,10 +37,10 @@ type Context struct {
 	engine      *Engine           // 绑定引擎
 	clientIP    string            // 客户端 IP
 	sameSite    http.SameSite     // 允许服务器定义 cookie 属性，使浏览器无法将此cookie与跨站点请求一起发送
+	jwtClaims   any               // JWT声明
 	startTime   time.Time         // 创建时间
 	errorChain  []error           // 错误链
 	pathValues  map[string]string // 路由参数
-	tokenValues map[string]any    // JWT参数
 	queryValues url.Values        // 查询参数，惰性加载
 }
 
@@ -119,51 +119,45 @@ func (own *Context) GetQueryValue(key string) string {
 /******************************************************** JWT *********************************************************/
 
 // SetJWTClaims 设置 JWT 声明信息
-func (own *Context) SetJWTClaims(claims map[string]any) {
-	own.tokenValues = claims
+func (own *Context) SetJWTClaims(claims any) {
+	own.jwtClaims = claims
 }
 
-// GetJWTClaim 获取 JWT 声明参数
-func (own *Context) GetJWTClaim(key string) (any, bool) {
-	if own.tokenValues == nil {
-		return nil, false
-	}
-
-	value, ok := own.tokenValues[key]
-	return value, ok
+// GetJWTClaims 获取 JWT 声明
+func (own *Context) GetJWTClaims() (any, bool) {
+	return own.jwtClaims, own.jwtClaims != nil
 }
 
 /****************************************************** Context *******************************************************/
 
 // WithContext 返回一个携带指定上下文的请求
 func (own *Context) WithContext(ctx context.Context) *Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	errorChain := make([]error, 0, len(own.errorChain))
 	for _, err := range own.errorChain {
 		errorChain = append(errorChain, err)
 	}
 
-	pathValues := make(map[string]string)
+	pathValues := make(map[string]string, len(own.pathValues))
 	for key, value := range own.pathValues {
 		pathValues[key] = value
 	}
 
-	tokenValues := make(map[string]any)
-	for key, value := range own.tokenValues {
-		tokenValues[key] = value
-	}
-
 	request := own.Request.WithContext(ctx)
 	return &Context{
-		url:         request.URL,
-		engine:      own.engine,
-		Request:     request,
-		Response:    own.Response,
-		clientIP:    own.clientIP,
-		sameSite:    own.sameSite,
-		startTime:   own.startTime,
-		errorChain:  errorChain,
-		pathValues:  pathValues,
-		tokenValues: tokenValues,
+		Request:    request,
+		Response:   own.Response,
+		url:        request.URL,
+		engine:     own.engine,
+		clientIP:   own.clientIP,
+		jwtClaims:  own.jwtClaims,
+		sameSite:   own.sameSite,
+		startTime:  own.startTime,
+		errorChain: errorChain,
+		pathValues: pathValues,
 	}
 }
 
@@ -487,7 +481,7 @@ func (own *Context) ResponseBytes(code int, data []byte) error {
 
 // ResponseSSEvent 发起 SSE 事件响应
 func (own *Context) ResponseSSEvent(event func(ctx context.Context) <-chan *sse.Message) error {
-	return sse.Handle(own.Response, own.Request, event)
+	return sse.Handle(own.Response, own.Request, event, 8)
 }
 
 // ResponseFileContent 响应文件内容（页面显示）

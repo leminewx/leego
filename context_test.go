@@ -10,7 +10,7 @@ import (
 func BenchmarkContext_NewContext(b *testing.B) {
 	engine := NewEngine()
 
-	b.Run("使用sync.Pool", func(b *testing.B) {
+	b.Run("不使用sync.Pool", func(b *testing.B) {
 		resp := httptest.NewRecorder()
 		req, _ := http.NewRequest("GET", "/users/123", nil)
 
@@ -23,24 +23,23 @@ func BenchmarkContext_NewContext(b *testing.B) {
 	})
 }
 
-// cpu: QEMU Virtual CPU version 2.5+		2   	591463	      2959 ns/op	    2520 B/op	      24 allocs/op
+// cpu: QEMU Virtual CPU version 2.5+		2   	903644	      1816 ns/op	    1093 B/op	      13 allocs/op
 func BenchmarkContext_NewContext_Concurrent(b *testing.B) {
 	engine := NewEngine()
-	router := engine.Group("/api")
-	router.GET("/users/:id", func(ctx *Context) {
-		// 模拟真实处理逻辑
+	group := engine.Group("/api")
+	group.GET("/users/:id", func(ctx *Context) {
 		id := ctx.GetPathValue("id")
 		ctx.ResponseJSON(200, map[string]string{"id": id})
 	})
 
-	b.Run("并发压测", func(b *testing.B) {
+	b.Run("并发请求", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 
 		b.RunParallel(func(pb *testing.PB) {
+			resp := httptest.NewRecorder()
+			req, _ := http.NewRequest("GET", "/api/users/123", nil)
 			for pb.Next() {
-				resp := httptest.NewRecorder()
-				req, _ := http.NewRequest("GET", "/api/users/123", nil)
 				engine.ServeHTTP(resp, req)
 			}
 		})

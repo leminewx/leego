@@ -6,7 +6,7 @@ import (
 
 // Claims 定义验证 JWT 令牌的接口类型
 type Claims interface {
-	// Validate 验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）
+	// Validate 验证标准声明中的所有时间字段
 	Validate() error
 	// ValidateWithIssuerAndAudiences 校验令牌（包含颁发者和受众）
 	ValidateWithIssuerAndAudiences(expectedIssuer, expectedAudience string) error
@@ -143,7 +143,7 @@ type StandardClaims struct {
 	ExpiresAt int64 `json:"exp,omitempty"`
 }
 
-// Validate 验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）
+// Validate 验证标准声明中的所有时间字段
 func (own *StandardClaims) Validate() error {
 	now := time.Now().Unix()
 
@@ -165,7 +165,7 @@ func (own *StandardClaims) Validate() error {
 	return nil
 }
 
-// ValidateWithIssuerAndAudiences 验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）、签发者和受众
+// ValidateWithIssuerAndAudiences 验证标准声明中的所有时间字段、签发者和受众
 func (own *StandardClaims) ValidateWithIssuerAndAudiences(expectedIssuer, expectedAudience string) error {
 	// 校验令牌
 	if err := own.Validate(); err != nil {

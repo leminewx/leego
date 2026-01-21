@@ -35,6 +35,7 @@ func main() {
 	)
 
 	sseManager := sse.NewManager()
+	sseManager.SetHeartbeatPeriod(10 * time.Second)
 	defer func() { _ = sseManager.Close() }()
 
 	var wg sync.WaitGroup
@@ -53,8 +54,8 @@ func main() {
 
 			time.Sleep(1 * time.Second)
 			_ = sseManager.Broadcast(&sse.Message{
-				Event: "manager_message",
 				Id:    id,
+				Event: "manager_message",
 				Data:  []byte("hello, this is broadcast message, welcome to leego"),
 			})
 		}
@@ -68,18 +69,18 @@ func main() {
 		}
 
 		id := ggid.New().GetShort()
-		for range 10 {
+		for range 100 {
 			data, _ := json.Marshal(&leego.JSON{"username": username, "desc": "hello", "time": time.Now().Format(time.DateTime)})
 			_ = sseManager.SendTo(client.Id, &sse.Message{
-				Event: "person_message",
 				Id:    id,
+				Event: "person_message",
 				Data:  data,
 			})
 
 			data, _ = json.Marshal(&leego.JSON{"desc": "hello, my name is " + username, "time": time.Now().Format(time.DateTime)})
 			_ = sseManager.Broadcast(&sse.Message{
-				Event: "broadcast_message",
 				Id:    id,
+				Event: "broadcast_message",
 				Data:  data,
 			})
 
@@ -91,11 +92,11 @@ func main() {
 		_ = ctx.ResponseSSEvent(func(ctx context.Context) <-chan *sse.Message {
 			events := make(chan *sse.Message, 1)
 			go func() {
-				for i := 0; i < 10; i++ {
+				for i := 0; i < 100; i++ {
 					data, _ := json.Marshal(&leego.JSON{"code": "00000", "desc": "ok", "size": strconv.Itoa(i), "time": time.Now().Format(time.DateTime)})
 					events <- &sse.Message{
-						Event: "test_msg",
 						Id:    "tid1234567890",
+						Event: "test_msg",
 						Data:  data,
 					}
 					time.Sleep(1 * time.Second)
@@ -113,9 +114,9 @@ func main() {
 		_ = engine.Run(":10000")
 	})
 
-	if err := engine.Shutdown(5 * time.Second); err != nil {
-		log.Printf("Faild to shutdown: %v", err)
-	}
+	_ = engine.WaitSignalAndShutdown(5*time.Second, func() error {
+		return sseManager.Close()
+	})
 
 	wg.Wait()
 }

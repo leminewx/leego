@@ -1,11 +1,16 @@
 package limiter
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Limiter 定义限流器的接口类型
 type Limiter interface {
-	// Allow 非阻塞，立即返回是否允许
+	// Allow 非阻塞的允许检查，立即返回是否允许
 	Allow() bool
-	// Wait 阻塞，直到获取令牌或取消上下文
+	// AllowWithTimeout 带超时的允许检查
+	AllowWithTimeout(ctx context.Context, timeout time.Duration) bool
+	// Wait 带上下文的允许检查，直到允许或取消上下文
 	Wait(ctx context.Context) error
 }

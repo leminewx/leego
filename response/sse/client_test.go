@@ -21,7 +21,7 @@ func mockRequestWithContext(ctx context.Context) *http.Request {
 
 // TestNewClient 测试客户端创建
 func TestNewClient(t *testing.T) {
-	client := NewClient("test-client")
+	client := NewClient("test-client", 8)
 
 	if client.Id != "test-client" {
 		t.Errorf("Expected client ID 'test-client', got '%s'", client.Id)
@@ -31,8 +31,8 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("Expected message channel capacity 8, got %d", cap(client.messageChan))
 	}
 
-	if client.writeTimeout != 100*time.Millisecond {
-		t.Errorf("Expected write timeout 100ms, got %v", client.writeTimeout)
+	if client.writeTimeout != 300*time.Millisecond {
+		t.Errorf("Expected write timeout 300ms, got %v", client.writeTimeout)
 	}
 
 	if client.heartbeatPeriod != 30*time.Second {
@@ -42,7 +42,7 @@ func TestNewClient(t *testing.T) {
 
 // TestWriteResponseHeader 测试响应头写入
 func TestWriteResponseHeader(t *testing.T) {
-	client := NewClient("test-client")
+	client := NewClient("test-client", 8)
 	resp := response.NewWriter(httptest.NewRecorder())
 
 	client.WriteResponseHeader(resp)
@@ -79,7 +79,7 @@ func TestWriteResponseHeader(t *testing.T) {
 
 // TestWriteMessage 测试消息写入
 func TestWriteMessage(t *testing.T) {
-	client := NewClient("test-client")
+	client := NewClient("test-client", 8)
 
 	// 测试有效消息
 	msg := &Message{Data: []byte("test message")}
@@ -110,7 +110,7 @@ func TestWriteMessage(t *testing.T) {
 
 // TestClientClose 测试客户端关闭
 func TestClientClose(t *testing.T) {
-	client := NewClient("test-client")
+	client := NewClient("test-client", 8)
 
 	// 第一次关闭
 	err := client.Close()
@@ -146,7 +146,7 @@ func TestClientClose(t *testing.T) {
 
 // TestClientDisconnect 测试客户端断开连接
 func TestClientDisconnect(t *testing.T) {
-	client := NewClient("test-client")
+	client := NewClient("test-client", 8)
 	resp := response.NewWriter(httptest.NewRecorder())
 
 	// 创建可取消的上下文
@@ -181,7 +181,7 @@ func TestClientDisconnect(t *testing.T) {
 
 // TestWriteTimeout 测试写超时
 func TestWriteTimeout(t *testing.T) {
-	client := NewClient("test-client")
+	client := NewClient("test-client", 8)
 	client.SetWriteTimeout(10 * time.Millisecond)
 
 	// 填充消息通道使其阻塞
@@ -202,7 +202,7 @@ func TestWriteTimeout(t *testing.T) {
 
 // TestConfigurationMethods 测试配置方法
 func TestConfigurationMethods(t *testing.T) {
-	client := NewClient("test-client")
+	client := NewClient("test-client", 8)
 
 	// 测试写超时配置
 	newTimeout := 200 * time.Millisecond
@@ -213,7 +213,7 @@ func TestConfigurationMethods(t *testing.T) {
 
 	// 测试心跳周期配置
 	newHeartbeat := 60 * time.Second
-	client.SetWriteTimeout(newHeartbeat)
+	client.SetHeartbeatPeriod(newHeartbeat)
 	if client.heartbeatPeriod != newHeartbeat {
 		t.Errorf("Expected heartbeat period %v, got %v", newHeartbeat, client.heartbeatPeriod)
 	}

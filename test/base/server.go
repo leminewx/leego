@@ -14,6 +14,7 @@ import (
 	"gitee.com/leminewx/leego/middleware"
 	"gitee.com/leminewx/leego/middleware/cors"
 	"gitee.com/leminewx/leego/middleware/jwt"
+	"gitee.com/leminewx/leego/middleware/limiter"
 	"gitee.com/leminewx/leego/response/sse"
 )
 
@@ -23,7 +24,7 @@ func main() {
 	engine := leego.NewEngine()
 
 	// Limiter 限流中间件
-	// middlewareLimiter := limiter.NewDefaultFixedWindowLimiter(3)
+	middlewareLimiter := limiter.NewTokenBucketLimiter(30, 1000)
 
 	// CORS 跨域中间件
 	middlewareCORS := cors.NewDefaultCORS()
@@ -31,21 +32,13 @@ func main() {
 	middlewareCORS.SetAllowOrigins("*")
 
 	// JWT 认证中间件
-	middlewareAuth := jwt.NewDefaultManager([]byte("secret"))
-	middlewareAuth.SetSkipPaths("/v*")
-	middlewareAuth.SetExceptedIssuer("leego")
-	middlewareAuth.SetExceptedAudience("leego")
-	middlewareAuth.SetNotBeforeSeconds(30)
-	middlewareAuth.SetExpiresAfterSeconds(50)
-	middlewareAuth.SetValidateStandardClaims(true)
-	middlewareAuth.SetErrorHandler(func(_ *leego.Context, err error) {
-		log.Printf("Faild to authorizate: %v", err)
-	})
+	// middlewareJWTParser := jwt.NewParser()
+	middlewareJWTSigner := jwt.NewHMACSigner(jwt.HS384, []byte("secret123456789."))
 
 	// 注册中间件
 	engine.UseMiddlewares(
 		middleware.Recover(),
-		// middlewareLimiter,
+		middlewareLimiter.GetMiddleware(5*time.Second),
 		middlewareCORS.GetMiddleware(),
 	)
 
@@ -142,9 +135,23 @@ func main() {
 			fmt.Println("*********ready response login*********")
 			fmt.Printf("%s is logged in\n", ctx.GetPathValue("name"))
 
-			token := middlewareAuth.GenerateToken(&jwt.StandardClaims{})
-			token.SetClaim("username", "tester")
-			signature, err := middlewareAuth.Sign(token)
+			name := ctx.GetPathValue("name")
+			signature, err := middlewareJWTSigner.Sign(&struct {
+				*jwt.StandardClaims
+				Email string `json:"email"`
+				Name  string `json:"name"`
+			}{
+				StandardClaims: &jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					Issuer:    "ToolHub",
+					ExpiresAt: time.Now().Add(time.Hour * 24 * 7).Unix(),
+					Subject:   "tester",
+					Audiences: []string{"ToolHub"},
+					Id:        "tester",
+				},
+				Email: "tester@toolhub.com",
+				Name:  name,
+			})
 			if err != nil {
 				fmt.Println("sign error: ", err)
 			}
@@ -195,7 +202,7 @@ func main() {
 		_ = engine.Run(":8080")
 	}()
 
-	if err := engine.Shutdown(5 * time.Second); err != nil {
+	if err := engine.WaitSignalAndShutdown(5*time.Second, nil); err != nil {
 		log.Printf("Faild to shutdown: %v", err)
 	}
 }

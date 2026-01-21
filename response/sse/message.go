@@ -10,28 +10,16 @@ import (
 	"gitee.com/leminewx/leego/response"
 )
 
-// 使用 sync.Pool 复用 buffer
-var bufferPool = &sync.Pool{
-	New: func() any { return &bytes.Buffer{} },
-}
-
-const (
-	_MSG_CONNECTED       = `{"time": "%s", "message": "Welcome to connect server", "client_id": "%s"}`
-	_MSG_HEARTBEAT       = `{"time": "%s", "message": "Ping"}`
-	_MSG_DISCONNECTED    = `{"time": "%s", "message": "Connection is closed"}`
-	_MSG_SERVER_SHUTDOWN = `{"time": "%s", "message": "Server is shutting down"}`
-)
-
 // Message 定义 SSE 消息的数据结构（消息发送之后更新就无效了，但可以复用）
 type Message struct {
+	// Id 表示事件的 ID，用于重连时指定 Last-Event-ID 头
+	Id string
 	/*
 		Event 表示事件类型，可自定义
 		  - 如果指定，客户端会触发该事件
 		  - 如果不指定，默认为 message 事件
 	*/
 	Event string
-	// Id 表示事件的 ID，用于重连时指定 Last-Event-ID 头
-	Id string
 	// Retry 表示客户端在连接断开后重连之前等待的毫秒数
 	Retry int64
 	// Data 表示消息的数据，可以有多行，且每行都会作为一个数据片段，最终将所有数据用换行符连接起来作为完整数据
@@ -41,27 +29,43 @@ type Message struct {
 	formattedLock sync.Mutex
 }
 
+// 使用 sync.Pool 复用 buffer
+var bufferPool = &sync.Pool{
+	New: func() any { return bytes.NewBuffer(make([]byte, 0, 1024)) },
+}
+
+const (
+	_MSG_CONNECTED       = `{"time": "%s", "message": "Welcome to connect SSE server", "client_id": "%s"}`
+	_MSG_HEARTBEAT       = `{"time": "%s", "message": "Ping"}`
+	_MSG_DISCONNECTED    = `{"time": "%s", "message": "SSE connection is closed"}`
+	_MSG_SERVER_SHUTDOWN = `{"time": "%s", "message": "SSE server is shutting down"}`
+)
+
 // NewConnectedMessage 创建一个连接消息
 func NewConnectedMessage(clientId string) *Message {
-	return &Message{
-		Event: "connect",
-		Data:  []byte(fmt.Sprintf(_MSG_CONNECTED, time.Now().Format(time.DateTime), clientId)),
-	}
+	return NewMessageWithEvent("connect", []byte(fmt.Sprintf(_MSG_CONNECTED, time.Now().Format(time.DateTime), clientId)))
 }
 
-// NewHeartbeatMessage 创建一个连接消息
+// NewHeartbeatMessage 创建一个心跳消息
 func NewHeartbeatMessage() *Message {
-	return &Message{
-		Event: "heartbeat",
-		Data:  []byte(fmt.Sprintf(_MSG_HEARTBEAT, time.Now().Format(time.DateTime))),
-	}
+	return NewMessageWithEvent("heartbeat", []byte(fmt.Sprintf(_MSG_HEARTBEAT, time.Now().Format(time.DateTime))))
 }
 
-// NewClosedMessage 创建一个关闭消息
+// NewClosedMessage 创建一个连接关闭消息
 func NewClosedMessage() *Message {
+	return NewMessageWithEvent("close", []byte(fmt.Sprintf(_MSG_DISCONNECTED, time.Now().Format(time.DateTime))))
+}
+
+// NewShutdownMessage 创建一个服务器关闭消息
+func NewShutdownMessage() *Message {
+	return NewMessageWithEvent("close", []byte(fmt.Sprintf(_MSG_SERVER_SHUTDOWN, time.Now().Format(time.DateTime))))
+}
+
+// NewMessageWithEvent 创建一个指定事件类型的消息
+func NewMessageWithEvent(event string, data []byte) *Message {
 	return &Message{
-		Event: "close",
-		Data:  []byte(fmt.Sprintf(_MSG_DISCONNECTED, time.Now().Format(time.DateTime))),
+		Event: event,
+		Data:  data,
 	}
 }
 
@@ -74,7 +78,7 @@ func (own *Message) Write(resp response.Writer) error {
 
 	// 发送格式化后的数据
 	if _, err := resp.Write(own.formatted); err != nil {
-		return fmt.Errorf("leego: sse: write message to response error: %w", err)
+		return fmt.Errorf("sse: write message to response error: %w", err)
 	}
 	resp.Flush()
 
@@ -83,13 +87,10 @@ func (own *Message) Write(resp response.Writer) error {
 
 // format 格式化数据
 func (own *Message) format() bool {
-	if len(own.formatted) > 0 {
-		return true
-	}
-
 	own.formattedLock.Lock()
 	defer own.formattedLock.Unlock()
 
+	// 双检查锁定模式
 	if len(own.formatted) > 0 {
 		return true
 	}
@@ -117,7 +118,7 @@ func (own *Message) format() bool {
 	// 重连时间
 	if own.Retry > 0 {
 		buffer.WriteString("retry: ")
-		buffer.WriteString(strconv.Itoa(int(own.Retry)))
+		buffer.WriteString(strconv.FormatInt(own.Retry, 10))
 		buffer.WriteByte('\n')
 	}
 
@@ -133,8 +134,7 @@ func (own *Message) format() bool {
 	buffer.WriteByte('\n')
 
 	// 更新格式化数据
-	own.formatted = make([]byte, buffer.Len())
-	copy(own.formatted, buffer.Bytes())
+	own.formatted = append(own.formatted[:0], buffer.Bytes()...) // 复用已有内存
 
 	buffer.Reset()
 	bufferPool.Put(buffer)
