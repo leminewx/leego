@@ -89,7 +89,7 @@ func main() {
 			_ = slice[1]
 		}, "认证接口", "v1", "认证")
 
-		group1.SetStatic("/files", ".", "静态文件服务接口", "文件", "下载")
+		// group1.SetStatic("/files", ".", "静态文件服务接口", "文件", "下载")
 	}
 
 	// 路由组2
@@ -193,8 +193,8 @@ func main() {
 		}, "显示文件", "v2", "文件", "前端显示")
 
 		//	路由组4，继承于路由组3
-		group4 := group3.Group("/admin")
-		group4.SetStatic("views", "../../admin/views", "后台管理静态文件服务", "admin")
+		// group4 := group3.Group("/admin")
+		// group4.SetStatic("views", "../../admin/views", "后台管理静态文件服务", "admin")
 	}
 
 	// 启动服务

@@ -21,9 +21,7 @@ type (
 		ServeHTTP(ctx *Context)
 		// Enable 启用处理器
 		Enable()
-		/*Disable 禁用指定路由
-		  - 禁用指定路由后，也不会调用该路由上的任一中间件，且响应状态码为 423
-		*/
+		// Disable 禁用指定路由，禁用指定路由后，也不会调用该路由上的任一中间件，且响应状态码为 423
 		Disable()
 		// IsEnabled 是否启用该处理器
 		IsEnabled() bool

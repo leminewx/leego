@@ -32,9 +32,13 @@ type Engine struct {
 	// UseH2C 是否使用 HTTP2
 	UseH2C bool
 
-	router       Router             // 路由器
-	server       *http.Server       // 服务器
-	handlers     map[string]Handler // 处理器
+	// 路由器
+	router Router
+	// 服务器
+	server *http.Server
+	// 处理器
+	handlers map[string]Handler
+	// 打印构建器
 	printBuilder *strings.Builder
 }
 
