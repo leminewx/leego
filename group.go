@@ -61,7 +61,7 @@ func (own *group) Group(prefix string) Group {
 	}
 }
 
-// UseMiddlewareFuncs 使用路由组中间件处理函数
+// UseMiddlewares 使用路由组中间件处理函数
 func (own *group) UseMiddlewares(middlewares ...MiddlewareFunc) {
 	for _, middleware := range middlewares {
 		if middleware != nil {

@@ -51,10 +51,10 @@ func TestRouterServeHTTP(t *testing.T) {
 		collector: collector.New("get user info", http.MethodGet, "users/:id"),
 	}
 
-	router.Insert("GET", "/test", testHandler)
+	router.Insert("GET", "/examples", testHandler)
 
 	// 创建测试请求
-	req := httptest.NewRequest("GET", "/test", nil)
+	req := httptest.NewRequest("GET", "/examples", nil)
 	recorder := httptest.NewRecorder()
 
 	// 执行
@@ -380,7 +380,7 @@ func BenchmarkRouterMemoryUsage(b *testing.B) {
 		// 插入大量路由
 		handler := &handler{}
 		for j := 0; j < 1000; j++ {
-			pattern := "/memory/test/" + strconv.Itoa(j) + "/:param"
+			pattern := "/memory/examples/" + strconv.Itoa(j) + "/:param"
 			router.Insert("GET", pattern, handler)
 		}
 	}

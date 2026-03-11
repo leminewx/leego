@@ -97,7 +97,7 @@ const (
 		场景：
 		  - 用于维持会话状态（如登录状态）、用户偏好设置等
 		示例：
-		  - Cookie: sessionId=abc123; username=test
+		  - Cookie: sessionId=abc123; username=examples
 	*/
 	COOKIE = "Cookie"
 

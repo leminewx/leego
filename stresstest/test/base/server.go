@@ -11,7 +11,7 @@ import (
 
 func main() {
 	engine := leego.NewEngine()
-	engine.GET("/test", func(ctx *leego.Context) {
+	engine.GET("/examples", func(ctx *leego.Context) {
 		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 	}, "验证基本接口", "v1", "JSON")
 

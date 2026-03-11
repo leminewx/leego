@@ -195,6 +195,20 @@ func (own *Context) SetResponseHeader(key, value string) {
 	own.Response.Header().Set(key, value)
 }
 
+// DeleteRequestHeader 删除请求头
+func (own *Context) DeleteRequestHeader(keys ...string) {
+	for _, key := range keys {
+		own.Request.Header.Del(key)
+	}
+}
+
+// DeleteResponseHeader 删除响应头
+func (own *Context) DeleteResponseHeader(keys ...string) {
+	for _, key := range keys {
+		own.Response.Header().Del(key)
+	}
+}
+
 // GetClientIP 获取客户端 IP
 func (own *Context) GetClientIP() string {
 	if own.clientIP != "" {

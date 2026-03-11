@@ -31,7 +31,7 @@ type Collector struct {
 New 新建一个收集器
   - method：请求方法
   - pattern：路由模式
-  - tags：标签，第1个参数为路由名称，后续参数为路由标签（最多只接受前5路由标签）
+  - tags：标签，第1个参数为路由名称，后续参数为路由标签（最多只接受前5个路由标签）
 */
 func New(method, pattern string, tags ...string) *Collector {
 	m := &Collector{

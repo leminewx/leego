@@ -268,17 +268,17 @@ func (own *Manager) Close() error {
 	own.lock.Unlock()
 
 	// 广播服务器关闭消息
-	shudownMessage := NewShutdownMessage()
+	shutdownMessage := NewShutdownMessage()
 
 	// 并发关闭所有客户端
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
-	var errors []error
+	var errs []error
 	own.clients.Range(func(key, value any) bool {
 		wg.Go(func() {
 			// 发送关闭消息
 			client := value.(*Client)
-			if err := client.WriteMessage(shudownMessage); err != nil {
+			if err := client.WriteMessage(shutdownMessage); err != nil {
 				own.sendError(err)
 			}
 
@@ -286,7 +286,7 @@ func (own *Manager) Close() error {
 			if err := client.Close(); err != nil {
 				own.sendError(fmt.Errorf("sse: failed to close client %s: %v", key.(string), err))
 				mutex.Lock()
-				errors = append(errors, err)
+				errs = append(errs, err)
 				mutex.Unlock()
 			}
 
@@ -304,8 +304,8 @@ func (own *Manager) Close() error {
 	// 关闭错误通道
 	close(own.errorChan)
 
-	if len(errors) > 0 {
-		return fmt.Errorf("sse: errors occurred during close: %v", errors)
+	if len(errs) > 0 {
+		return fmt.Errorf("sse: errors occurred during close: %v", errs)
 	}
 
 	return nil

@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"gitee.com/leminewx/gokit/ggid"
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/middleware"
 	"gitee.com/leminewx/leego/middleware/cors"
@@ -46,7 +45,7 @@ func main() {
 		func(next leego.HandleFunc) leego.HandleFunc {
 			fmt.Println("Init middleware 1")
 			return func(ctx *leego.Context) {
-				ctx.Request.Header.Set("X-Request-ID", ggid.New().String())
+				ctx.Request.Header.Set("X-Request-ID", "xxxx-1111-yyyy-2222")
 				next(ctx)
 			}
 		},
@@ -74,7 +73,7 @@ func main() {
 			},
 		)
 
-		group1.GET("/test", func(ctx *leego.Context) {
+		group1.GET("/examples", func(ctx *leego.Context) {
 			// fmt.Printf("/v1/a ok  -  request_id: %s\n", ctx.GetRequestHeader(headers.X_REQUEST_ID))
 			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
 		}, "验证基本接口", "v1", "JSON")
@@ -114,7 +113,7 @@ func main() {
 		group2.GET("/b", func(ctx *leego.Context) {
 			fmt.Println("*********ready response b*********")
 			fmt.Println("/v2/b ok")
-			_ = ctx.ResponsePlain(http.StatusOK, "this is a test")
+			_ = ctx.ResponsePlain(http.StatusOK, "this is a examples")
 		}, "验证基本接口2", "v2", "字符串")
 	}
 

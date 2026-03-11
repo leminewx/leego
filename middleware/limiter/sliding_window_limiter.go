@@ -28,12 +28,12 @@ type SlidingWindowLimiter struct {
 var _ Limiter = (*SlidingWindowLimiter)(nil)
 
 /*
-NewSlidingWindowLimite 新建一个滑动窗口限流器
+NewSlidingWindowLimiter 新建一个滑动窗口限流器
   - limit: 限制数量
   - bucketCount: 桶的数量
   - windowSize: 窗口大小
 */
-func NewSlidingWindowLimite(limit int, bucketCount int, windowSize time.Duration) *SlidingWindowLimiter {
+func NewSlidingWindowLimiter(limit int, bucketCount int, windowSize time.Duration) *SlidingWindowLimiter {
 	if bucketCount <= 0 {
 		bucketCount = 10
 	}

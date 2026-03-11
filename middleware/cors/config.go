@@ -11,10 +11,10 @@ type Config struct {
 	IsEnabled        bool     `json:"is_enabled"`        // 是否启用
 	AllowCredentials bool     `json:"allow_credentials"` // 是否允许使用凭证
 	MaxAgeSeconds    int64    `json:"max_age_seconds"`   // 前端缓存信息最大时间
-	AllowOrigins     []string `josn:"allow_origins"`     // 允许的源
+	AllowOrigins     []string `json:"allow_origins"`     // 允许的源
 	AllowMethods     []string `json:"allow_methods"`     // 允许的请求方法
 	AllowHeaders     []string `json:"allow_headers"`     // 允许的请求头字段
-	ExposeHeaders    []string `josn:"expose_headers"`    // 响应的额外响应头字段
+	ExposeHeaders    []string `json:"expose_headers"`    // 响应的额外响应头字段
 }
 
 // GetConfig 获取配置信息

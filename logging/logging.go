@@ -10,18 +10,18 @@ import (
 var DefaultWriter io.Writer = os.Stdout
 
 const (
-	_LOG_IFNO = "[\033[1mLEEGO\033[0m] [\033[1;32mINFO\033[0m] "
-	_LOG_WARN = "[\033[1mLEEGO\033[0m] [\033[1;33mWARN\033[0m] "
+	_INFO = "[\033[1mLEEGO\033[0m] [\033[1;32mINFO\033[0m] "
+	_WARN = "[\033[1mLEEGO\033[0m] [\033[1;33mWARN\033[0m] "
 )
 
 // INFO 记录 INFO 信息
 func INFO(format string, values ...any) {
-	log(_LOG_IFNO, format, values...)
+	log(_INFO, format, values...)
 }
 
 // WARN	记录 WARN 信息
 func WARN(format string, values ...any) {
-	log(_LOG_WARN, format, values...)
+	log(_WARN, format, values...)
 }
 
 func log(level string, format string, values ...any) {

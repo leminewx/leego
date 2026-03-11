@@ -75,8 +75,8 @@ func (own *Client) Run() string {
 				var statusCode int
 				if resp != nil {
 					statusCode = resp.StatusCode
-					io.Copy(io.Discard, resp.Body)
-					resp.Body.Close()
+					_, _ = io.Copy(io.Discard, resp.Body)
+					_ = resp.Body.Close()
 				}
 
 				own.metrics.Record(statusCode, latency, err)

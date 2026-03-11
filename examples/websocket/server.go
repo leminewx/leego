@@ -1,7 +1,7 @@
 package main
 
 // func main() {
-// 	engine := leego.NewEngine("test").
+// 	engine := leego.NewEngine("examples").
 // 		WithURLBlacklist("/.well-known/appspecific/com.chrome.devtools.json")
 
 // 	engine.WithMiddlewares(

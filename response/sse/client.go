@@ -84,7 +84,7 @@ func (own *Client) WriteResponseHeader(resp response.Writer) {
 		header.Set(headers.CONTENT_TYPE, "text/event-stream")
 		header.Set(headers.CACHE_CONTROL, "no-cache")
 		header.Set(headers.CONNECTION, "keep-alive")
-		header.Set("X-Accel-Buffering", "no") // 禁用 Ngix 代理缓冲
+		header.Set("X-Accel-Buffering", "no") // 禁用 Nginx 代理缓冲
 
 		// 设置响应状态码
 		resp.WriteHeader(http.StatusOK)
