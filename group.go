@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/tree"
 )
 
@@ -126,7 +125,7 @@ SetStatic 设置静态文件服务
   - tags：第1个参数为路由名称，后续参数为路由标签
 
 注意：
-  - 在处理 index.html 这类默认索引文件时，会尝试重定向到目录路径
+  - 在处理 home.html 这类默认索引文件时，会尝试重定向到目录路径
 */
 func (own *group) SetStatic(relativePath, rootPath string, tags ...string) {
 	// 获取绝对路径
@@ -154,7 +153,7 @@ SetStaticFS 设置静态文件服务
   - tags：第1个参数为路由名称，后续参数为路由标签
 
 注意：
-  - 在处理 index.html 这类默认索引文件时，会尝试重定向到目录路径
+  - 在处理 home.html 这类默认索引文件时，会尝试重定向到目录路径
 */
 func (own *group) SetStaticFS(relativePath string, fs http.FileSystem, tags ...string) {
 	own.setStaticFromFS(relativePath, "", fs, tags...)
@@ -201,9 +200,9 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 			return
 		}
 
-		// 设置安全头
-		ctx.SetResponseHeader(headers.X_CONTENT_TYPE_OPTIONS, "nosniff") // 防止 MIME 类型嗅探攻击
-		ctx.SetResponseHeader(headers.X_FRAME_OPTIONS, "DENY")           // 防止点击劫持（ClickJacking）攻击
+		// 设置安全头（通过中间件支持）
+		// ctx.SetResponseHeader(headers.X_CONTENT_TYPE_OPTIONS, "nosniff") // 防止 MIME 类型嗅探攻击
+		// ctx.SetResponseHeader(headers.X_FRAME_OPTIONS, "DENY")           // 防止点击劫持（ClickJacking）攻击
 
 		// 响应文件
 		fileServer.ServeHTTP(ctx.Response, ctx.Request)

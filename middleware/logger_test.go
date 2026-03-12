@@ -13,7 +13,7 @@ func TestLogger(t *testing.T) {
 
 	group := engine.Group("/v1")
 	group.UseMiddlewares(func(next leego.HandleFunc) leego.HandleFunc {
-		fmt.Println("init middleware 1")
+		fmt.Println("init middlewares 1")
 		return func(ctx *leego.Context) {
 			fmt.Println("get in group v1")
 			next(ctx)

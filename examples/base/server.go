@@ -43,7 +43,7 @@ func main() {
 
 	engine.UseMiddlewares(
 		func(next leego.HandleFunc) leego.HandleFunc {
-			fmt.Println("Init middleware 1")
+			fmt.Println("Init middlewares 1")
 			return func(ctx *leego.Context) {
 				ctx.Request.Header.Set("X-Request-ID", "xxxx-1111-yyyy-2222")
 				next(ctx)
@@ -56,7 +56,7 @@ func main() {
 		group1 := engine.Group("/v1")
 		group1.UseMiddlewares(
 			func(next leego.HandleFunc) leego.HandleFunc {
-				fmt.Println("Init middleware 2")
+				fmt.Println("Init middlewares 2")
 				return func(ctx *leego.Context) {
 					// fmt.Println("/v1 1 start")
 					next(ctx)
@@ -64,7 +64,7 @@ func main() {
 				}
 			},
 			func(next leego.HandleFunc) leego.HandleFunc {
-				fmt.Println("Init middleware 3")
+				fmt.Println("Init middlewares 3")
 				return func(ctx *leego.Context) {
 					// fmt.Println("/v1 2 start")
 					next(ctx)

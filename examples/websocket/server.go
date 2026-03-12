@@ -5,9 +5,9 @@ package main
 // 		WithURLBlacklist("/.well-known/appspecific/com.chrome.devtools.json")
 
 // 	engine.WithMiddlewares(
-// 		middleware.Recover(),
-// 		middleware.Log(),
-// 		middleware.Cors(cors.New()),
+// 		middlewares.Recover(),
+// 		middlewares.Log(),
+// 		middlewares.Cors(cors.New()),
 // 		func(handle leego.HandleFunc) leego.HandleFunc {
 // 			return func(ctx *leego.Context) {
 // 				handle(ctx)
