@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"gitee.com/leminewx/gokit/ggid"
 	"gitee.com/leminewx/leego/headers"
 	"gitee.com/leminewx/leego/response/sse"
 
@@ -28,7 +27,7 @@ func main() {
 		cors.NewDefaultCORS().GetMiddleware(),
 		func(next leego.HandleFunc) leego.HandleFunc {
 			return func(ctx *leego.Context) {
-				ctx.Response.Header().Set(headers.X_REQUEST_ID, ggid.New().String())
+				ctx.Response.Header().Set(headers.X_REQUEST_ID, "xxxx-xxxx-xxxx-xxxx-xxxx")
 				next(ctx)
 			}
 		},
@@ -46,7 +45,6 @@ func main() {
 	})
 
 	wg.Go(func() {
-		id := ggid.New().GetShort()
 		for {
 			if sseManager.IsClosed() {
 				return
@@ -54,7 +52,7 @@ func main() {
 
 			time.Sleep(1 * time.Second)
 			_ = sseManager.Broadcast(&sse.Message{
-				Id:    id,
+				Id:    "xxxx-xxxx-xxxx-xxxx-xxxx",
 				Event: "manager_message",
 				Data:  []byte("hello, this is broadcast message, welcome to leego"),
 			})
@@ -68,18 +66,17 @@ func main() {
 			log.Println(err)
 		}
 
-		id := ggid.New().GetShort()
-		for range 100 {
+		for i := range 100 {
 			data, _ := json.Marshal(&leego.JSON{"username": username, "desc": "hello", "time": time.Now().Format(time.DateTime)})
 			_ = sseManager.SendTo(client.Id, &sse.Message{
-				Id:    id,
+				Id:    strconv.Itoa(i),
 				Event: "person_message",
 				Data:  data,
 			})
 
 			data, _ = json.Marshal(&leego.JSON{"desc": "hello, my name is " + username, "time": time.Now().Format(time.DateTime)})
 			_ = sseManager.Broadcast(&sse.Message{
-				Id:    id,
+				Id:    strconv.Itoa(i),
 				Event: "broadcast_message",
 				Data:  data,
 			})
