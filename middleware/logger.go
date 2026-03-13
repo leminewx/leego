@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"gitee.com/leminewx/leego"
@@ -50,6 +51,13 @@ func Log() leego.MiddlewareFunc {
 
 // LogWithConfig 通过指定配置，记录请求响应信息
 func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
+	if config.SkipAbsolutePaths == nil {
+		config.SkipAbsolutePaths = make(map[string]struct{})
+	}
+	if config.SkipWildcardPaths == nil {
+		config.SkipWildcardPaths = make([]string, 0)
+	}
+
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
 			// 调用下一个处理器
@@ -118,20 +126,20 @@ type LoggerConfig struct {
 	Output            io.Writer           // 输出接口，若未指定，则输出到 os.Stdout
 	WithColor         bool                // 是否携带颜色
 	WithQuery         bool                // 是否携带查询参数
-	SkipAbsolutePaths []string            // 跳过记录的绝对路径
-	SkipWildcardPaths map[string]struct{} // 跳过记录的通配路径
+	SkipWildcardPaths []string            // 跳过通配路径
+	SkipAbsolutePaths map[string]struct{} // 跳过绝对路径
 }
 
 // shouldSkip 检查是否应该跳过日志记录
 func (own *LoggerConfig) shouldSkip(path string) bool {
-	// 先匹配通配路径
-	if _, ok := own.SkipWildcardPaths[path]; ok {
+	// 匹配绝对路径
+	if _, ok := own.SkipAbsolutePaths[path]; ok {
 		return true
 	}
 
-	// 再匹配绝对路径
-	for _, skipPath := range own.SkipAbsolutePaths {
-		if path == skipPath {
+	// 匹配通配路径
+	for _, wildcardPath := range own.SkipWildcardPaths {
+		if strings.HasPrefix(path, wildcardPath) {
 			return true
 		}
 	}
