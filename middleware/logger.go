@@ -11,42 +11,41 @@ import (
 	"gitee.com/leminewx/leego"
 )
 
-// 颜色常量
+// 颜色与样式常量
 const (
-	_COLOR_RED     = "\033[97;41m" // 红色
-	_COLOR_BLUE    = "\033[97;44m" // 蓝色
-	_COLOR_CYAN    = "\033[97;46m" // 青色
-	_COLOR_WHITE   = "\033[90;47m" // 白色
-	_COLOR_GREEN   = "\033[97;42m" // 绿色
-	_COLOR_YELLOW  = "\033[90;43m" // 黄色
-	_COLOR_MAGENTA = "\033[97;45m" // 品红
+	_RESET  = "\033[0m"
+	_BOLD   = "\033[1m"
+	_DIM    = "\033[2m"
+	_RED    = "\033[31m"
+	_GREEN  = "\033[32m"
+	_YELLOW = "\033[33m"
+	_BLUE   = "\033[34m"
+	_MAGENTA = "\033[35m"
+	_CYAN   = "\033[36m"
+	_WHITE  = "\033[37m"
 
-	_FORMAT_DATETIME          = "2006-01-02 15:04:05.000"
-	_FORMAT_LOG_WITH_COLOR    = "[\033[1mLEEGO\033[0m] %v | %15s |%s %3d \033[0m|%s %13v \033[0m|%s %-7s \033[0m %#v\n"
-	_FORMAT_LOG_WITHOUT_COLOR = "[\033[1mLEEGO\033[0m] %v | %15s | %3d | %13v | %-7s %#v\n"
+	// 粗体白字 + 彩色底，用作方法 / 状态码徽标
+	_BADGE_GET     = "\033[97;44m" // 蓝底
+	_BADGE_POST    = "\033[97;42m" // 绿底
+	_BADGE_PUT     = "\033[97;43m" // 黄底
+	_BADGE_PATCH   = "\033[97;46m" // 青底
+	_BADGE_DELETE  = "\033[97;41m" // 红底
+	_BADGE_HEAD    = "\033[97;45m" // 品红底
+	_BADGE_DEFAULT = "\033[97;47m" // 白底
+
+	// 状态码底色
+	_STATUS_OK         = "\033[97;42m" // 2xx 绿
+	_STATUS_REDIRECT   = "\033[97;46m" // 3xx 青
+	_STATUS_CLIENT_ERR = "\033[30;43m" // 4xx 黄
+	_STATUS_SERVER_ERR = "\033[97;41m" // 5xx 红
+	_STATUS_OTHER      = "\033[97;47m" // 其他 白
+
+	_FORMAT_DATETIME = "2006-01-02 15:04:05.000"
 )
 
-// Log 记录请求响应信息
+// Log 记录请求响应信息（自动检测终端，启用彩色输出）
 func Log() leego.MiddlewareFunc {
-	return func(handle leego.HandleFunc) leego.HandleFunc {
-		return func(ctx *leego.Context) {
-			// 调用下一个处理器
-			handle(ctx)
-
-			// 获取响应信息
-			start := ctx.GetStartTime()
-			status := ctx.GetStatusCode()
-			latency := time.Since(start)
-			request := ctx.Request
-
-			_, _ = fmt.Fprintf(os.Stdout, _FORMAT_LOG_WITH_COLOR,
-				time.Now().Format(_FORMAT_DATETIME), ctx.GetClientIP(),
-				getStatusColor(status), status,
-				getLatencyColor(latency), latency,
-				getMethodColor(request.Method), request.Method, request.URL.Path,
-			)
-		}
-	}
+	return LogWithConfig(&LoggerConfig{})
 }
 
 // LogWithConfig 通过指定配置，记录请求响应信息
@@ -89,49 +88,103 @@ func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
 			}
 
 			// 获取响应信息
-			start := ctx.GetStartTime()
 			status := ctx.GetStatusCode()
-			latency := time.Since(start)
-
-			// 不带查询参数
-			if !config.WithQuery {
-				// 带颜色
-				if config.WithColor {
-					_, _ = fmt.Fprintf(out, _FORMAT_LOG_WITH_COLOR,
-						time.Now().Format(_FORMAT_DATETIME), ctx.GetClientIP(),
-						getStatusColor(status), status,
-						getLatencyColor(latency), latency,
-						getMethodColor(request.Method), request.Method, request.URL.Path)
-					return
-				}
-
-				// 不带颜色
-				_, _ = fmt.Fprintf(out, _FORMAT_LOG_WITHOUT_COLOR, time.Now().Format(_FORMAT_DATETIME),
-					ctx.GetClientIP(), status, latency, request.Method, request.URL.Path)
-				return
+			latency := time.Since(ctx.GetStartTime())
+			path := request.URL.Path
+			if config.WithQuery && request.URL.RawQuery != "" {
+				path += "?" + request.URL.RawQuery
 			}
 
-			// 带查询参数
-			query := request.URL.RawQuery
-			if query != "" {
-				query = "?" + query
-			}
+			// 是否启用颜色：显式配置优先；未显式设置时按终端能力自动判定
+			withColor := config.WithColor || colorAllowed(out, config.WithColor)
 
-			// 带颜色
-			if config.WithColor {
-				_, _ = fmt.Fprintf(out, _FORMAT_LOG_WITH_COLOR,
-					time.Now().Format(_FORMAT_DATETIME), ctx.GetClientIP(),
-					getStatusColor(status), status,
-					getLatencyColor(latency), latency,
-					getMethodColor(request.Method), request.Method, request.URL.Path+query)
-				return
-			}
-
-			// 不带颜色
-			_, _ = fmt.Fprintf(out, _FORMAT_LOG_WITHOUT_COLOR, time.Now().Format(_FORMAT_DATETIME),
-				ctx.GetClientIP(), status, latency, request.Method, request.URL.Path+query)
+			renderLog(out, withColor, status, latency, request.Method, path, ctx.GetClientIP())
 		}
 	}
+}
+
+// renderLog 按统一列布局渲染一行访问日志
+//
+//	[LEEGO] 2026-08-04 12:00:00.000 │ GET    │ 200 │  12.34ms │ 127.0.0.1 │ /api/v1/users/42
+func renderLog(out io.Writer, withColor bool, status int, latency time.Duration, method, path, ip string) {
+	const sep = _DIM + " │ " + _RESET
+
+	methodField := badge(method, getMethodColor(method), pad(method, 6), withColor)
+	statusField := badge(fmt.Sprintf("%d", status), getStatusColor(status), pad(fmt.Sprintf("%d", status), 3), withColor)
+	latencyField := colorize(fmt.Sprintf("%8s", formatLatency(latency)), getLatencyColor(latency), withColor)
+	ipField := colorize(ip, _DIM, withColor)
+	pathField := colorize(path, _BOLD, withColor)
+
+	line := fmt.Sprintf("[LEEGO] %s%s%s%s%s%s%s%s%s%s\n",
+		colorize(time.Now().Format(_FORMAT_DATETIME), _DIM, withColor),
+		sep,
+		methodField,
+		sep,
+		statusField,
+		sep,
+		latencyField,
+		sep,
+		ipField,
+		sep+pathField,
+	)
+
+	_, _ = fmt.Fprint(out, line)
+}
+
+// badge 生成固定可见宽度的彩色徽标（文字已内补，色码不影响对齐）
+func badge(_, color, padded string, withColor bool) string {
+	if !withColor {
+		return padded
+	}
+	return color + padded + _RESET
+}
+
+// colorize 为文本包裹颜色（withColor 为 false 时原样返回）
+func colorize(text, color string, withColor bool) string {
+	if !withColor {
+		return text
+	}
+	return color + text + _RESET
+}
+
+// pad 将文本按可见宽度补到 w（ASCII 场景按字节长度处理即可）
+func pad(s string, w int) string {
+	if len(s) >= w {
+		return s
+	}
+	return s + strings.Repeat(" ", w-len(s))
+}
+
+// formatLatency 将耗时格式化为人类可读字符串
+func formatLatency(d time.Duration) string {
+	switch {
+	case d < time.Microsecond:
+		return fmt.Sprintf("%.3fns", float64(d.Nanoseconds()))
+	case d < time.Millisecond:
+		return fmt.Sprintf("%.3fµs", float64(d.Microseconds()))
+	case d < time.Second:
+		return fmt.Sprintf("%.2fms", float64(d.Microseconds())/1000)
+	default:
+		return fmt.Sprintf("%.2fs", d.Seconds())
+	}
+}
+
+// colorAllowed 在配置未显式开启颜色时，依据终端与环境变量决定是否可以着色：
+//   - 尊重 NO_COLOR（https://no-color.org）约定；
+//   - 当 TERM=dumb 时不着色；
+//   - 仅当输出目标是标准输出/标准错误等字符设备时着色。
+func colorAllowed(out io.Writer, explicit bool) bool {
+	if explicit {
+		return true
+	}
+	// 显式禁用
+	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+		return false
+	}
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	return out == os.Stdout || out == os.Stderr
 }
 
 // LoggerConfig 定义日志配置的实现类型
@@ -160,58 +213,58 @@ func (own *LoggerConfig) shouldSkip(path string) bool {
 	return false
 }
 
-// getMethodColor 获取方法颜色
+// getMethodColor 获取方法徽标底色
 func getMethodColor(method string) string {
 	switch method {
 	case http.MethodGet:
-		return _COLOR_BLUE
+		return _BADGE_GET
 	case http.MethodPost:
-		return _COLOR_GREEN
+		return _BADGE_POST
 	case http.MethodPut:
-		return _COLOR_YELLOW
+		return _BADGE_PUT
 	case http.MethodPatch:
-		return _COLOR_CYAN
+		return _BADGE_PATCH
 	case http.MethodDelete:
-		return _COLOR_RED
+		return _BADGE_DELETE
 	case http.MethodHead:
-		return _COLOR_MAGENTA
+		return _BADGE_HEAD
 	default:
-		return _COLOR_WHITE
+		return _BADGE_DEFAULT
 	}
 }
 
-// getStatusColor 获取状态码颜色
+// getStatusColor 获取状态码徽标底色
 func getStatusColor(status int) string {
 	switch {
 	case status >= http.StatusInternalServerError:
-		return _COLOR_RED
+		return _STATUS_SERVER_ERR
 	case status >= http.StatusBadRequest:
-		return _COLOR_YELLOW
+		return _STATUS_CLIENT_ERR
 	case status >= http.StatusMultipleChoices:
-		return _COLOR_BLUE
+		return _STATUS_REDIRECT
 	case status >= http.StatusOK:
-		return _COLOR_GREEN
+		return _STATUS_OK
 	default:
-		return _COLOR_WHITE
+		return _STATUS_OTHER
 	}
 }
 
-// getLatencyColor 获取响应延迟颜色
+// getLatencyColor 获取响应延迟颜色（仅前景色，避免视觉过重的底色）
 func getLatencyColor(latency time.Duration) string {
 	switch {
 	case latency < time.Millisecond*100:
-		return _COLOR_WHITE
+		return _WHITE
 	case latency < time.Millisecond*200:
-		return _COLOR_GREEN
+		return _GREEN
 	case latency < time.Millisecond*300:
-		return _COLOR_CYAN
+		return _CYAN
 	case latency < time.Millisecond*500:
-		return _COLOR_BLUE
+		return _BLUE
 	case latency < time.Second:
-		return _COLOR_YELLOW
+		return _YELLOW
 	case latency < time.Second*2:
-		return _COLOR_MAGENTA
+		return _MAGENTA
 	default:
-		return _COLOR_RED
+		return _RED
 	}
 }
