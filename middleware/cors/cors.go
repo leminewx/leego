@@ -51,6 +51,8 @@ func NewDefaultCORS() *CORS {
 	c := &CORS{}
 	c.SetAllowOrigins()
 	c.SetAllowMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+	// 必须显式启用，否则 GetMiddleware 会因 isEnabled==0 直接跳过 CORS 处理
+	c.Enable()
 	return c
 }
 
@@ -93,12 +95,17 @@ func (own *CORS) handlePreflight(ctx *leego.Context) bool {
 	// 设置预检响应头
 	own.writeResponseHeader(ctx)
 
+	// 回显浏览器在预检中实际请求的自定义请求头，使携带自定义头的实际请求得以通过
+	if requestedHeaders := ctx.GetRequestHeader(headers.ACCESS_CONTROL_REQUEST_HEADERS); requestedHeaders != "" {
+		ctx.Response.Header().Set(headers.ACCESS_CONTROL_ALLOW_HEADERS, requestedHeaders)
+	}
+
 	// 设置状态码
 	ctx.SetStatusCode(http.StatusNoContent)
 	return true
 }
 
-const _DEFAULT_ALLOW_METHODS = "GET, PUT, POST, DELETE, OPTIONS"
+const _DEFAULT_ALLOW_METHODS = "GET, PUT, POST, PATCH, DELETE, OPTIONS"
 
 // writeResponseHeader 写入响应头
 func (own *CORS) writeResponseHeader(ctx *leego.Context) {
@@ -111,6 +118,8 @@ func (own *CORS) writeResponseHeader(ctx *leego.Context) {
 	allowedOrigin := own.getAllowedOrigin(ctx.Request)
 	if allowedOrigin != "" {
 		header.Set(headers.ACCESS_CONTROL_ALLOW_ORIGIN, allowedOrigin)
+		// 当响应随源变化时，需告知缓存依据 Origin 区分，避免返回错误的 CORS 头
+		header.Set("Vary", "Origin")
 	}
 
 	// 设置 Access-Control-Allow-Credentials

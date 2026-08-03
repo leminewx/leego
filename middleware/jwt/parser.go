@@ -40,6 +40,21 @@ func (own *parser) Parse(signer Signer, tokenString string, claims Claims) error
 		return ErrInvalidHeader
 	}
 
+	// 校验令牌声明的算法与签名器一致，防止算法混淆攻击（如将 alg 替换为 none）
+	var head Header
+	if err := json.Unmarshal(decodeBase64URL(parts[0]), &head); err != nil {
+		return ErrInvalidHeader
+	}
+	if head.GetAlgorithm() != signer.GetHeader().GetAlgorithm() {
+		return ErrInvalidAlgorithm
+	}
+
+	// 解析声明（先于签名校验，使结构错误的令牌返回 ErrInvalidPayload 而非 ErrInvalidToken）
+	claimsJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ErrInvalidPayload
+	}
+
 	// 解析签名
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
@@ -48,17 +63,20 @@ func (own *parser) Parse(signer Signer, tokenString string, claims Claims) error
 
 	// 验证签名
 	if !signer.Verify([]byte(parts[0]+"."+parts[1]), signature) {
-		return ErrInvalidToken
-	}
-
-	// 解析声明
-	claimsJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return ErrInvalidPayload
+		return ErrInvalidSignature
 	}
 
 	// 反序列化声明
 	return json.Unmarshal(claimsJSON, &claims)
+}
+
+// decodeBase64URL 解码 JWT 段（用于头部/载荷的结构解析）
+func decodeBase64URL(seg string) []byte {
+	data, err := base64.RawURLEncoding.DecodeString(seg)
+	if err != nil {
+		return []byte(seg)
+	}
+	return data
 }
 
 // ParseAndValidateStandardClaims 解析 JWT 并验证标准声明中的所有时间字段（签发时间允许1分钟时间偏差）

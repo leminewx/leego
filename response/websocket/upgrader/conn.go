@@ -67,7 +67,7 @@ func (own *Conn) Read() (opCode OpCode, data []byte, err error) {
 		case OP_CODE_CLOSE:
 			// 未收到关闭状态码
 			if len(frame.payload) < 2 {
-				_ = own.writeCloseFrame(CLOSE_CODE_NO_CODE_RECEIVED, "")
+				own.writeCloseFrameSafe(CLOSE_CODE_NO_CODE_RECEIVED, "")
 				return 0, nil, &CloseError{Code: CLOSE_CODE_NO_CODE_RECEIVED}
 			}
 
@@ -84,12 +84,12 @@ func (own *Conn) Read() (opCode OpCode, data []byte, err error) {
 			}
 
 			// 发送关闭帧
-			_ = own.writeCloseFrame(closeCode, closeMessage)
+			own.writeCloseFrameSafe(closeCode, closeMessage)
 			return 0, nil, &CloseError{Code: closeCode, Text: closeMessage}
 
 		// 处理 Ping 消息
 		case OP_CODE_PING:
-			_ = own.writeFrame(OP_CODE_PONG, frame.payload)
+			own.writeControl(OP_CODE_PONG, frame.payload)
 			continue
 
 		// 处理 Pong 消息
@@ -99,7 +99,7 @@ func (own *Conn) Read() (opCode OpCode, data []byte, err error) {
 		// 处理文本消息
 		case OP_CODE_TEXT:
 			if !utf8.Valid(frame.payload) {
-				_ = own.writeCloseFrame(CLOSE_CODE_INVALID_FRAME_PAYLOAD_DATA, "")
+				own.writeCloseFrameSafe(CLOSE_CODE_INVALID_FRAME_PAYLOAD_DATA, "")
 				return 0, nil, errors.New("leego: websocket: invalid UTF-8 in text message")
 			}
 			fallthrough
@@ -110,7 +110,7 @@ func (own *Conn) Read() (opCode OpCode, data []byte, err error) {
 
 		// 处理未知类型消息
 		default:
-			_ = own.writeCloseFrame(CLOSE_CODE_PROTOCOL_ERROR, "")
+			own.writeCloseFrameSafe(CLOSE_CODE_PROTOCOL_ERROR, "")
 			return 0, nil, errors.New("leego: websocket: unknown opcode")
 		}
 	}
@@ -126,7 +126,7 @@ func (own *Conn) Write(opCode OpCode, data []byte) error {
 		return errors.New("leego: websocket: connection closed")
 	}
 
-	// 检查是否已写入
+	// 检查是否已写入关闭帧
 	if own.writeClosed {
 		return errors.New("leego: websocket: write closed")
 	}
@@ -137,6 +137,26 @@ func (own *Conn) Write(opCode OpCode, data []byte) error {
 	}
 
 	return own.writeFrame(opCode, data)
+}
+
+// writeControl 在持写锁的前提下发送控制帧（由读循环调用，避免与 Write 竞争 writer）
+func (own *Conn) writeControl(opcode OpCode, data []byte) {
+	own.lock.Lock()
+	defer own.lock.Unlock()
+	if own.closed || own.writeClosed {
+		return
+	}
+	_ = own.writeFrame(opcode, data)
+}
+
+// writeCloseFrameSafe 线程安全地发送关闭帧（由读循环调用）
+func (own *Conn) writeCloseFrameSafe(code CloseCode, text string) {
+	own.lock.Lock()
+	defer own.lock.Unlock()
+	if own.closed || own.writeClosed {
+		return
+	}
+	_ = own.writeCloseFrame(code, text)
 }
 
 // Close 关闭 WebSocket 连接
@@ -278,7 +298,7 @@ func (own *Conn) writeFrame(opcode OpCode, data []byte) error {
 	return own.writer.Flush()
 }
 
-// writeCloseFrame 写入关闭帧
+// writeCloseFrame 写入关闭帧（调用方必须持有 own.lock）
 func (own *Conn) writeCloseFrame(code CloseCode, text string) error {
 	// 检查是否已写入关闭帧
 	if own.writeClosed {

@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"sync"
 	"time"
 
 	"gitee.com/leminewx/leego/response/websocket/upgrader"
@@ -15,6 +16,7 @@ type Client struct {
 	CloseChan   chan struct{}  // 关闭通道
 	Connection  *upgrader.Conn // WebSocket 连接
 	ConnectedAt time.Time      // 连接建立时间
+	closeOnce   sync.Once      // 确保 Close 只执行一次，避免重复关闭通道引发 panic
 }
 
 // NewClient 创建一个新的 WebSocket 客户端
@@ -30,10 +32,13 @@ func NewClient(clientId, userId string, conn *upgrader.Conn) *Client {
 	}
 }
 
-// Close 关闭 WebSocket 客户端的连接
+// Close 关闭 WebSocket 客户端的连接（幂等）
 func (own *Client) Close() error {
-	err := own.Connection.Close()
-	close(own.SendChan)
-	close(own.CloseChan)
+	var err error
+	own.closeOnce.Do(func() {
+		err = own.Connection.Close()
+		close(own.SendChan)
+		close(own.CloseChan)
+	})
 	return err
 }

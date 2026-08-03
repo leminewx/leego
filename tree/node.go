@@ -26,6 +26,7 @@ func NewNode[T any](segment string) *Node[T] {
 	}
 
 	node.extractName(segment)
+	node.priority = node.computePriority()
 	return node
 }
 
@@ -44,25 +45,25 @@ func (own *Node[T]) extractName(segment string) {
 	own.paramName = ""
 }
 
-// GetPriority 获取节点的优先级
-func (own *Node[T]) GetPriority() int {
-	if own.priority != 0 {
-		return own.priority
-	}
-
+// computePriority 计算节点优先级（1-通配符*  2-参数:  3-静态），在构造时一次性确定，
+// 避免 GetPriority 在并发路由查找中惰性写 priority 引发数据竞争
+func (own *Node[T]) computePriority() int {
 	switch {
 	// *param 或 *
 	case strings.HasPrefix(own.segment, "*"):
-		own.priority = 1
+		return 1
 
 	// :param
 	case own.isWildcard:
-		own.priority = 2
+		return 2
 
 	// 静态路径优先级最高
 	default:
-		own.priority = 3
+		return 3
 	}
+}
 
+// GetPriority 获取节点的优先级（值已构造时确定，此处只读，可并发安全访问）
+func (own *Node[T]) GetPriority() int {
 	return own.priority
 }

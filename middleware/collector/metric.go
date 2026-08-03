@@ -39,11 +39,17 @@ func (own *response) Decrease(cost time.Duration) {
 
 // Clone 克隆一个响应指标
 func (own *response) Clone() *response {
+	// MaxCost / MinCost 由 lock 保护（见 Decrease），
+	// 不能用 atomic 读取，否则与写侧的互斥锁不构成互斥，属于数据竞争
+	own.lock.RLock()
+	maxCost, minCost := own.MaxCost, own.MinCost
+	own.lock.RUnlock()
+
 	return &response{
 		Code:      own.Code,
 		Total:     atomic.LoadUint64(&own.Total),
-		MaxCost:   atomic.LoadUint64(&own.MaxCost),
-		MinCost:   atomic.LoadUint64(&own.MinCost),
+		MaxCost:   maxCost,
+		MinCost:   minCost,
 		TotalCost: atomic.LoadUint64(&own.TotalCost),
 	}
 }

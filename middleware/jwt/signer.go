@@ -6,6 +6,7 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash"
 	"sync"
@@ -28,7 +29,11 @@ type hmacSigner struct {
 }
 
 // NewHMACSigner 创建 HMAC 签名器（签名算法仅支持：HS256, HS384, HS512，默认使用 HS256）
-func NewHMACSigner(algorithm Algorithm, key []byte) Signer {
+// key 不能为空，否则 HMAC 退化为无密钥运算，任意载荷都可被伪造
+func NewHMACSigner(algorithm Algorithm, key []byte) (Signer, error) {
+	if len(key) == 0 {
+		return nil, errors.New("jwt: HMAC key must not be empty")
+	}
 	signer := &hmacSigner{}
 	switch algorithm {
 	case HS512:
@@ -41,7 +46,7 @@ func NewHMACSigner(algorithm Algorithm, key []byte) Signer {
 	}
 
 	signer.header = NewHeader(algorithm)
-	return signer
+	return signer, nil
 }
 
 // GetHeader 获取签名头信息

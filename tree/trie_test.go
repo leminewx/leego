@@ -31,6 +31,61 @@ func TestTrie(t *testing.T) {
 	}
 }
 
+// TestTrieBacktracking 测试匹配失败后能否回溯到其他兄弟分支
+func TestTrieBacktracking(t *testing.T) {
+	t.Run("静态分支失败后回退到参数分支", func(t *testing.T) {
+		trie := NewTrie[string]()
+		// /users/new/settings 只有静态分支，/users/:id/profile 只有参数分支
+		trie.Insert("/users/new/settings", "new_settings")
+		trie.Insert("/users/:id/profile", "profile")
+
+		// "new" 会先命中静态节点 users/new，但其下没有 profile，
+		// 必须回溯到 :id 分支才能匹配成功
+		route, params, found := trie.Search("/users/new/profile")
+		if !found {
+			t.Fatalf("期望回溯匹配到 /users/:id/profile，实际未找到")
+		}
+		if route != "profile" {
+			t.Errorf("route = %v, want profile", route)
+		}
+		if params["id"] != "new" {
+			t.Errorf("params[id] = %v, want new", params["id"])
+		}
+	})
+
+	t.Run("通配符非路由节点不应吞掉匹配", func(t *testing.T) {
+		trie := NewTrie[string]()
+		// 通配符节点本身不是路由，只有它的子节点 meta 才是
+		trie.Insert("/assets/*/meta", "meta")
+
+		// /assets/logo.png 无法匹配到任何已注册路由，必须返回未找到，
+		// 且不能错误地把非路由的通配符节点当成结果返回
+		route, _, found := trie.Search("/assets/logo.png")
+		if found {
+			t.Errorf("不应匹配非路由的通配符节点，却得到 route=%v", route)
+		}
+	})
+
+	t.Run("回溯后不残留失败分支的参数", func(t *testing.T) {
+		trie := NewTrie[string]()
+		// 让失败分支比成功分支先被尝试：静态 files 优先于参数 :x
+		trie.Insert("/a/files/:fid/b", "fb")
+		trie.Insert("/a/:x/:y/c", "axyc")
+
+		_, params, found := trie.Search("/a/files/9/c")
+		if !found {
+			t.Fatalf("期望匹配到 /a/:x/:y/c，实际未找到")
+		}
+		// fid 属于先失败的 /a/files/:fid/b 分支，不应残留在最终结果里
+		if _, leaked := params["fid"]; leaked {
+			t.Errorf("失败分支的参数 fid 泄漏到结果中: %v", params)
+		}
+		if params["x"] != "files" || params["y"] != "9" {
+			t.Errorf("params = %v, want x=files y=9", params)
+		}
+	})
+}
+
 // TestTrieInsertAndSearch 测试插入和搜索功能
 func TestTrieInsertAndSearch(t *testing.T) {
 	trie := NewTrie[string]()
@@ -84,13 +139,13 @@ func TestTrieInsertAndSearch(t *testing.T) {
 		{
 			path:     "/files/images/photo.jpg",
 			expected: "file_server",
-			params:   map[string]string{"path": "images/photo.jpg"},
+			params:   map[string]string{WILDCARD_DEFAULT_NAME: "images/photo.jpg"},
 			found:    true,
 		},
 		{
 			path:     "/api/v1/users/profile",
 			expected: "api_handler",
-			params:   map[string]string{"service": "users", "path": "profile"},
+			params:   map[string]string{"service": "users", WILDCARD_DEFAULT_NAME: "profile"},
 			found:    true,
 		},
 		{
@@ -188,7 +243,7 @@ func TestTrieEdgeCases(t *testing.T) {
 		if !found || handler != "catch_all" {
 			t.Errorf("Catch-all search failed")
 		}
-		if params["path"] != "any/path" {
+		if params[WILDCARD_DEFAULT_NAME] != "any/path" {
 			t.Errorf("Catch-all param incorrect")
 		}
 	})
@@ -239,12 +294,12 @@ func TestTrieComplexPatterns(t *testing.T) {
 		{
 			path:     "/api/v1/comments/789/replies/123",
 			expected: 3,
-			params:   map[string]string{"version": "v1", "cid": "789", "path": "replies/123"},
+			params:   map[string]string{"version": "v1", "cid": "789", WILDCARD_DEFAULT_NAME: "replies/123"},
 		},
 		{
 			path:     "/static/css/style.css",
 			expected: 4,
-			params:   map[string]string{"path": "css/style.css"},
+			params:   map[string]string{WILDCARD_DEFAULT_NAME: "css/style.css"},
 		},
 		{
 			path:     "/en/users/999",
@@ -273,9 +328,9 @@ func TestTrieComplexPatterns(t *testing.T) {
 }
 
 // BenchmarkTrieInsert 测试插入性能
-//cpu: Intel(R) Core(TM) i5-14600KF							static paths				20		 3817927	       310.9 ns/op	     280 B/op	      15 allocs/op
-//cpu: Intel(R) Core(TM) i5-14600KF							dynamic paths				20		 4929130	       230.0 ns/op	     296 B/op	       9 allocs/op
-//cpu: Intel(R) Core(TM) i5-14600KF							complex dynamic paths		20		    4640	      263776 ns/op	  154916 B/op	    3900 allocs/op
+//cpu: Intel(R) Core(TM) i5-14600KF							static paths				20		 4053619	       298.9 ns/op	     280 B/op	      15 allocs/op
+//cpu: Intel(R) Core(TM) i5-14600KF							dynamic paths				20		 5551840	       215.0 ns/op	     296 B/op	       9 allocs/op
+//cpu: Intel(R) Core(TM) i5-14600KF							complex dynamic paths		20		    4602	    254316 ns/op	  154917 B/op	    3900 allocs/op
 
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		static paths				8		 2314869	       525.2 ns/op	     280 B/op	      15 allocs/op
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		dynamic paths				8		 3056307	       408.4 ns/op	     296 B/op	       9 allocs/op
@@ -323,10 +378,10 @@ func BenchmarkTrieInsert(b *testing.B) {
 }
 
 // BenchmarkTrieSearch 测试搜索性能
-// cpu: Intel(R) Core(TM) i5-14600KF						static paths				20		18065649	       63.88 ns/op	     104 B/op	       3 allocs/op
-// cpu: Intel(R) Core(TM) i5-14600KF						dynamic param paths			20		 9671016	       127.9 ns/op	     330 B/op	       4 allocs/op
-// cpu: Intel(R) Core(TM) i5-14600KF						dynamic wildcard paths		20		 7430827	       164.9 ns/op	     448 B/op	       5 allocs/op
-// cpu: Intel(R) Core(TM) i5-14600KF						not found paths				10		11812418	       95.67 ns/op	     213 B/op	       3 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						static paths				20		17367970	       65.27 ns/op	     104 B/op	       3 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						dynamic param paths			20		 8658120	       125.9 ns/op	     330 B/op	       4 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						dynamic wildcard paths		20		 7297352	       165.0 ns/op	     448 B/op	       5 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						not found paths				10		12672865	       95.43 ns/op	     213 B/op	       3 allocs/op
 //
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		static paths				8		10413692	       117.4 ns/op	     104 B/op	       3 allocs/op
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		dynamic param paths			8		 5726457	       211.4 ns/op	     330 B/op	       4 allocs/op
@@ -382,7 +437,7 @@ func BenchmarkTrieSearch(b *testing.B) {
 }
 
 // BenchmarkTrieConcurrent 测试并发性能
-// cpu: Intel(R) Core(TM) i5-14600KF						8		 22675866	       51.58 ns/op	     340 B/op	       4 allocs/op
+// cpu: Intel(R) Core(TM) i5-14600KF						8		 21651288	       53.05 ns/op	     340 B/op	       4 allocs/op
 // cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		 10900864	       112.6 ns/op	     340 B/op	       4 allocs/op
 func BenchmarkTrieConcurrent(b *testing.B) {
 	trie := prepareTestTrie(500)
@@ -431,4 +486,20 @@ func prepareTestTrie(size int) *Trie[string] {
 	}
 
 	return trie
+}
+
+func BenchmarkTrie(b *testing.B) {
+	trie := NewTrie[string]()
+	trie.Insert("/user/:id", "user")
+	trie.Insert("/static/*filepath", "static")
+	trie.Insert("/api/v1/posts", "posts")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		trie.Search("/user/123")
+		trie.Search("/static/css/style.css")
+		trie.Search("/api/v1/posts")
+	}
 }

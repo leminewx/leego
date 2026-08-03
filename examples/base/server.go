@@ -32,7 +32,10 @@ func main() {
 
 	// JWT 认证中间件
 	// middlewareJWTParser := jwt.NewParser()
-	middlewareJWTSigner := jwt.NewHMACSigner(jwt.HS384, []byte("secret123456789."))
+	middlewareJWTSigner, err := jwt.NewHMACSigner(jwt.HS384, []byte("secret123456789."))
+	if err != nil {
+		log.Fatalf("初始化 JWT 签名器失败: %v", err)
+	}
 
 	// 注册中间件
 	engine.UseMiddlewares(

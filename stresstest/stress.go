@@ -50,12 +50,19 @@ func (own *Client) WithTransport(transport *http.Transport) *Client {
 // Run 运行负载测试
 func (own *Client) Run() string {
 	own.metrics = NewMetrics()
+	// 将总请求数均匀分摊到每个并发 worker，余数额外分配给前 remainder 个 worker，
+	// 避免整数除法直接丢弃余数导致实际请求数少于配置值
 	requestsPerWorker := own.config.TotalRequests / own.config.Concurrent
+	remainder := own.config.TotalRequests % own.config.Concurrent
 
 	var wg sync.WaitGroup
 	for i := 0; i < own.config.Concurrent; i++ {
+		count := requestsPerWorker
+		if i < remainder {
+			count++
+		}
 		wg.Go(func() {
-			for j := 0; j < requestsPerWorker; j++ {
+			for j := 0; j < count; j++ {
 				start := time.Now()
 
 				req, err := http.NewRequest(own.config.Method, own.config.URL, nil)

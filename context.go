@@ -56,6 +56,27 @@ func newContext(engine *Engine, resp http.ResponseWriter, req *http.Request, pat
 	}
 }
 
+/*
+NewContext 新建一个独立的上下文，供框架外部（如中间件适配器）构造上下文使用。
+
+与内部构造相比，engine 允许为 nil；此时 GetServiceName 返回空字符串而非 panic。
+startTime 会被正确初始化，避免 time.Since 得到异常的延迟值。
+*/
+func NewContext(resp http.ResponseWriter, req *http.Request) *Context {
+	ctx := &Context{
+		Request:    req,
+		Response:   response.NewWriter(resp),
+		startTime:  time.Now(),
+		pathValues: make(map[string]string),
+	}
+
+	if req != nil {
+		ctx.url = req.URL
+	}
+
+	return ctx
+}
+
 // GetStartTime 获取上下文创建时间
 func (own *Context) GetStartTime() time.Time {
 	return own.startTime
@@ -63,6 +84,11 @@ func (own *Context) GetStartTime() time.Time {
 
 // GetServiceName 获取服务名称
 func (own *Context) GetServiceName() string {
+	// engine 可能为 nil（例如通过 NewContext 构造的上下文）
+	if own.engine == nil {
+		return ""
+	}
+
 	return own.engine.Name
 }
 

@@ -89,8 +89,10 @@ func (own *FixedWindowLimiter) SetWindowSize(size time.Duration) {
 
 // GetConfig 获取配置
 func (own *FixedWindowLimiter) GetConfig() (limit int, windowSize time.Duration) {
+	// limit 由 atomic 保护（见 SetLimit），需用 atomic 读取
+	limit = int(atomic.LoadInt32(&own.limit))
+
 	own.lock.RLock()
-	limit = int(own.limit)
 	windowSize = own.windowSize
 	own.lock.RUnlock()
 	return
@@ -165,36 +167,27 @@ func (own *FixedWindowLimiter) Wait(ctx context.Context) error {
 }
 
 func (own *FixedWindowLimiter) allow() bool {
-	// 快速路径尝试
-	if own.fastAllow() {
-		return true
-	}
-
+	// 注意：此处不能再走「原子 CAS 快速路径」。
+	// 原快速路径在未检查窗口是否过期的情况下就自增 count，会导致：
+	// 1. 窗口已过期时本应重置计数，却因为 count 已达上限而误拒；
+	// 2. count 的读改写同时被 atomic 与 lock 两种方式保护，二者不互斥，
+	//    与慢路径并发时会丢失更新，实际放行量可能超过 limit。
+	// 计数与窗口时间必须在同一把锁内保持一致。
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
 	// 检查是否需要重置窗口
 	now := time.Now()
 	if now.Sub(own.lastTime) >= own.windowSize {
-		atomic.StoreInt32(&own.count, 0)
+		own.count = 0
 		own.lastTime = now
 	}
 
 	// 检查是否超过限制
-	current := atomic.LoadInt32(&own.count)
-	if current >= atomic.LoadInt32(&own.limit) {
+	if own.count >= atomic.LoadInt32(&own.limit) {
 		return false
 	}
 
-	atomic.AddInt32(&own.count, 1)
+	own.count++
 	return true
-}
-
-// fastAllow 使用原子操作的快速路径
-func (own *FixedWindowLimiter) fastAllow() bool {
-	current := atomic.LoadInt32(&own.count)
-	if current >= atomic.LoadInt32(&own.limit) {
-		return false
-	}
-	return atomic.CompareAndSwapInt32(&own.count, current, current+1)
 }

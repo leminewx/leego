@@ -51,7 +51,7 @@ func TestNewNode(t *testing.T) {
 			}{
 				segment:    "*",
 				isWildcard: true,
-				paramName:  "path",
+				paramName:  WILDCARD_DEFAULT_NAME,
 			},
 		},
 		{
@@ -171,12 +171,12 @@ func TestComplexScenarios(t *testing.T) {
 			segment    string
 			expectName string
 		}{
-			{":", ""},         // 只有冒号
-			{"*", "path"},     // 只有星号
-			{":id", "id"},     // 正常参数
-			{"*path", "path"}, // 命名通配符
-			{"user", ""},      // 静态路径
-			{"", ""},          // 空字符串
+			{":", ""},                    // 只有冒号
+			{"*", WILDCARD_DEFAULT_NAME}, // 只有星号
+			{":id", "id"},                // 正常参数
+			{"*path", "path"},            // 命名通配符
+			{"user", ""},                 // 静态路径
+			{"", ""},                     // 空字符串
 		}
 
 		for _, tc := range testCases {
@@ -211,7 +211,7 @@ func TestComplexScenarios(t *testing.T) {
 }
 
 // BenchmarkNodeCreation 测试节点创建性能
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		6539120	       173.7 ns/op	     480 B/op	       5 allocs/op
+// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		10991818	       101.7 ns/op	     480 B/op	       5 allocs/op
 func BenchmarkNodeCreation(b *testing.B) {
 	segments := []string{"users", ":id", "posts", ":postId", "*path"}
 

@@ -54,13 +54,10 @@ func (own *CircuitBreaker) GetMiddleware() leego.MiddlewareFunc {
 				return
 			}
 
-			// 记录总请求数
-			own.metrics.totalRequests.Add(1)
-
 			// 执行前检查熔断器状态
+			// 注意：totalRequests 与 blockedRequests 均由 callBeforeExecute 内部统一累加，
+			// 此处不可重复累加，否则中间件路径下的指标会被计成两倍
 			if err := own.callBeforeExecute(); err != nil {
-				// 记录被熔断的请求
-				own.metrics.blockedRequests.Add(1)
 				ctx.ResponseError(http.StatusServiceUnavailable, content)
 				return
 			}

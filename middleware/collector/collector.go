@@ -71,6 +71,11 @@ func (own *Collector) Decrease(code int, cost time.Duration) {
 
 	// 更新响应指标数据
 	own.lock.Lock()
+	// 若 Collector 由结构体字面量构造（未经过 New），Responses 可能为 nil，
+	// 直接写入会触发 assignment to entry in nil map
+	if own.Responses == nil {
+		own.Responses = make(map[int]*response)
+	}
 	resp, ok := own.Responses[code]
 	if !ok {
 		resp = &response{Code: code}

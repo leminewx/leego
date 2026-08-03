@@ -74,7 +74,7 @@ func (own *router) Search(method, path string) (Handler, map[string]string, bool
 // AddBlacklist 添加路由黑名单
 func (own *router) AddBlacklist(urls ...string) {
 	for _, url := range urls {
-		if url = strings.TrimSpace(url); url == "" {
+		if url = strings.TrimSpace(url); url != "" {
 			own.backlist.Store(url, true)
 		}
 	}

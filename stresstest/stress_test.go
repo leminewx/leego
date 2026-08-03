@@ -2,16 +2,30 @@ package stress
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"gitee.com/leminewx/leego"
 )
 
+// TestStress 使用内置的 leego 引擎启动一个本地测试服务器，对一个简单接口进行压测，
+// 既验证 stresstest 工具本身可运行，也顺带对框架做一次端到端吞吐验证。
 func TestStress(t *testing.T) {
+	engine := leego.NewEngine()
+	engine.GET("/v1/test", func(ctx *leego.Context) {
+		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"message": "ok"})
+	})
+
+	srv := httptest.NewServer(engine.GetHTTPHandler())
+	defer srv.Close()
+
 	cfg := &Config{
-		URL:           "http://localhost:8080/v1/test",
+		URL:           srv.URL + "/v1/test",
 		Method:        "GET",
-		Concurrent:    10000,
-		TotalRequests: 1000000,
+		Concurrent:    50,
+		TotalRequests: 1000,
 		Timeout:       10 * time.Second,
 		KeepAlive:     true,
 		Headers: map[string]string{
@@ -20,7 +34,16 @@ func TestStress(t *testing.T) {
 	}
 
 	metrics := NewClient(cfg)
-	fmt.Println(metrics.Run())
+	report := metrics.Run()
+	fmt.Println(report)
+
+	// 断言：实际发送的请求总数应与配置一致（修复余数被丢弃的问题）
+	if got := metrics.metrics.TotalRequests; got != int64(cfg.TotalRequests) {
+		t.Errorf("期望发送 %d 个请求，实际发送 %d", cfg.TotalRequests, got)
+	}
+	if metrics.metrics.SuccessCount == 0 {
+		t.Error("压测成功请求数为 0，可能存在请求失败")
+	}
 }
 
 /*

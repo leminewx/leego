@@ -79,7 +79,7 @@ func TestExtractSegmentNames(t *testing.T) {
 		},
 		{
 			[]string{"files", "*"},
-			[]string{"path"},
+			[]string{tree.WILDCARD_DEFAULT_NAME},
 		},
 		{
 			[]string{"api", "*path"},

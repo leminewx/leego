@@ -73,9 +73,19 @@ func (own *SlidingWindowLimiter) SetLimit(limit int) {
 
 // SetBucketCount 设置桶的数量
 func (own *SlidingWindowLimiter) SetBucketCount(count int) {
+	// 防止除零 panic，并与构造函数保持一致的默认值
+	if count <= 0 {
+		count = 10
+	}
+
 	own.lock.Lock()
+	// 重建桶后必须同步重置索引与缓存计数，
+	// 否则 index 可能越界，total 也会与桶内实际计数不一致
 	own.buckets = make([]int, count)
 	own.bucketSize = own.windowSize / time.Duration(count)
+	own.index = 0
+	own.total = 0
+	own.lastSlide = time.Now()
 	own.lock.Unlock()
 }
 
@@ -109,8 +119,10 @@ func (own *SlidingWindowLimiter) SetWindowSize(size time.Duration) {
 
 // GetConfig 获取配置
 func (own *SlidingWindowLimiter) GetConfig() (limit, bucketCount int, windowSize time.Duration) {
+	// limit 由 atomic 保护（见 SetLimit），需用 atomic 读取
+	limit = int(atomic.LoadInt32(&own.limit))
+
 	own.lock.RLock()
-	limit = int(own.limit)
 	bucketCount = len(own.buckets)
 	windowSize = own.windowSize
 	own.lock.RUnlock()
@@ -216,8 +228,8 @@ func (own *SlidingWindowLimiter) allow() bool {
 		own.lastSlide = now
 	}
 
-	// 检查限流
-	if own.total >= own.limit {
+	// 检查限流（limit 由 atomic 保护，需用 atomic 读取）
+	if own.total >= atomic.LoadInt32(&own.limit) {
 		return false
 	}
 

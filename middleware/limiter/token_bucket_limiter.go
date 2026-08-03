@@ -27,7 +27,13 @@ NewTokenBucketLimiter 新建一个令牌桶限流器
   - burst: 令牌最大容量
 */
 func NewTokenBucketLimiter(limit, burst int) *TokenBucketLimiter {
-	return &TokenBucketLimiter{limiter: rate.NewLimiter(rate.Limit(limit), burst)}
+	// limit/burst 字段必须同步初始化，
+	// 否则新建后调用 GetConfig 会恒返回 (0, 0)，与实际限流参数不符
+	return &TokenBucketLimiter{
+		limit:   int32(limit),
+		burst:   int32(burst),
+		limiter: rate.NewLimiter(rate.Limit(limit), burst),
+	}
 }
 
 // Enable 启用中间件

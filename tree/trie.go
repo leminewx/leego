@@ -78,43 +78,41 @@ func (own *Trie[T]) search(node *Node[T], segments []string, params map[string]s
 	segment := segments[depth]
 	children := node.children
 
+	// children 已按优先级降序排列：静态(3) > 参数(2) > 通配符(1)
+	// 任意一个分支匹配失败都必须继续尝试后续兄弟节点，实现完整回溯
 	for i := 0; i < len(children); i++ {
 		child := children[i]
 
-		// 优先尝试精确匹配
-		if !child.isWildcard {
-			// 匹配失败，直接跳过
+		switch child.GetPriority() {
+		// 静态路径：段必须完全相等
+		case 3:
 			if child.segment != segment {
 				continue
 			}
 
-			// 匹配成功，进入下一轮递归搜索
 			if n, ok := own.search(child, segments, params, depth+1); ok {
-				return n, n.isRoute
+				return n, true
 			}
-		}
 
-		// 尝试参数匹配 :param
-		if child.GetPriority() == 2 {
+		// 参数路径 :param：匹配任意单个段
+		case 2:
 			params[child.paramName] = segment
 			if n, ok := own.search(child, segments, params, depth+1); ok {
-				return n, n.isRoute
+				return n, true
 			}
 
-			// 回溯时删除参数
+			// 回溯时删除参数，避免污染后续分支
 			delete(params, child.paramName)
-			continue
-		}
 
-		// 尝试通配符匹配 *param 或 *
-		if child.GetPriority() == 1 {
-			// 通配符匹配，收集剩余路径
-			if depth < len(segments) {
-				remaining := strings.Join(segments[depth:], "/")
-				params[child.paramName] = remaining
+		// 通配符 *param 或 *：吞掉剩余全部段
+		case 1:
+			// 只有该节点确实注册了路由才算匹配成功，否则继续回溯
+			if !child.isRoute {
+				continue
 			}
 
-			return child, child.isRoute
+			params[child.paramName] = strings.Join(segments[depth:], "/")
+			return child, true
 		}
 	}
 

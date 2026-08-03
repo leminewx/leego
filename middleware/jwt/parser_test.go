@@ -5,7 +5,10 @@ import (
 )
 
 func TestParser_Parse(t *testing.T) {
-	signer := NewHMACSigner(HS512, []byte("1234567890."))
+	signer, err := NewHMACSigner(HS512, []byte("1234567890."))
+	if err != nil {
+		t.Fatal(err)
+	}
 	parser := NewParser()
 
 	// ***************************************************** 标准声明 *****************************************************
@@ -45,7 +48,10 @@ func TestParser_Parse(t *testing.T) {
 // cpu: QEMU Virtual CPU version 2.5+	standard		2   	  186280	      6018 ns/op	     848 B/op	      17 allocs/op
 // cpu: QEMU Virtual CPU version 2.5+	customized		2   	  140084	      8204 ns/op	    1072 B/op	      22 allocs/op
 func BenchmarkParser_Parse(b *testing.B) {
-	signer := NewHMACSigner(HS384, []byte("1234567890."))
+	signer, err := NewHMACSigner(HS384, []byte("1234567890."))
+	if err != nil {
+		b.Fatal(err)
+	}
 	parser := NewParser()
 
 	b.Run("标准声明", func(b *testing.B) {
@@ -88,7 +94,10 @@ func BenchmarkParser_Parse(b *testing.B) {
 // cpu: QEMU Virtual CPU version 2.5+	standard		2   	  184634	      6052 ns/op	     848 B/op	      17 allocs/op
 // cpu: QEMU Virtual CPU version 2.5+	customized		2   	  140335	      8207 ns/op	    1072 B/op	      22 allocs/op
 func BenchmarkParser_ParseAndValidateStandardClaims(b *testing.B) {
-	signer := NewHMACSigner(HS384, []byte("1234567890."))
+	signer, err := NewHMACSigner(HS384, []byte("1234567890."))
+	if err != nil {
+		b.Fatal(err)
+	}
 	parser := NewParser()
 
 	b.Run("标准声明", func(b *testing.B) {
@@ -131,7 +140,10 @@ func BenchmarkParser_ParseAndValidateStandardClaims(b *testing.B) {
 // cpu: QEMU Virtual CPU version 2.5+	standard		2   	  181467	      6137 ns/op	     848 B/op	      17 allocs/op
 // cpu: QEMU Virtual CPU version 2.5+	customized		2   	  127566	      8269 ns/op	    1072 B/op	      22 allocs/op
 func BenchmarkParser_ParseAndValidateStandardClaimsWithIssuerAndAudiences(b *testing.B) {
-	signer := NewHMACSigner(HS384, []byte("1234567890."))
+	signer, err := NewHMACSigner(HS384, []byte("1234567890."))
+	if err != nil {
+		b.Fatal(err)
+	}
 	parser := NewParser()
 
 	b.Run("标准声明", func(b *testing.B) {

@@ -119,7 +119,7 @@ func (own *group) OPTIONS(pattern string, handle HandleFunc, tags ...string) {
 /*
 SetStatic 设置静态文件服务
 
-参数：
+入参：
   - relativePath：URI 中的相对路径
   - rootPath：静态文件服务的根目录
   - tags：第1个参数为路由名称，后续参数为路由标签
@@ -193,8 +193,9 @@ func (own *group) createStaticHandler(relativePath string, fileSystem http.FileS
 		}
 
 		// 安全检查：防止路径遍历攻击
-		requestedPath = strings.TrimPrefix(strings.TrimPrefix(requestedPath, "/"), "\\")
-		requestedPath = path.Clean(requestedPath)
+		// 注意：必须在 path.Clean 之前检查原始值，
+		// 否则 "a/../../etc/passwd" 被规范化成 "../etc/passwd" 后，
+		// 其内部的穿越意图已经无法从字面上完整还原
 		if containsPathTraversal(requestedPath) {
 			ctx.ResponseError(http.StatusForbidden, http.StatusText(http.StatusForbidden))
 			return
@@ -236,19 +237,33 @@ func (own *group) addRoute(method, pattern string, handle HandleFunc, desc strin
 	}
 }
 
-var pathTraversalPatterns = []string{"../", "..\\", "./", ".\\", "//", "\\"}
-
 // containsPathTraversal 检查路径是否包含路径遍历攻击
 func containsPathTraversal(filePath string) bool {
-	// 检查路径中的特殊字符
-	for _, pattern := range pathTraversalPatterns {
-		if strings.Contains(filePath, pattern) {
+	if filePath == "" {
+		return false
+	}
+
+	// 反斜杠在 Windows 上是路径分隔符，统一转换后再判断，避免平台差异导致的绕过
+	normalized := strings.ReplaceAll(filePath, "\\", "/")
+
+	// 含有 NUL 字节的路径一律拒绝（可用于截断文件名）
+	if strings.ContainsRune(normalized, '\x00') {
+		return true
+	}
+
+	// 逐段检查，只有独立的 ".." 段才是穿越，避免误伤 "..foo" 这类合法文件名
+	for _, seg := range strings.Split(normalized, "/") {
+		if seg == ".." {
 			return true
 		}
 	}
 
-	// 检查绝对路径
-	if path.IsAbs(filePath) || strings.Contains(filePath, ":") {
+	// 拒绝绝对路径（含 Windows 盘符形式，如 C:/ 或 \\host\share）
+	if path.IsAbs(normalized) || strings.HasPrefix(normalized, "//") {
+		return true
+	}
+
+	if len(normalized) >= 2 && normalized[1] == ':' {
 		return true
 	}
 

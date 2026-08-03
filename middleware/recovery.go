@@ -26,10 +26,18 @@ func Recover() leego.MiddlewareFunc {
 
 // RecoverWithConfig 当请求触发 panic 时，通过指定配置进行处理
 func RecoverWithConfig(config *RecoveryConfig) leego.MiddlewareFunc {
-	var logger *log.Logger
-	if config.Output != nil {
-		logger = log.New(config.Output, "\n\n\x1b[31m", log.LstdFlags)
+	// 允许传入 nil 配置，使用默认值兜底
+	if config == nil {
+		config = &RecoveryConfig{Output: os.Stdout, DumpRequest: true}
 	}
+
+	// Output 为空时回退到 os.Stdout，
+	// 避免 logger 为 nil 时在 panic 恢复流程中再次 panic（掩盖原始错误）
+	output := config.Output
+	if output == nil {
+		output = os.Stdout
+	}
+	logger := log.New(output, "\n\n\x1b[31m", log.LstdFlags)
 
 	return func(next leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {

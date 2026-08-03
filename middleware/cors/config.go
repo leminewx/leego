@@ -78,43 +78,51 @@ func (own *CORS) SetMaxAge(seconds int64) {
 	own.maxAgeString = strconv.Itoa(int(own.maxAge))
 }
 
-// SetAllowOrigins （重新）设置可跨域访问的源，若不为空，则允许所有源访问
+// SetAllowOrigins （重新）设置可跨域访问的源。
+// 若未传任何参数，则允许所有源（Access-Control-Allow-Origin: *，且不能使用凭证）。
+// 若传入具体源（如 https://example.com），则仅允许这些源，并默认开启凭证。
+// 若参数中包含通配符 "*"，则视为允许所有源（与凭证互斥，忽略其余具体源）。
 func (own *CORS) SetAllowOrigins(origins ...string) {
 	own.lock.Lock()
 	defer own.lock.Unlock()
 
 	// 若源为空，则允许所有源
 	if len(origins) == 0 {
-		own.allowAllOrigins = true                   // 允许所有源
-		own.allowCredentials = false                 // 通配符源不能使用凭证
-		own.allowOrigins = make(map[string]struct{}) // 重置源
+		own.allowAllOrigins = true   // 允许所有源
+		own.allowCredentials = false // 通配符源不能使用凭证
+		own.allowOrigins = nil       // 重置源
 		return
 	}
 
-	// 重置源，并添加新源
-	own.allowOrigins = make(map[string]struct{})
+	allowSet := make(map[string]struct{})
 	for _, origin := range origins {
 		if origin == "" {
 			continue
 		}
 
-		// 重置源，且允许所有源
+		// 包含通配符时，直接允许所有源，并忽略其余具体源
 		if origin == "*" {
 			own.allowAllOrigins = true
 			own.allowCredentials = false
-			own.allowOrigins = make(map[string]struct{})
+			own.allowOrigins = nil
+			return
 		}
 
-		if _, ok := own.allowOrigins[origin]; !ok {
-			own.allowOrigins[origin] = struct{}{}
-		}
+		allowSet[origin] = struct{}{}
 	}
 
-	// 如果有具体源，默认需要凭证
-	if len(own.allowOrigins) > 0 {
-		own.allowAllOrigins = false
-		own.allowCredentials = true
+	if len(allowSet) == 0 {
+		// 仅传入了空白字符串等无效源，回退为允许所有源
+		own.allowAllOrigins = true
+		own.allowCredentials = false
+		own.allowOrigins = nil
+		return
 	}
+
+	// 传入了具体源，则仅允许这些源，并默认开启凭证
+	own.allowAllOrigins = false
+	own.allowCredentials = true
+	own.allowOrigins = allowSet
 }
 
 // SetAllowMethods （重新）设置可跨域访问的请求方法

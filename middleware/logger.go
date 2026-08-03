@@ -51,12 +51,25 @@ func Log() leego.MiddlewareFunc {
 
 // LogWithConfig 通过指定配置，记录请求响应信息
 func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
-	if config.SkipAbsolutePaths == nil {
-		config.SkipAbsolutePaths = make(map[string]struct{})
+	// 允许传入 nil 配置
+	if config == nil {
+		config = &LoggerConfig{}
 	}
-	if config.SkipWildcardPaths == nil {
-		config.SkipWildcardPaths = make([]string, 0)
+
+	// 拷贝一份配置快照，避免：
+	// 1. 直接修改调用方持有的结构体；
+	// 2. 请求期读取配置与调用方并发修改配置产生数据竞争
+	snapshot := &LoggerConfig{
+		Output:            config.Output,
+		WithColor:         config.WithColor,
+		WithQuery:         config.WithQuery,
+		SkipAbsolutePaths: make(map[string]struct{}, len(config.SkipAbsolutePaths)),
+		SkipWildcardPaths: append([]string(nil), config.SkipWildcardPaths...),
 	}
+	for path := range config.SkipAbsolutePaths {
+		snapshot.SkipAbsolutePaths[path] = struct{}{}
+	}
+	config = snapshot
 
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {

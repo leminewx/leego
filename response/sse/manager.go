@@ -17,6 +17,8 @@ type Manager struct {
 	isClosed        int32
 	clients         sync.Map // map[string]*Client
 	errorChan       chan error
+	errorChanLock   sync.RWMutex // 保护 errorChan 的关闭状态
+	errorChanClosed bool
 	writeTimeout    time.Duration
 	heartbeatPeriod time.Duration
 	lock            sync.RWMutex
@@ -237,12 +239,16 @@ func (own *Manager) GetAllClientIds() []string {
 	return clients
 }
 
-// sendError 发送错误消息给管理器
+// sendError 发送错误消息给管理器（errorChan 关闭后安全跳过，避免向已关闭通道发送引发 panic）
 func (own *Manager) sendError(err error) {
-	select {
-	case own.errorChan <- err:
-	default:
+	own.errorChanLock.RLock()
+	if !own.errorChanClosed {
+		select {
+		case own.errorChan <- err:
+		default:
+		}
 	}
+	own.errorChanLock.RUnlock()
 }
 
 // GetErrorChan 获取错误通道
@@ -301,8 +307,11 @@ func (own *Manager) Close() error {
 	wg.Wait()
 	// 给一点时间让消息发送完成
 	time.Sleep(300 * time.Millisecond)
-	// 关闭错误通道
+	// 关闭错误通道（先标记已关闭，避免并发 sendError 向已关闭通道发送而 panic）
+	own.errorChanLock.Lock()
+	own.errorChanClosed = true
 	close(own.errorChan)
+	own.errorChanLock.Unlock()
 
 	if len(errs) > 0 {
 		return fmt.Errorf("sse: errors occurred during close: %v", errs)
