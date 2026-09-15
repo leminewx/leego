@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,16 +14,16 @@ import (
 
 // 颜色与样式常量
 const (
-	_RESET  = "\033[0m"
-	_BOLD   = "\033[1m"
-	_DIM    = "\033[2m"
-	_RED    = "\033[31m"
-	_GREEN  = "\033[32m"
-	_YELLOW = "\033[33m"
-	_BLUE   = "\033[34m"
+	_RESET   = "\033[0m"
+	_BOLD    = "\033[1m"
+	_DIM     = "\033[2m"
+	_RED     = "\033[31m"
+	_GREEN   = "\033[32m"
+	_YELLOW  = "\033[33m"
+	_BLUE    = "\033[34m"
 	_MAGENTA = "\033[35m"
-	_CYAN   = "\033[36m"
-	_WHITE  = "\033[37m"
+	_CYAN    = "\033[36m"
+	_WHITE   = "\033[37m"
 
 	// 粗体白字 + 彩色底，用作方法 / 状态码徽标
 	_BADGE_GET     = "\033[97;44m" // 蓝底
@@ -41,6 +42,22 @@ const (
 	_STATUS_OTHER      = "\033[97;47m" // 其他 白
 
 	_FORMAT_DATETIME = "2006-01-02 15:04:05.000"
+
+	// 各列的固定可见宽度：
+	//   - 徽标宽度已包含左右各一空格的内边距，该内边距随底色一起着色；
+	//   - 耗时列 = 数值 7（999.999）+ 单位 2，超出时自动降低精度以维持定宽。
+	_WIDTH_METHOD  = 9
+	_WIDTH_STATUS  = 5
+	_WIDTH_LATENCY = 9
+
+	// 耗时单位统一为 2 个 ASCII 字符：
+	// “µ”属于 East Asian Ambiguous 字符，在部分终端/字体（尤其中文区域）下会被渲染为双宽，
+	// 从而破坏列对齐；使用 ASCII 可确保任何等宽终端下单位恒占 2 列。
+	// 若确认终端按窄字符渲染 µ，可将 _UNIT_US 改为 "µs"。
+	_UNIT_NS = "ns"
+	_UNIT_US = "us"
+	_UNIT_MS = "ms"
+	_UNIT_S  = "s "
 )
 
 // Log 记录请求响应信息（自动检测终端，启用彩色输出）
@@ -105,38 +122,39 @@ func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
 
 // renderLog 按统一列布局渲染一行访问日志
 //
-//	[LEEGO] 2026-08-04 12:00:00.000 │ GET    │ 200 │  12.34ms │ 127.0.0.1 │ /api/v1/users/42
+//	[LEEGO] 2026-08-04 12:00:00.000 │ GET     │ 200 │  12.340ms │ 127.0.0.1 │ /api/v1/users/42
+//
+// 徽标自带左右内边距，因此竖线紧贴徽标（| 与 | 之间无未着色的空白），其余列保留空格
 func renderLog(out io.Writer, withColor bool, status int, latency time.Duration, method, path, ip string) {
-	const sep = _DIM + " │ " + _RESET
+	bar := colorize("│", _DIM, withColor)
 
-	methodField := badge(method, getMethodColor(method), pad(method, 6), withColor)
-	statusField := badge(fmt.Sprintf("%d", status), getStatusColor(status), pad(fmt.Sprintf("%d", status), 3), withColor)
-	latencyField := colorize(fmt.Sprintf("%8s", formatLatency(latency)), getLatencyColor(latency), withColor)
-	ipField := colorize(ip, _DIM, withColor)
-	pathField := colorize(path, _BOLD, withColor)
-
-	line := fmt.Sprintf("[LEEGO] %s%s%s%s%s%s%s%s%s%s\n",
-		colorize(time.Now().Format(_FORMAT_DATETIME), _DIM, withColor),
-		sep,
-		methodField,
-		sep,
-		statusField,
-		sep,
-		latencyField,
-		sep,
-		ipField,
-		sep+pathField,
-	)
+	line := "[LEEGO] " +
+		colorize(time.Now().Format(_FORMAT_DATETIME), _DIM, withColor) + " " +
+		bar + badge(method, getMethodColor(method), _WIDTH_METHOD, withColor) +
+		bar + badge(strconv.Itoa(status), getStatusColor(status), _WIDTH_STATUS, withColor) +
+		bar + " " + colorize(formatLatency(latency), getLatencyColor(latency), withColor) + " " +
+		bar + " " + colorize(ip, _DIM, withColor) + " " +
+		bar + " " + colorize(path, _BOLD, withColor) + "\n"
 
 	_, _ = fmt.Fprint(out, line)
 }
 
-// badge 生成固定可见宽度的彩色徽标（文字已内补，色码不影响对齐）
-func badge(_, color, padded string, withColor bool) string {
+// badge 生成固定可见宽度的彩色徽标：左侧留一空格内边距，右侧补足至 width-1（至少再留一空格），
+// 内边距与文字一并着色，保证 | 与 | 之间被底色完整填充（色码不影响对齐）
+func badge(text, color string, width int, withColor bool) string {
+	padded := pad(" "+truncate(text, width-2), width-1) + " "
 	if !withColor {
 		return padded
 	}
 	return color + padded + _RESET
+}
+
+// truncate 按可见宽度截断文本，保证徽标宽度恒定（HTTP 方法 / 状态码均为 ASCII）
+func truncate(s string, w int) string {
+	if len(s) <= w {
+		return s
+	}
+	return s[:w]
 }
 
 // colorize 为文本包裹颜色（withColor 为 false 时原样返回）
@@ -155,18 +173,47 @@ func pad(s string, w int) string {
 	return s + strings.Repeat(" ", w-len(s))
 }
 
-// formatLatency 将耗时格式化为人类可读字符串
+// formatLatency 将耗时格式化为固定 _WIDTH_LATENCY 列宽的字符串（数值 + 单位），确保列严格对齐
 func formatLatency(d time.Duration) string {
+	var value float64
+	var unit string
 	switch {
 	case d < time.Microsecond:
-		return fmt.Sprintf("%.3fns", float64(d.Nanoseconds()))
+		value, unit = float64(d.Nanoseconds()), _UNIT_NS
 	case d < time.Millisecond:
-		return fmt.Sprintf("%.3fµs", float64(d.Microseconds()))
+		value, unit = float64(d.Nanoseconds())/float64(time.Microsecond), _UNIT_US
 	case d < time.Second:
-		return fmt.Sprintf("%.2fms", float64(d.Microseconds())/1000)
+		value, unit = float64(d.Nanoseconds())/float64(time.Millisecond), _UNIT_MS
 	default:
-		return fmt.Sprintf("%.2fs", d.Seconds())
+		value, unit = d.Seconds(), _UNIT_S
 	}
+
+	return formatFixedFloat(value, _WIDTH_LATENCY-len(unit)) + unit
+}
+
+// formatFixedFloat 以固定宽度右对齐输出数值：优先保留 3 位小数，
+// 宽度不足时逐级降低精度，最终退化为科学计数，确保返回值宽度恒为 width
+func formatFixedFloat(value float64, width int) string {
+	for _, precision := range [...]int{3, 2, 1, 0} {
+		if text := strconv.FormatFloat(value, 'f', precision, 64); len(text) <= width {
+			return padLeft(text, width)
+		}
+	}
+
+	if text := strconv.FormatFloat(value, 'e', 1, 64); len(text) <= width {
+		return padLeft(text, width)
+	}
+
+	// 极端兜底：数值已超出可表达宽度，仍保持定宽
+	return strings.Repeat(" ", width-1) + "+"
+}
+
+// padLeft 按可见宽度在左侧补空格至 w
+func padLeft(s string, w int) string {
+	if n := len(s); n < w {
+		return strings.Repeat(" ", w-n) + s
+	}
+	return s
 }
 
 // colorAllowed 在配置未显式开启颜色时，依据终端与环境变量决定是否可以着色：
@@ -177,13 +224,16 @@ func colorAllowed(out io.Writer, explicit bool) bool {
 	if explicit {
 		return true
 	}
+
 	// 显式禁用
 	if _, ok := os.LookupEnv("NO_COLOR"); ok {
 		return false
 	}
+
 	if os.Getenv("TERM") == "dumb" {
 		return false
 	}
+
 	return out == os.Stdout || out == os.Stderr
 }
 

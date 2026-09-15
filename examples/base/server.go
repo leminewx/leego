@@ -21,6 +21,7 @@ func main() {
 	// 创建 HTTP 引擎
 	leego.ShowLogo()
 	engine := leego.NewEngine()
+	engine.UseMiddlewares(middleware.Log())
 
 	// Limiter 限流中间件
 	middlewareLimiter := limiter.NewTokenBucketLimiter(30, 1000)
