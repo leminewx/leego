@@ -13,14 +13,25 @@
 ```
 harness/
 ├── harness.go              # 体验服务：配置、装配、路由与生命周期
+├── harness_test.go         # 配置归一化、选项与装配单测
 ├── service_test.go         # 真实 HTTP 集成测试（10 个场景）
 ├── statics/index.html      # 单页前端（go:embed，无外部 CDN）
+├── testdata/               # 演示与测试数据：data.txt / ws-client.html / stress.html
+├── internal/assetpath/     # 定位 testdata 目录（示例与基准服务共用）
+├── tools/genlogo/main.go   # 品牌图生成器（//go:build ignore，不参与构建）
 ├── cmd/harness/main.go     # 可执行入口（flag + 信号关闭）
 ├── testutil/               # HTTP 测试客户端、响应断言、冻结时钟
 ├── stresstest/             # 压测客户端、分位数与报告
 │   └── test/base/          # 压测基准服务
 └── examples/               # 可运行示例：base / file / sse / websocket / stress
 ```
+
+示例与基准服务不再各自携带数据文件：纯文本、WebSocket 调试页与压测说明页
+统一放在 `harness/testdata`，由 `harness/internal/assetpath` 定位。
+`assetpath.GetDir()` 先按源码位置推断，再依次尝试 `harness/testdata`、
+`../testdata`、`testdata`，因此在仓库根目录 `go run ./harness/examples/base`，
+或在其它工作目录下运行，都能找到同一份数据；`assetpath.Resolve()` 会把
+通配符路径限制在数据目录内，越界时回落到 `data.txt`。
 
 导入路径统一下移一层：
 
@@ -79,6 +90,12 @@ go run ./harness/cmd/harness -addr :9000 -data ./tmp
 前端卡片覆盖：概览、回显、会话、缓存、限流（并发 20 次统计 200/429）、
 分片上传（进度与下载）、SSE、网关灰度、任务统计与链路列表。
 
+页面顶部的标识是内联 SVG（靛蓝到青绿的渐变圆角方 + 字形 L），与
+`docs/assets/logo.png` 同源：两者都在 48 单位逻辑坐标系里描述，
+修改样式时需要用 `go run ./harness/tools/genlogo/main.go ./docs/assets/logo.png`
+重新生成位图。生成器按 1024 像素渲染后做 4×4 盒式下采样，输出 256 像素，
+既保证边缘平滑，也避免 README 里的图片占满整行。
+
 ---
 
 ## 四、配置
@@ -123,7 +140,7 @@ defer service.Shutdown(context.Background())
 
 ```go
 // 嵌入测试
-server := httptest.NewServer(service.Handler())
+server := httptest.NewServer(service.GetHandler())
 defer server.Close()
 
 // 托管真实生命周期
@@ -153,8 +170,11 @@ service.GetEngine().GET("/custom", handler)
 | `GET ?action=status&id=..` | — | 查询会话状态 |
 | `DELETE ?action=abort&id=..` | — | 丢弃全部分片 |
 
-拼接时计算 SHA-256，命中索引则复用已有文件（秒传）；元信息以 JSON 落盘，
-进程重启后仍可续传。下载端只允许 `files/` 前缀且拒绝 `..`。
+拼接时计算 SHA-256，命中索引则复用已有文件（秒传）；秒传索引是追加式
+`index.jsonl`（每行 `{sum,path}`），进程重启后仍可命中；会话元信息以 JSON 落盘，
+重启后仍可续传。下载端只允许 `files/` 前缀且拒绝 `..`。
+
+> 旧版部署的 `index.json` 不会被自动读取；升级后重建一次索引即可。
 
 ---
 
@@ -165,10 +185,10 @@ service.GetEngine().GET("/custom", handler)
 ```go
 import "gitee.com/leminewx/leego/harness/testutil"
 
-client := testutil.NewClient(service.Handler()).
+client := testutil.NewClient(service.GetHandler()).
 	UseHeader("X-Request-ID", "test-1")
 
-response := client.JSON(http.MethodPost, "/api/session/login", map[string]any{"name": "demo"})
+response := client.SendJSON(http.MethodPost, "/api/session/login", map[string]any{"name": "demo"})
 response.AssertStatus(t, http.StatusOK).AssertContains(t, "demo")
 
 var payload map[string]any

@@ -156,7 +156,7 @@ func TestSpecAddSchema(t *testing.T) {
 	}
 }
 
-func TestSchemaOfPrimitives(t *testing.T) {
+func TestBuildSchemaPrimitives(t *testing.T) {
 	cases := map[string]map[string]any{
 		"bool":    {"type": "boolean"},
 		"string":  {"type": "string"},
@@ -180,19 +180,19 @@ func TestSchemaOfPrimitives(t *testing.T) {
 			value = 1.0
 		}
 
-		got := openapi.SchemaOf(value)
+		got := openapi.BuildSchema(value)
 		for key, wantValue := range want {
 			if got[key] != wantValue {
-				t.Fatalf("SchemaOf(%s)[%s] = %v, want %v", name, key, got[key], wantValue)
+				t.Fatalf("BuildSchema(%s)[%s] = %v, want %v", name, key, got[key], wantValue)
 			}
 		}
 	}
 
-	if schema := openapi.SchemaOf(time.Now()); schema["format"] != "date-time" {
+	if schema := openapi.BuildSchema(time.Now()); schema["format"] != "date-time" {
 		t.Fatalf("time.Time 模式 = %v", schema)
 	}
 
-	if schema := openapi.SchemaOf(nil); len(schema) != 0 {
+	if schema := openapi.BuildSchema(nil); len(schema) != 0 {
 		t.Fatalf("nil 模式 = %v", schema)
 	}
 }
@@ -203,8 +203,8 @@ type node struct {
 	Next *node  `json:"next"`
 }
 
-func TestSchemaOfTruncatesDepth(t *testing.T) {
-	schema := openapi.SchemaOf(node{})
+func TestBuildSchemaTruncatesDepth(t *testing.T) {
+	schema := openapi.BuildSchema(node{})
 	properties, ok := schema["properties"].(map[string]any)
 	if !ok {
 		t.Fatalf("顶层模式异常: %v", schema)
@@ -259,6 +259,31 @@ func TestHandlers(t *testing.T) {
 	openapi.NewHandler(nil).ServeHTTP(empty, httptest.NewRequest(http.MethodGet, "/", nil))
 	if !strings.Contains(empty.Body.String(), "3.1.0") {
 		t.Fatalf("空文档异常: %s", empty.Body.String())
+	}
+}
+
+// TestHandlerCachesDocument 验证文档在创建处理器时序列化一次。
+//
+// 运行期再给 Spec 加路由不应影响已创建的处理器的输出，
+// 这样每个请求都不需要重新编码整份文档。
+func TestHandlerCachesDocument(t *testing.T) {
+	spec := openapi.NewSpec(sampleRoutes{routes: []openapi.Route{
+		{Method: http.MethodGet, Pattern: "/first", Name: "first"},
+	}})
+
+	handler := openapi.NewHandler(spec)
+	spec.AddRoute(openapi.Route{Method: http.MethodGet, Pattern: "/second", Name: "second"})
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+
+	body := recorder.Body.String()
+	if !strings.Contains(body, "/first") {
+		t.Fatalf("文档缺少初始路由: %s", body)
+	}
+
+	if strings.Contains(body, "/second") {
+		t.Fatalf("处理器不应反映创建之后新增的路由: %s", body)
 	}
 }
 

@@ -1,11 +1,13 @@
 # Leego
 
+![leego logo](docs/assets/logo.png)
+
 Leego 是一个构建在 Go 标准库 `net/http` 之上的轻量级 Web 框架。它在保持
 `http.Handler` 完全兼容的前提下，提供路由分组、中间件编排、上下文封装、
 参数绑定、指标采集、内置指标分析后台、SSE / WebSocket、JWT、限流、熔断
 与压测工具等能力，并提供零第三方依赖的工程化拓展包与开发者体验服务。
 
-> 版本：`v0.15.0.0`（要求 Go 1.27.4+）
+> 版本：`v0.17.0.0`（要求 Go 1.27.4+）
 
 ---
 
@@ -71,7 +73,7 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/middleware"
+	"gitee.com/leminewx/leego/middlewares"
 )
 
 func main() {
@@ -80,7 +82,10 @@ func main() {
 		leego.UseServerTimeouts(5*time.Second, 10*time.Second, 10*time.Second, 60*time.Second),
 	)
 
-	engine.UseMiddlewares(middleware.Log(), middleware.Recover())
+	engine.UseMiddlewares(
+		middlewares.NewLogger().AdaptToMiddleware(),
+		middlewares.NewRecovery().AdaptToMiddleware(),
+	)
 
 	engine.GET("/ping", func(ctx *leego.Context) {
 		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"message": "pong"})
@@ -97,6 +102,26 @@ func main() {
 ```json
 {"message":"pong"}
 ```
+
+### 启动标识
+
+调用 `ShowLogo()` 可在服务启动时打印一次 ASCII 标识（`Run` 本身只输出启动日志）。
+内置 4 种样式，默认沿用最初的宽幅艺术字：
+
+```go
+leego.SetLogoStyle(leego.LOGO_STYLE_PIXEL)
+leego.ShowLogo()
+```
+
+| 常量 | 风格 | 宽度 | 依赖字符 |
+| --- | --- | --- | --- |
+| `LOGO_STYLE_CLASSIC` | 宽幅艺术字（默认） | 54 | 反斜杠、下划线、竖线 |
+| `LOGO_STYLE_PIXEL` | 实心像素块 | 29 | `█` |
+| `LOGO_STYLE_SHADOW` | 双线阴影 | 42 | `█`、`╔`、`║` |
+| `LOGO_STYLE_ASCII` | 纯 ASCII 斜线体 | 30 | 仅 ASCII |
+
+`GetLogoStyle()` 读取当前样式；越界值会被忽略。样式值用 `atomic.Int32` 存储，
+可在启动协程中设置、并发调用 `ShowLogo()` 不产生数据竞争。
 
 ---
 
@@ -130,6 +155,7 @@ func main() {
 | `UseStrictJSON(strict)` | `false` | 为 `true` 时 JSON 绑定拒绝未知字段 |
 | `UseH2C()` | 关闭 | 启用明文 HTTP/2（配合 `GetHTTPHandler()`） |
 | `UseServerTimeouts(readHeader, read, write, idle)` | 10s / 60s / 60s / 120s | 任一参数 `<= 0` 时保留默认值，避免退化为无限等待 |
+| `UseWriteTimeout(timeout)` | 60s | 单独设置写入超时；传入 `0` 关闭，SSE / WebSocket 长连接必需 |
 | `UseTrustedProxies(cidrs...)` | 空 | 仅信任这些网段传来的 `X-Forwarded-For` / `X-Real-IP` |
 | `DisableStartupLog()` | 关闭 | 不打印启动期的路由注册信息 |
 
@@ -289,6 +315,9 @@ ctx.SetSameSite(http.SameSiteLaxMode)
 value, err := ctx.GetCookieValue("sid")
 ```
 
+> `SetCookieData` 使用 `url.PathEscape`，`GetCookieValue` 使用 `url.PathUnescape`，
+> 空格与 `+` 都能原样往返；非法转义时原样返回而不是静默变成空串。
+
 ### 响应
 
 | 方法 | 说明 |
@@ -374,41 +403,47 @@ engine.UseMiddlewares(authMiddleware)
 
 | 入口 | 说明 |
 | --- | --- |
-| `middleware.Log()` / `middleware.LogWithConfig(cfg)` | 访问日志：方法、路径、状态码、耗时、客户端 IP，可配色、可跳过指定路径 |
-| `middleware.Recover()` / `middleware.RecoverWithConfig(cfg)` | panic 恢复：输出堆栈与可选请求内容，默认返回 500 |
-| `middleware.Collect(collector)` | 为手工挂载的第三方处理器补充指标采集（路由级采集已内建，勿重复叠加） |
-| `middleware.WrapFromHTTPHandler(h)` | 把 `http.Handler` 包装成中间件 |
-| `middleware.WrapFromHTTPHandlerFunc(f)` | 把 `http.HandlerFunc` 包装成中间件 |
-| `middleware.UnwrapFromMiddlewareFuncToHTTPHandler(m)` | 把中间件解包为 `http.Handler` |
+| `middlewares.NewLogger()` / `NewLoggerWithConfig(cfg)` | 访问日志：方法、路径、状态码、耗时、客户端 IP，可配色、可跳过指定路径 |
+| `middlewares.NewRecovery()` / `NewRecoveryWithConfig(cfg)` | panic 恢复：输出堆栈与可选请求内容，默认返回 500 |
+| `middlewares.NewMonitor(collector)` | 为手工挂载的第三方处理器补充指标采集（路由级采集已内建，勿重复叠加） |
+| `middlewares.WrapFromHTTPHandler(h)` | 把 `http.Handler` 包装成中间件 |
+| `middlewares.WrapFromHTTPHandlerFunc(f)` | 把 `http.HandlerFunc` 包装成中间件 |
+| `middlewares.UnwrapFromMiddlewareFuncToHTTPHandler(m)` | 把中间件解包为 `http.Handler` |
 | `cors.NewDefaultCORS()` | CORS：源、方法、头、凭据、`Max-Age` 与预检处理 |
 | `jwt.NewHMACSigner(alg, key)` / `jwt.NewParser()` | JWT 签发与解析（HS256/384/512） |
 | `limiter.NewFixedWindowLimiter(limit, window)` | 固定窗口限流 |
 | `limiter.NewSlidingWindowLimiter(limit, buckets, window)` | 滑动窗口限流 |
 | `limiter.NewTokenBucketLimiter(limit, burst)` | 令牌桶限流 |
 | `breaker.NewCircuitBreaker(config)` | 熔断器：失败率窗口 + 半开探测 |
-| `cache.New(cache.Config{...})` | 响应缓存：LRU 容量控制、`X-Cache` 标记与 stale-while-revalidate |
-| `compress.New(compress.Config{...})` | gzip 压缩：按内容类型与最小长度阈值决定是否压缩 |
-| `trace.New(exporter, ...)` | 链路追踪：解析/生成 W3C `traceparent`，批量异步导出 |
+| `cache.NewCache(cache.Config{...})` | 响应缓存：LRU 容量控制、`X-Cache` 标记与 stale-while-revalidate，默认跳过带 Cookie 的请求 |
+| `compress.NewCompress(compress.Config{...})` | gzip 压缩：按内容类型与最小长度阈值决定是否压缩 |
+| `trace.NewTracer(exporter, ...)` | 链路追踪：解析/生成 W3C `traceparent`，批量异步导出 |
+
+除包装/解包工具函数外，上表中的构造器只负责创建实例；要用作中间件需再调用
+实例的 `AdaptToMiddleware()` 得到 `leego.MiddlewareFunc`。
 
 ```go
 import (
 	"time"
 
-	"gitee.com/leminewx/leego/middleware"
-	"gitee.com/leminewx/leego/middleware/breaker"
-	"gitee.com/leminewx/leego/middleware/cors"
-	"gitee.com/leminewx/leego/middleware/limiter"
+	"gitee.com/leminewx/leego/middlewares"
+	"gitee.com/leminewx/leego/middlewares/breaker"
+	"gitee.com/leminewx/leego/middlewares/cors"
+	"gitee.com/leminewx/leego/middlewares/limiter"
 )
 
 corsInstance := cors.NewDefaultCORS()
 corsInstance.SetAllowOrigins("https://example.com")
 corsInstance.SetMaxAge(3600)
 
+// 等待上限 3 秒，超时返回 429。
+rateLimiter := limiter.NewTokenBucketLimiter(100, 200, limiter.Config{WaitTimeout: 3 * time.Second})
+
 engine.UseMiddlewares(
-	middleware.Log(),
-	middleware.Recover(),
-	corsInstance.GetMiddleware(),
-	limiter.NewTokenBucketLimiter(100, 200).GetMiddleware(3*time.Second),
+	middlewares.NewLogger().AdaptToMiddleware(),
+	middlewares.NewRecovery().AdaptToMiddleware(),
+	corsInstance.AdaptToMiddleware(),
+	rateLimiter.AdaptToMiddleware(),
 )
 
 circuitBreaker := breaker.NewCircuitBreaker(breaker.NewDefaultConfig())
@@ -421,8 +456,12 @@ engine.GET("/risky", func(ctx *leego.Context) {
 })
 ```
 
-> 限流的 `GetMiddleware` 接收「等待配额的最长时间」，`<= 0` 表示立即返回 429；
+> 限流的等待上限由 `limiter.Config.WaitTimeout` 决定（`0` 表示立即返回 429）；
 > 熔断器的 `ExecuteWithContext` 会把 5xx 或返回错误视为失败样本。
+>
+> 引擎在请求入口还有一道 panic 兜底：即使没有挂 `NewRecovery()`，panic 也会
+> 被记录堆栈并返回 500（`http.ErrAbortHandler` 仍按标准库语义上抛）；`NewRecovery()`
+> 的价值在于可定制的堆栈输出、请求转储与收尾回调。
 
 ---
 
@@ -434,16 +473,16 @@ engine.GET("/risky", func(ctx *leego.Context) {
 
 | 包 | 能力 | 关键入口 |
 | --- | --- | --- |
-| `config` | 多源配置合并（Map / JSON / Env / Flag）、热更新与键级订阅 | `Load`、`GetString`、`OnChange`、`Watch` |
+| `config` | 多源配置合并（Map / JSON / Env / Flag）、热更新与键级订阅 | `Load`、`GetString`、`SubscribeChange`、`Watch` |
 | `validate` | 结构体标签校验，规则表可扩展，元信息按类型缓存 | `Check`、`CheckVar`、`RegisterRule` |
 | `problem` | RFC 7807 风格的统一错误响应 | `New`、`NewFromValidation`、`Write` |
-| `session` | 签名 Cookie 会话，存储接口可替换，支持轮换与销毁 | `session.New`、`From` |
-| `upload` | 分片上传：断点续传、乱序/重复分片、SHA-256 秒传 | `NewLocalStorage`、`NewHandler` |
-| `job` | 最小堆调度：周期/延迟任务、并发槽位与运行统计 | `NewScheduler`、`Every`、`After` |
+| `session` | 签名 Cookie 会话，存储接口可替换，支持轮换与销毁 | `session.New`、`GetFromContext` |
+| `upload` | 分片上传：断点续传、乱序/重复分片、SHA-256 秒传（JSONL 追加索引，重启可恢复） | `NewLocalStorage`、`NewHandler` |
+| `job` | 最小堆调度：周期/延迟任务、并发槽位与运行统计，单任务 panic 隔离 | `NewScheduler`、`ScheduleEvery`、`ScheduleAfter` |
 | `gateway` | 反向代理与平滑加权轮询，支持标签灰度与超时预算 | `NewBalancer`、`NewProxy` |
-| `middleware/cache` | 响应缓存：LRU 容量、`X-Cache` 标记、stale-while-revalidate | `cache.New` |
-| `middleware/compress` | 按内容类型与最小长度阈值决定是否 gzip | `compress.New` |
-| `middleware/trace` | W3C `traceparent` 解析/生成与异步批量导出 | `trace.New` |
+| `middlewares/cache` | 响应缓存：LRU 容量、`X-Cache` 标记、stale-while-revalidate，默认跳过带 Cookie 的请求 | `cache.NewCache` |
+| `middlewares/compress` | 按内容类型与最小长度阈值决定是否 gzip | `compress.NewCompress` |
+| `middlewares/trace` | W3C `traceparent` 解析/生成与异步批量导出，未采样且不传播时零分配 | `trace.NewTracer` |
 | `metrics` | 指标存储抽象、内存实现与 Prometheus 文本输出 | `NewMemoryStore`、`RegisterMetrics` |
 | `openapi` | 从已注册路由快照生成 OpenAPI 文档与浏览页 | `NewSpec`、`RegisterOpenAPI` |
 
@@ -465,7 +504,7 @@ engine.UseMiddlewares(session.New(
 ))
 
 engine.POST("/login", func(ctx *leego.Context) {
-	current, ok := session.FromRequest(ctx.Request)
+	current, ok := session.GetFromRequest(ctx.Request)
 	if !ok {
 		ctx.ResponseError(http.StatusInternalServerError, "session unavailable")
 		return
@@ -478,7 +517,7 @@ engine.POST("/login", func(ctx *leego.Context) {
 		return
 	}
 
-	_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"id": current.ID()})
+	_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"id": current.GetID()})
 })
 ```
 
@@ -512,12 +551,12 @@ scheduler := job.NewScheduler(job.UseWorkers(4))
 scheduler.Start(context.Background())
 defer scheduler.Stop(context.Background())
 
-cancel := scheduler.Every(time.Minute, job.JobFunc(func(ctx context.Context) error {
+cancel := scheduler.ScheduleEvery(time.Minute, job.JobFunc(func(ctx context.Context) error {
 	return refreshCache(ctx)
 }))
 defer cancel() // 取消周期任务
 
-scheduler.After(5*time.Second, job.JobFunc(func(context.Context) error {
+scheduler.ScheduleAfter(5*time.Second, job.JobFunc(func(context.Context) error {
 	return warmUp()
 }))
 
@@ -551,8 +590,8 @@ engine.POST("/proxy/*path", proxy)
 
 ```go
 exporter := trace.NewMemoryExporter(1024)
-tracer := trace.New(exporter, trace.WithFlushInterval(time.Second))
-engine.UseMiddlewares(tracer.Middleware())
+tracer := trace.NewTracer(exporter, trace.WithFlushInterval(time.Second))
+engine.UseMiddlewares(tracer.AdaptToMiddleware())
 // 关闭前刷新剩余 Span：tracer.Shutdown(ctx)
 ```
 
@@ -569,7 +608,7 @@ if err != nil {
 defer settings.Close()
 
 addr := settings.GetString("http.addr", "127.0.0.1:8080")
-settings.OnChange("http.addr", func(value any) {
+settings.SubscribeChange("http.addr", func(value any) {
 	log.Printf("监听地址变更: %v", value)
 })
 
@@ -605,6 +644,27 @@ engine.POST("/users", func(ctx *leego.Context) {
 `gt`、`gte`、`lt`、`lte`、`oneof`、`contains`、`prefix`、`suffix`、`email`、
 `url`、`uuid`、`ip`、`ipv4`、`ipv6`、`alpha`、`alnum`、`numeric`、`lowercase`、
 `uppercase` 与 `dive`；未知规则会在首次校验时报错，避免规则名写错后静默通过。
+
+### OpenAPI 文档
+
+```go
+import "gitee.com/leminewx/leego/openapi"
+
+// 必须在 Prepare() 之前调用：文档在注册期从路由快照一次性构建，运行期只读。
+_ = engine.RegisterOpenAPI("/openapi",
+	openapi.UseTitle("订单服务"),
+	openapi.UseVersion("1.4.0"),
+	openapi.UseDescription("订单与支付相关接口"),
+)
+```
+
+| 端点 | 说明 |
+| --- | --- |
+| `GET <prefix>` | 文档浏览页（`go:embed` 内嵌，离线可用，无外部 CDN） |
+| `GET <prefix>/openapi.json` | OpenAPI 3.1 文档 JSON |
+
+路由模式会转成 OpenAPI 路径模板（`:id` → `{id}`、`*path` → `{path}`），
+路径参数统一声明为 `string`；前缀为空时默认 `/openapi`。
 
 ---
 
@@ -662,6 +722,32 @@ _ = engine.RegisterDashboard("/metrics",
 - `Option` 为公开函数类型，三方可以自行编写选项扩展行为；
 - `Provider` 与 `Authorizer` 均为函数注入，便于替换数据源或接入自有鉴权；
 - 报告按路由名、模式、方法排序，保证同一份数据多次渲染结果稳定。
+
+### 指标导出端点
+
+需要给 Prometheus 抓取或历史趋势图提供数据时，可另外挂载 `RegisterMetrics`：
+
+```go
+store := metrics.NewMemoryStore(time.Hour, 60)
+defer store.Close()
+
+_ = engine.RegisterMetrics("/observe", store,
+	leego.UseMetricsInterval(5*time.Second),
+	leego.UseMetricsStep(time.Minute),
+	leego.UseMetricsAuthorizer(func(ctx *leego.Context) bool {
+		return ctx.GetRequestHeader("Authorization") == "Bearer "+os.Getenv("METRICS_TOKEN")
+	}),
+)
+```
+
+| 端点 | 说明 |
+| --- | --- |
+| `GET <prefix>` | 历史趋势 JSON（按 `Step` 聚合） |
+| `GET <prefix>/prometheus` | Prometheus 文本格式（可关闭） |
+
+`UseMetricsAuthorizer` 为 `nil` 时不做校验；生产环境必须配置，或将端点限制在内网。
+`DisableMetricsPrometheus()` 可关闭抓取路由；`RegisterMetrics` 与 `RegisterDashboard`
+的前缀不要相同，否则会因重复注册而失败。
 
 ---
 
@@ -798,7 +884,7 @@ if err != nil {
 }
 defer service.Shutdown(context.Background())
 
-server := httptest.NewServer(service.Handler())
+server := httptest.NewServer(service.GetHandler())
 defer server.Close()
 ```
 
@@ -865,11 +951,13 @@ go test -bench . -benchmem ./ # 基准
 leego/
 ├── engine.go / group.go / handler.go / router.go   # 引擎、分组、处理器、路由器
 ├── context.go                                      # 上下文与请求/响应能力
+├── validatable.go / metrics.go / openapi.go        # 子包适配：校验、指标、OpenAPI
+├── lifecycle.go / password.go                      # 关闭钩子、密码哈希
 ├── tree/                                           # 分段 Trie（静态 > 参数 > 通配）
 ├── response/                                       # 响应包装器、状态文本、Writer 池
 │   ├── sse/                                        # SSE 客户端、消息、连接管理器
 │   └── websocket/                                  # WebSocket 连接、帧解析、升级器
-├── middleware/                                     # 日志、恢复、指标采集中间件
+├── middlewares/                                    # 日志、恢复、指标采集中间件
 │   ├── collector/                                  # 指标类型与报告聚合
 │   ├── cache/  compress/  trace/                   # 缓存、压缩、链路追踪中间件
 │   └── cors/  jwt/  limiter/  breaker/             # 各功能中间件
@@ -882,10 +970,13 @@ leego/
 ├── logging/                                        # 框架内部日志输出
 └── harness/                                        # 开发者体验：测试客户端、压测、示例
     ├── testutil/                                   # HTTP 测试客户端与冻结时钟
-    ├── stresstest/                                 # 压测客户端与报告
+    ├── stresstest/                                 # 压测客户端与报告（test/base 为基准服务）
     ├── examples/                                   # 可运行示例（base/file/sse/websocket/stress）
+    ├── testdata/                                   # 演示数据：data.txt / ws-client.html / stress.html
+    ├── internal/assetpath/                         # 统一解析 testdata 目录
     ├── cmd/harness/                                # 体验服务入口
-    └── statics/                                    # 体验前端（go:embed）
+    ├── statics/                                    # 体验前端（go:embed）
+    └── tools/genlogo/                              # 品牌图生成器（go:build ignore）
 ```
 
 ---
@@ -920,7 +1011,7 @@ leego/
 | [docs/architecture.md](docs/architecture.md) | 分层结构、请求生命周期、并发模型与设计取舍 |
 | [docs/routing.md](docs/routing.md) | 路由语法、匹配优先级、405/HEAD/OPTIONS、黑名单与冻结 |
 | [docs/context.md](docs/context.md) | 参数、绑定、响应、错误链、模板、文件与 SSE |
-| [docs/middleware.md](docs/middleware.md) | 中间件模型、顺序、内置中间件与自定义中间件 |
+| [docs/middlewares.md](docs/middlewares.md) | 中间件模型、顺序、内置中间件与自定义中间件 |
 | [docs/metrics-dashboard.md](docs/metrics-dashboard.md) | 指标模型、采集流程、后台端点与扩展方式 |
 | [docs/sse-websocket.md](docs/sse-websocket.md) | SSE 两种用法、WebSocket 升级与连接管理 |
 | [docs/jwt.md](docs/jwt.md) | 签发、解析、校验、时钟偏差与安全注意事项 |

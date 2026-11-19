@@ -160,7 +160,10 @@ func resolveStruct(structType reflect.Type) (*structMeta, error) {
 	}
 
 	metadata := &structMeta{}
-	if err := collectFields(structType, nil, "", metadata); err != nil {
+	// visited 阻断匿名嵌入形成的类型环：A 嵌入 B、B 嵌入 A 时
+	// 无限递归会直接栈溢出，而这类写法在 Go 中完全合法。
+	visited := make(map[reflect.Type]struct{}, 4)
+	if err := collectFields(structType, nil, "", metadata, visited); err != nil {
 		return nil, err
 	}
 
@@ -169,7 +172,15 @@ func resolveStruct(structType reflect.Type) (*structMeta, error) {
 }
 
 // collectFields 递归收集字段；匿名嵌套结构体在无标签时展开。
-func collectFields(structType reflect.Type, prefix []int, namePrefix string, metadata *structMeta) error {
+//
+// visited 记录本次解析已经展开过的结构体类型，用于阻断循环嵌入。
+func collectFields(structType reflect.Type, prefix []int, namePrefix string, metadata *structMeta, visited map[reflect.Type]struct{}) error {
+	if _, exists := visited[structType]; exists {
+		return nil
+	}
+
+	visited[structType] = struct{}{}
+
 	for index := 0; index < structType.NumField(); index++ {
 		field := structType.Field(index)
 		if field.PkgPath != "" {
@@ -187,7 +198,7 @@ func collectFields(structType reflect.Type, prefix []int, namePrefix string, met
 			}
 
 			if embedded.Kind() == reflect.Struct && embedded != structType {
-				if err := collectFields(embedded, path, namePrefix, metadata); err != nil {
+				if err := collectFields(embedded, path, namePrefix, metadata, visited); err != nil {
 					return err
 				}
 

@@ -20,17 +20,17 @@ func TestCookieSurvivesRealHTTP(t *testing.T) {
 
 	engine := newSessionEngine(store, UseSecret([]byte(_TEST_SECRET)))
 	engine.GET("/login", func(ctx *leego.Context) {
-		current, ok := From(ctx.Request.Context())
+		current, ok := GetFromContext(ctx.Request.Context())
 		if !ok {
 			ctx.ResponseError(http.StatusInternalServerError, "missing session")
 			return
 		}
 
 		current.Set("name", "leminewx")
-		_ = ctx.ResponseText(http.StatusOK, current.ID())
+		_ = ctx.ResponseText(http.StatusOK, current.GetID())
 	})
 	engine.GET("/me", func(ctx *leego.Context) {
-		current, ok := From(ctx.Request.Context())
+		current, ok := GetFromContext(ctx.Request.Context())
 		if !ok {
 			ctx.ResponseError(http.StatusInternalServerError, "missing session")
 			return

@@ -454,8 +454,8 @@ func (own *Manager) IsClosed() bool {
 	return own.isClosed.Load()
 }
 
-// Done 返回在管理器关闭时被关闭的只读通道。
-func (own *Manager) Done() <-chan struct{} {
+// GetDoneChan 返回在管理器关闭时被关闭的只读通道。
+func (own *Manager) GetDoneChan() <-chan struct{} {
 	return own.closeChan
 }
 

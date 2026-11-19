@@ -293,12 +293,12 @@ func TestNewManagerSetsDefaults(t *testing.T) {
 		t.Fatalf("在线连接数 = %d, want 0", manager.CountConnections())
 	}
 
-	if manager.Done() == nil {
+	if manager.GetDoneChan() == nil {
 		t.Fatal("Done 不应返回 nil 通道")
 	}
 
 	select {
-	case <-manager.Done():
+	case <-manager.GetDoneChan():
 		t.Fatal("Done 在关闭前不应就绪")
 	default:
 	}
@@ -729,7 +729,7 @@ func TestManagerCloseNotifiesClientsAndIsIdempotent(t *testing.T) {
 	}
 
 	select {
-	case <-manager.Done():
+	case <-manager.GetDoneChan():
 	default:
 		t.Fatal("关闭后 Done 应已就绪")
 	}

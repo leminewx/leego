@@ -2,6 +2,7 @@ package upgrader
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -26,8 +27,24 @@ func TestNewDefaultConfigValues(t *testing.T) {
 		t.Fatal("OriginCheckFunc 不应为 nil")
 	}
 
+	// Origin 缺失（非浏览器客户端）时放行。
 	if !config.OriginCheckFunc(&http.Request{}) {
-		t.Fatal("默认应允许任意来源")
+		t.Fatal("无 Origin 的请求应被允许")
+	}
+
+	// 默认只允许同源，避免跨站 WebSocket 劫持（CSWSH）。
+	crossSite := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	crossSite.Host = "example.com"
+	crossSite.Header.Set("Origin", "https://evil.example.net")
+	if config.OriginCheckFunc(crossSite) {
+		t.Fatal("跨站 Origin 必须被拒绝")
+	}
+
+	sameSite := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	sameSite.Host = "example.com"
+	sameSite.Header.Set("Origin", "https://EXAMPLE.com")
+	if !config.OriginCheckFunc(sameSite) {
+		t.Fatal("同源 Origin 应被允许（主机名大小写不敏感）")
 	}
 
 	if len(config.Subprotocols) != 0 {

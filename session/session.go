@@ -15,6 +15,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -40,6 +41,12 @@ const (
 
 // ErrNilStore 表示创建中间件时未提供存储。
 var ErrNilStore = errors.New("session: store must not be nil")
+
+// ErrRandomSource 表示系统随机源不可用。
+//
+// 此时既不能生成会话 ID，也不能生成签名密钥；
+// 继续运行会退化为“空密钥 + 可预测 ID”，因此创建中间件时直接失败。
+var ErrRandomSource = errors.New("session: crypto/rand is unavailable")
 
 // Values 是会话键值对。
 type Values map[string]any
@@ -89,7 +96,10 @@ func NewDefaultOptions() Options {
 }
 
 // normalize 修正非法配置并补齐随机密钥。
-func (own Options) normalize() Options {
+//
+// 返回错误表示系统随机源不可用：此时无法得到安全的签名密钥，
+// 必须由调用方中止启动，而不是用空密钥继续运行。
+func (own Options) normalize() (Options, error) {
 	defaults := NewDefaultOptions()
 
 	if strings.TrimSpace(own.Name) == "" {
@@ -110,13 +120,14 @@ func (own Options) normalize() Options {
 
 	if len(own.Secret) == 0 {
 		secret := make([]byte, _SECRET_BYTES)
-		if _, err := rand.Read(secret); err == nil {
-			own.Secret = secret
+		if _, err := rand.Read(secret); err != nil {
+			return own, fmt.Errorf("%w: %v", ErrRandomSource, err)
 		}
+		own.Secret = secret
 	}
 
 	own.Secret = slices.Clone(own.Secret)
-	return own
+	return own, nil
 }
 
 // Option 修改 Options。
@@ -195,7 +206,12 @@ func New(store Store, options ...Option) leego.MiddlewareFunc {
 			option(&settings)
 		}
 	}
-	settings = settings.normalize()
+
+	settings, err := settings.normalize()
+	if err != nil {
+		// 随机源不可用属于启动期致命错误：继续运行会得到空密钥。
+		panic(err.Error())
+	}
 
 	own := &middleware{options: settings}
 
@@ -207,6 +223,10 @@ func New(store Store, options ...Option) leego.MiddlewareFunc {
 			// 数据持久化发生在处理函数之后，此时再写响应头已不会生效。
 			original := ctx.Response
 			ctx.Response = &cookieWriter{Writer: original, session: current}
+			// 处理器 panic 时也要还原写入器，否则恢复中间件拿到的是包装器。
+			defer func() {
+				ctx.Response = original
+			}()
 
 			// 中间件只改写本次请求的上下文副本，池化回收后不会残留。
 			requestCtx := context.WithValue(ctx.Request.Context(), sessionKey{}, current)
@@ -216,8 +236,6 @@ func New(store Store, options ...Option) leego.MiddlewareFunc {
 
 			// 请求已结束，后续处理不能再依赖请求上下文（可能已被取消）。
 			current.persist(ctx, context.WithoutCancel(ctx.Request.Context()))
-
-			ctx.Response = original
 		}
 	}
 }
@@ -277,8 +295,8 @@ func (own *middleware) load(store Store, ctx *leego.Context) *Session {
 	return &Session{id: id, values: Values{}, store: store, options: own.options, isNew: true}
 }
 
-// From 从请求上下文取回会话。
-func From(ctx context.Context) (*Session, bool) {
+// GetFromContext 从请求上下文取回会话。
+func GetFromContext(ctx context.Context) (*Session, bool) {
 	if ctx == nil {
 		return nil, false
 	}
@@ -287,13 +305,13 @@ func From(ctx context.Context) (*Session, bool) {
 	return current, ok
 }
 
-// FromRequest 从 HTTP 请求取回会话，便于不使用 Context 的场景。
-func FromRequest(request *http.Request) (*Session, bool) {
+// GetFromRequest 从 HTTP 请求取回会话，便于不使用 Context 的场景。
+func GetFromRequest(request *http.Request) (*Session, bool) {
 	if request == nil {
 		return nil, false
 	}
 
-	return From(request.Context())
+	return GetFromContext(request.Context())
 }
 
 // Session 是单次请求内的会话视图。
@@ -323,8 +341,8 @@ type Session struct {
 	cookieCleared bool
 }
 
-// ID 返回当前会话 ID；空字符串表示会话不可持久化。
-func (own *Session) ID() string {
+// GetID 返回当前会话 ID；空字符串表示会话不可持久化。
+func (own *Session) GetID() string {
 	own.mu.Lock()
 	defer own.mu.Unlock()
 
@@ -386,8 +404,8 @@ func (own *Session) Delete(key string) {
 	own.modified = true
 }
 
-// Keys 返回全部键名，结果按字典序排列。
-func (own *Session) Keys() []string {
+// GetKeys 返回全部键名，结果按字典序排列。
+func (own *Session) GetKeys() []string {
 	own.mu.Lock()
 	keys := make([]string, 0, len(own.values))
 	for key := range own.values {
@@ -399,8 +417,8 @@ func (own *Session) Keys() []string {
 	return keys
 }
 
-// Values 返回会话数据的浅拷贝，调用方修改拷贝不会影响会话。
-func (own *Session) Values() Values {
+// GetValues 返回会话数据的浅拷贝，调用方修改拷贝不会影响会话。
+func (own *Session) GetValues() Values {
 	own.mu.Lock()
 	defer own.mu.Unlock()
 

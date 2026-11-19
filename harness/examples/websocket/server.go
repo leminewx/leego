@@ -26,10 +26,12 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"time"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/middleware"
+	"gitee.com/leminewx/leego/harness/assetpath"
+	"gitee.com/leminewx/leego/middlewares"
 	"gitee.com/leminewx/leego/response/websocket"
 	"gitee.com/leminewx/leego/response/websocket/upgrader"
 )
@@ -40,8 +42,8 @@ const msgTypeTick websocket.MessageType = "tick"
 func main() {
 	engine := leego.NewEngine(leego.UseEngineName("leego-websocket-example"))
 	engine.UseMiddlewares(
-		middleware.Log(),
-		middleware.Recover(),
+		middlewares.NewLogger().AdaptToMiddleware(),
+		middlewares.NewRecovery().AdaptToMiddleware(),
 	)
 
 	manager, err := newManager()
@@ -58,6 +60,11 @@ func main() {
 			log.Printf("WebSocket 连接结束: %v", err)
 		}
 	}, "WebSocket 连接入口", "WebSocket", "长连接")
+
+	// 调试页面：浏览器打开根路径即可连接 /ws（页面位于 harness/testdata）。
+	engine.GET("/", func(ctx *leego.Context) {
+		ctx.ResponseFile(filepath.Join(assetpath.GetDir(), "ws-client.html"))
+	}, "WebSocket 调试页面", "WebSocket", "调试")
 
 	// 连接统计：返回在线数量与每个连接的快照（客户端 ID、用户 ID、连接时间等）。
 	engine.GET("/ws/stats", func(ctx *leego.Context) {
@@ -132,7 +139,7 @@ func broadcastLoop(ctx context.Context, manager *websocket.Manager) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-manager.Done():
+		case <-manager.GetDoneChan():
 			return
 		case <-ticker.C:
 			payload := map[string]any{

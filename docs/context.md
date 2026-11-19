@@ -37,10 +37,10 @@ ctx.GetURL()          // 缓存的 *url.URL
 
 `GetClientIP()` 的解析顺序：
 
-1. 直连对端地址（`RemoteAddr`）；
-2. 若对端属于 `TrustedProxies`，依次读取 `X-Forwarded-For` 的最左侧非空地址、
-   `X-Real-IP`；
-3. 解析失败时回退到对端地址。
+1. 直连对端地址（`RemoteAddr`）；对端不在 `TrustedProxies` 内时直接返回它；
+2. 仅当对端可信时，读取 `X-Forwarded-For`（按逗号拆分）与 `X-Real-IP`，
+   合并后**从右向左**遍历，跳过可信代理，返回第一个不可信地址；
+3. 全部地址都可信或解析失败时，回退到对端地址。
 
 > 可信代理默认为空，因此默认**不会**信任任何转发头。部署在 Nginx / 网关之后时
 > 必须显式配置 `UseTrustedProxies` 或 `SetTrustedProxies`，否则基于 IP 的审计与
@@ -86,7 +86,9 @@ cached, _ := ctx.GetRequestBody() // 只读取缓存
 - 首次调用 `ReadBody` 才会真正读取 `Request.Body`；
 - 结果（含错误）被缓存，后续调用返回同一份数据或错误；
 - 引擎设置 `MaxBodyBytes` 时使用 `http.MaxBytesReader` 限制读取量，超限返回错误；
-- 不会关闭 `Request.Body`，由 `net/http` 负责关闭。
+- 不会关闭 `Request.Body`，由 `net/http` 负责关闭；
+- 缓存缓冲在上下文复位时保留容量，但超过 64 KiB 时直接丢弃，避免一次大请求体
+  长期占用对象池。
 
 因此可以「先绑定，再读取原始字节」：
 
@@ -235,7 +237,9 @@ value, err := ctx.GetCookieValue("sid")
 ```
 
 - `cookiePath` 为空时默认 `/`；
-- Cookie 值写入时经过 `url.QueryEscape`，读取时由标准库解码；
+- Cookie 值写入时经过 `url.PathEscape`，读取时由 `url.PathUnescape` 解码，两者对称：
+  空格与 `+` 都能原样往返，`+` 始终是字面量而不是空格；
+- `GetCookieValue` 遇到非法转义时原样返回 Cookie 值，不会静默变成空串；
 - `SetCookie(cookie)` 可直接写入完整的 `*http.Cookie`（SameSite 由调用方设置）。
 
 ---
@@ -295,7 +299,10 @@ err := ctx.ResponseSSE(func(requestCtx context.Context) <-chan *sse.Message {
 ```
 
 `ResponseSSE` 会同步阻塞直到连接结束。处理器必须等待它返回，**不能提前返回**，
-否则响应写入器会被归还池中，连接被意外关闭。详见
+否则响应写入器会被归还池中，连接被意外关闭。
+
+引擎默认 `WriteTimeout` 为 60 秒，到时 `net/http` 会切断长连接；启用 SSE /
+WebSocket 的服务应使用 `leego.UseWriteTimeout(0)` 关闭写入超时。详见
 [docs/sse-websocket.md](sse-websocket.md)。
 
 ---

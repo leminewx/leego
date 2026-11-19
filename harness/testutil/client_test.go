@@ -56,13 +56,13 @@ func TestClientGet(t *testing.T) {
 func TestClientJSONAndOptions(t *testing.T) {
 	client := testutil.NewClient(newDemoHandler()).UseHeader("X-Token", "default")
 
-	response := client.JSON(http.MethodPost, "/echo?q=keep", map[string]string{"name": "leego"},
+	response := client.SendJSON(http.MethodPost, "/echo?q=keep", map[string]string{"name": "leego"},
 		testutil.WithQuery("q", "added"),
 		testutil.WithCookie(&http.Cookie{Name: "sid", Value: "v1"}),
 	)
 	response.AssertStatus(t, http.StatusOK)
 
-	payload := response.JSONMap(t)
+	payload := response.GetJSONMap(t)
 	if payload["method"] != http.MethodPost {
 		t.Fatalf("method = %v", payload["method"])
 	}
@@ -107,7 +107,7 @@ func TestClientNilHandler(t *testing.T) {
 
 func TestClientJSONMarshalError(t *testing.T) {
 	client := testutil.NewClient(newDemoHandler())
-	response := client.JSON(http.MethodPost, "/echo", make(chan int))
+	response := client.SendJSON(http.MethodPost, "/echo", make(chan int))
 	if response.Err == nil {
 		t.Fatal("期望序列化失败")
 	}
@@ -115,7 +115,7 @@ func TestClientJSONMarshalError(t *testing.T) {
 
 func TestResponseBindJSON(t *testing.T) {
 	client := testutil.NewClient(newDemoHandler())
-	response := client.JSON(http.MethodGet, "/echo", nil)
+	response := client.SendJSON(http.MethodGet, "/echo", nil)
 
 	var payload map[string]string
 	response.BindJSON(t, &payload)

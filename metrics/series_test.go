@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 )
 
 // TestNewTimeSeriesFallbacks 验证非法窗口与桶数会回退为默认值。

@@ -104,6 +104,38 @@ func TestRegisterMetricsExposesRoutes(t *testing.T) {
 	}
 }
 
+// TestRegisterMetricsAuthorizer 验证指标端点可加访问控制。
+func TestRegisterMetricsAuthorizer(t *testing.T) {
+	engine := createTestEngine()
+	allowed := false
+
+	err := engine.RegisterMetrics("/metrics", metrics.NewMemoryStore(time.Minute, 60),
+		UseMetricsInterval(time.Hour),
+		UseMetricsAuthorizer(func(*Context) bool { return allowed }),
+	)
+	if err != nil {
+		t.Fatalf("RegisterMetrics() error = %v", err)
+	}
+
+	if recorder := performRequest(engine, http.MethodGet, "/metrics", nil); recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("未授权时历史接口状态码 = %d, want 401", recorder.Code)
+	}
+
+	if recorder := performRequest(engine, http.MethodGet, "/metrics/prometheus", nil); recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("未授权时 Prometheus 状态码 = %d, want 401", recorder.Code)
+	}
+
+	allowed = true
+
+	if recorder := performRequest(engine, http.MethodGet, "/metrics", nil); recorder.Code != http.StatusOK {
+		t.Fatalf("授权后历史接口状态码 = %d, want 200", recorder.Code)
+	}
+
+	if recorder := performRequest(engine, http.MethodGet, "/metrics/prometheus", nil); recorder.Code != http.StatusOK {
+		t.Fatalf("授权后 Prometheus 状态码 = %d, want 200", recorder.Code)
+	}
+}
+
 // TestRegisterMetricsRequiresStore 验证空存储被拒绝。
 func TestRegisterMetricsRequiresStore(t *testing.T) {
 	engine := createTestEngine()

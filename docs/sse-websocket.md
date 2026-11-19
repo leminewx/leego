@@ -121,15 +121,30 @@ engine.GET("/sse/:client", func(ctx *leego.Context) {
 | 投递超时 | 300 ms |
 | 心跳周期 | 30 s |
 | 错误通道缓冲 | 16 |
+| 广播并发上限 | 64 |
 
 行为细节：
 
 - 每个连接是单写者模型：只有连接自身的写循环会写响应，避免并发写导致的帧错乱；
 - 投递时若缓冲已满，等待 `WriteTimeout` 后返回 `ErrMessageChannelIsFull`；
 - 投递失败会注销该连接，并把错误写入错误通道；
+- `Broadcast` / `BroadcastTo` / `Close` 的逐连接通知由信号量限制在 64 个并发协程，
+  慢客户端不会放大 goroutine 数量；每个连接仍由自身写循环串行写入；
 - `Close()` 会先向所有连接投递 `shutdown` 消息，并等待最多 50ms 让关闭消息刷出，
   然后关闭连接与错误通道；
 - `Close()` 幂等，且不会关闭连接的 `messageChan`（投递方可能仍持有引用）。
+
+### 与引擎超时共存
+
+SSE 连接通常持续数分钟以上，而引擎默认 `WriteTimeout` 为 60 秒，到时
+`net/http` 会直接切断连接。启用 SSE / WebSocket 的服务必须显式关闭该超时：
+
+```go
+engine := leego.NewEngine(leego.UseWriteTimeout(0))
+```
+
+`UseServerTimeouts` 会忽略非正数，无法用它关闭写入超时，因此单独提供了
+`UseWriteTimeout`。
 
 ### 连接生命周期
 
@@ -146,8 +161,11 @@ Manager.Serve
 
 ## WebSocket
 
-`response/websocket` 实现了 RFC 6455 的握手、帧解析、掩码校验、分片、控制帧与
-关闭码处理；`upgrader` 子包负责握手与配置。
+`response/websocket` 实现了 RFC 6455 的握手、帧解析、掩码校验、控制帧与关闭码处理；
+`upgrader` 子包负责握手与配置。当前版本**不支持分片消息与 `permessage-deflate`**：
+收到 `FIN=0` 的数据帧或 `OP_CODE_CONTINUE` 会先发 1003（unsupported data）再断开，
+任一 `RSV` 位非 0 则按协议错误直接断开；写出方向始终 `FIN=1`、`RSV=0`。
+因此单条消息必须一次写完，超大载荷请自行拆成多条独立消息。
 
 ### 升级配置
 
@@ -172,11 +190,11 @@ connection, err := upgraderInstance.Upgrade(ctx.Request, ctx.Response, nil)
 | 读超时 | 60 s |
 | 写超时 | 10 s |
 | 最大读字节 | 16 MiB |
-| 来源校验 | 全部放行（`OriginCheckFunc` 返回 `true`） |
+| 来源校验 | 默认同源（Origin 缺失放行，跨站拒绝） |
 | 子协议 | 空 |
 
-> 默认放行所有来源是为了方便本地调试。生产环境应配置 `OriginCheckFunc`，否则
-> 任意站点都可以用浏览器发起跨站 WebSocket 连接。
+> 默认同源校验可以拦截浏览器发起的跨站 WebSocket 劫持（CSWSH）；
+> 部署在独立域名下时，应显式配置 `OriginCheckFunc` 白名单。
 
 握手校验包括：方法为 `GET`、`Upgrade: websocket`、`Connection` 包含 `upgrade`、
 `Sec-WebSocket-Version: 13`、`Sec-WebSocket-Key` 为 16 字节 Base64。任一不满足

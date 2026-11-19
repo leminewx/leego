@@ -55,8 +55,8 @@ type InitRequest struct {
 type Storage interface {
 	// Init 创建上传会话。
 	Init(ctx context.Context, request InitRequest) (Session, error)
-	// Status 返回上传会话状态。
-	Status(ctx context.Context, id string) (Session, error)
+	// GetStatus 返回上传会话状态。
+	GetStatus(ctx context.Context, id string) (Session, error)
 	// PutPart 写入一个分片；size 为声明长度，负数表示未知。
 	PutPart(ctx context.Context, id string, index int, reader io.Reader, size int64) error
 	// Complete 按序拼接全部分片，返回最终文件路径。

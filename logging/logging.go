@@ -25,6 +25,9 @@ var (
 	outputMu sync.RWMutex
 	// outputWriter 为当前输出目标，默认标准输出。
 	outputWriter io.Writer = os.Stdout
+	// writeMu 串行化写入：fmt.Fprintf 对同一 writer 的多次 Write 不保证原子，
+	// 并发输出时日志行会互相交织。
+	writeMu sync.Mutex
 )
 
 // SetOutput 设置日志输出目标。
@@ -74,5 +77,8 @@ func write(level, format string, values ...any) {
 		writer = os.Stdout
 	}
 
+	// 框架日志频率低，直接串行化以保证每行完整。
+	writeMu.Lock()
 	_, _ = fmt.Fprintf(writer, level+format, values...)
+	writeMu.Unlock()
 }

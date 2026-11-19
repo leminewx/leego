@@ -713,6 +713,27 @@ func TestContextClientIPWithTrustedProxy(t *testing.T) {
 	}
 }
 
+// TestContextClientIPIgnoresUntrustedPeerHeaders 验证直连对端不可信时忽略伪造的代理头。
+func TestContextClientIPIgnoresUntrustedPeerHeaders(t *testing.T) {
+	engine := NewEngine(DisableStartupLog())
+	if err := engine.SetTrustedProxies("10.0.0.0/8"); err != nil {
+		t.Fatalf("SetTrustedProxies() error = %v", err)
+	}
+
+	// 直连对端是公网地址，属于不可信链路：任何代理头都可能由客户端自带。
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.50:4321"
+	req.Header.Set("X-Forwarded-For", "10.0.0.9, 1.2.3.4")
+	req.Header.Set("X-Real-IP", "1.2.3.4")
+
+	ctx, _ := createTestContext(req)
+	ctx.engine = engine
+
+	if got := ctx.GetClientIP(); got != "203.0.113.50" {
+		t.Fatalf("GetClientIP() = %q, want 203.0.113.50（不得采信不可信对端携带的代理头）", got)
+	}
+}
+
 // TestNormalizeIP 验证 IP 文本规范化。
 func TestNormalizeIP(t *testing.T) {
 	tests := map[string]string{
@@ -1122,10 +1143,72 @@ func TestContextCookieDetails(t *testing.T) {
 	ctx.SetCookieData("token", "a b&c", 60, "", "example.com", true, true)
 
 	header := recorder.Header().Get("Set-Cookie")
-	for _, expected := range []string{"token=a+b%26c", "Path=/", "Domain=example.com", "Max-Age=60", "Secure", "HttpOnly", "SameSite=Lax"} {
+	for _, expected := range []string{"token=a%20b&c", "Path=/", "Domain=example.com", "Max-Age=60", "Secure", "HttpOnly", "SameSite=Lax"} {
 		if !strings.Contains(header, expected) {
 			t.Fatalf("Cookie 缺少 %q: %s", expected, header)
 		}
+	}
+}
+
+// TestGetCookieValueKeepsPlus 验证 Cookie 解码保留字面量加号。
+//
+// url.QueryUnescape 会把 “+” 解成空格，导致含加号的令牌被静默篡改。
+func TestGetCookieValueKeepsPlus(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.AddCookie(&http.Cookie{Name: "token", Value: "a+b%2Bc"})
+	ctx, _ := createTestContext(request)
+
+	value, err := ctx.GetCookieValue("token")
+	if err != nil {
+		t.Fatalf("读取 Cookie 失败: %v", err)
+	}
+
+	if value != "a+b+c" {
+		t.Fatalf("GetCookieValue() = %q, want a+b+c", value)
+	}
+}
+
+// TestCookieValueRoundTrip 验证 SetCookieData 与 GetCookieValue 编解码对称。
+func TestCookieValueRoundTrip(t *testing.T) {
+	values := []string{"a b&c", "a+b%2Bc", "中文 空格", "semi;comma,quote\""}
+	for _, value := range values {
+		ctx, recorder := createTestContext(httptest.NewRequest(http.MethodGet, "/", nil))
+		ctx.SetCookieData("token", value, 60, "/", "", false, true)
+
+		cookies := recorder.Result().Cookies()
+		if len(cookies) != 1 {
+			t.Fatalf("Set-Cookie 数量 = %d, want 1", len(cookies))
+		}
+
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		request.AddCookie(cookies[0])
+		readCtx, _ := createTestContext(request)
+
+		got, err := readCtx.GetCookieValue("token")
+		if err != nil {
+			t.Fatalf("读取 Cookie 失败: %v", err)
+		}
+
+		if got != value {
+			t.Fatalf("往返后 Cookie 值 = %q, want %q", got, value)
+		}
+	}
+}
+
+// TestReleaseBodyCacheDropsLargeBuffers 验证大请求体不会长期驻留在对象池。
+func TestReleaseBodyCacheDropsLargeBuffers(t *testing.T) {
+	ctx, _ := createTestContext(httptest.NewRequest(http.MethodPost, "/", nil))
+
+	ctx.bodyCache = make([]byte, 1, _BODY_CACHE_LIMIT+1)
+	ctx.clear()
+	if ctx.bodyCache != nil {
+		t.Fatalf("超过上限的缓存应被丢弃，cap = %d", cap(ctx.bodyCache))
+	}
+
+	ctx.bodyCache = make([]byte, 0, _BODY_CACHE_LIMIT)
+	ctx.releaseBodyCache()
+	if cap(ctx.bodyCache) != _BODY_CACHE_LIMIT {
+		t.Fatalf("未超上限的缓存应保留容量，cap = %d", cap(ctx.bodyCache))
 	}
 }
 

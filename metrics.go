@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"gitee.com/leminewx/leego/logging"
 	"gitee.com/leminewx/leego/metrics"
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 )
 
 const (
@@ -32,6 +33,11 @@ type MetricsConfig struct {
 	Step time.Duration
 	// DisablePrometheus 为 true 时不注册 /prometheus 子路由。
 	DisablePrometheus bool
+	// Authorizer 为指标端点的访问控制函数，返回 false 时拒绝请求。
+	//
+	// 指标包含路由名、请求量与耗时等运行信息，nil 表示不做校验，
+	// 仅适用于只在内网或本机监听的部署。
+	Authorizer func(*Context) bool
 }
 
 // NewMetricsConfig 返回推荐配置。
@@ -88,6 +94,31 @@ func DisableMetricsPrometheus() MetricsOption {
 	}
 }
 
+// UseMetricsAuthorizer 设置指标端点的访问控制函数。
+//
+// 传入 nil 等价于不做校验；建议在生产环境用内网限制或鉴权函数保护。
+func UseMetricsAuthorizer(authorizer func(*Context) bool) MetricsOption {
+	return func(config *MetricsConfig) {
+		config.Authorizer = authorizer
+	}
+}
+
+// authorize 校验管理端点的访问权限。
+//
+// 未配置授权函数时放行；拒绝时写入 401 并返回 false。
+func (own MetricsConfig) authorize(ctx *Context) bool {
+	if own.Authorizer == nil {
+		return true
+	}
+
+	if own.Authorizer(ctx) {
+		return true
+	}
+
+	ctx.ResponseError(http.StatusUnauthorized, "metrics: unauthorized")
+	return false
+}
+
 // RegisterMetrics 挂载指标导出路由，并启动后台采集。
 //
 // 注册的路由：
@@ -112,10 +143,16 @@ func (own *Engine) RegisterMetrics(prefix string, store metrics.Store, options .
 	prefix = config.Prefix
 
 	own.GET(prefix, func(ctx *Context) {
+		if !config.authorize(ctx) {
+			return
+		}
+
 		now := time.Now()
 		points, err := store.Query(now.Add(-_METRICS_QUERY_WINDOW), now, config.Step)
 		if err != nil {
-			ctx.ResponseError(http.StatusServiceUnavailable, err.Error())
+			// 存储错误可能包含文件路径，只记日志，对外返回固定文案。
+			logging.LogWarn("metrics: query failed: %v", err)
+			ctx.ResponseError(http.StatusServiceUnavailable, "metrics: unavailable")
 			return
 		}
 
@@ -129,6 +166,10 @@ func (own *Engine) RegisterMetrics(prefix string, store metrics.Store, options .
 	if !config.DisablePrometheus {
 		prometheus := metrics.NewPrometheusHandler(own.CollectReport)
 		own.GET(prefix+"/prometheus", func(ctx *Context) {
+			if !config.authorize(ctx) {
+				return
+			}
+
 			prometheus.ServeHTTP(ctx.Response, ctx.Request)
 		}, "metrics-prometheus")
 	}

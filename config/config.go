@@ -57,10 +57,12 @@ type Config struct {
 	// sources 为加载顺序固定的来源列表。
 	sources []Source
 
-	// subsMu 保护订阅表。
+	// subsMu 保护订阅表与 nextSubID。
 	subsMu sync.RWMutex
-	// subs 保存 key 到回调列表的映射。
-	subs map[string][]func(any)
+	// subs 保存 key 到订阅列表的映射。
+	subs map[string][]subscription
+	// nextSubID 为订阅分配自增标识；由 subsMu 保护。
+	nextSubID uint64
 
 	// watchMu 保护停止函数与监听状态。
 	watchMu sync.Mutex
@@ -83,7 +85,7 @@ type Config struct {
 func Load(sources ...Source) (*Config, error) {
 	instance := &Config{
 		sources:      make([]Source, 0, len(sources)),
-		subs:         make(map[string][]func(any)),
+		subs:         make(map[string][]subscription),
 		reloadSignal: make(chan struct{}, 1),
 		done:         make(chan struct{}),
 	}
@@ -189,8 +191,8 @@ func (own *Config) GetDuration(key string, fallback time.Duration) time.Duration
 	return duration
 }
 
-// Snapshot 返回当前快照的浅拷贝，供诊断页面或日志展示。
-func (own *Config) Snapshot() map[string]any {
+// GetSnapshot 返回当前快照的浅拷贝，供诊断页面或日志展示。
+func (own *Config) GetSnapshot() map[string]any {
 	values := own.values.Load()
 	if values == nil {
 		return map[string]any{}
@@ -204,20 +206,33 @@ func (own *Config) Snapshot() map[string]any {
 	return copied
 }
 
-// OnChange 订阅指定 key 的变化，返回取消函数。
+// subscription 是一条订阅记录。
+//
+// 用自增 ID 而不是函数指针来区分订阅：同一个函数字面量产生的闭包
+// 共享代码地址，按 Pointer 比较会把“取消一个”误伤到“全部”。
+type subscription struct {
+	// id 为订阅的唯一标识。
+	id uint64
+	// notify 为变化回调。
+	notify func(any)
+}
+
+// SubscribeChange 订阅指定 key 的变化，返回取消函数。
 //
 // 语义约定：
 //   - 回调在独立协程中执行，不阻塞配置加载；
 //   - 只在值确实变化时触发，新增或删除 key 也视为变化；
 //   - 取消函数幂等，可在回调内部调用。
-func (own *Config) OnChange(key string, notify func(any)) (cancel func()) {
+func (own *Config) SubscribeChange(key string, notify func(any)) (cancel func()) {
 	if notify == nil {
 		return func() {}
 	}
 
 	normalized := normalizeKey(key)
 	own.subsMu.Lock()
-	own.subs[normalized] = append(own.subs[normalized], notify)
+	own.nextSubID++
+	id := own.nextSubID
+	own.subs[normalized] = append(own.subs[normalized], subscription{id: id, notify: notify})
 	own.subsMu.Unlock()
 
 	var once sync.Once
@@ -227,7 +242,7 @@ func (own *Config) OnChange(key string, notify func(any)) (cancel func()) {
 			callbacks := own.subs[normalized]
 			filtered := callbacks[:0]
 			for _, callback := range callbacks {
-				if reflect.ValueOf(callback).Pointer() != reflect.ValueOf(notify).Pointer() {
+				if callback.id != id {
 					filtered = append(filtered, callback)
 				}
 			}
@@ -348,7 +363,7 @@ func (own *Config) apply(next map[string]any) {
 	}
 
 	own.subsMu.RLock()
-	subscribers := make(map[string][]func(any), len(own.subs))
+	subscribers := make(map[string][]subscription, len(own.subs))
 	for key, callbacks := range own.subs {
 		subscribers[key] = slices.Clone(callbacks)
 	}
@@ -366,7 +381,7 @@ func (own *Config) apply(next map[string]any) {
 		}
 
 		for _, callback := range callbacks {
-			go safelyNotify(callback, newValue)
+			go safelyNotify(callback.notify, newValue)
 		}
 	}
 }

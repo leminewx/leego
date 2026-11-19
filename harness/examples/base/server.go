@@ -34,10 +34,11 @@ import (
 
 	"gitee.com/leminewx/leego"
 	"gitee.com/leminewx/leego/dashboard"
-	"gitee.com/leminewx/leego/middleware"
-	"gitee.com/leminewx/leego/middleware/cors"
-	"gitee.com/leminewx/leego/middleware/jwt"
-	"gitee.com/leminewx/leego/middleware/limiter"
+	"gitee.com/leminewx/leego/harness/assetpath"
+	"gitee.com/leminewx/leego/middlewares"
+	"gitee.com/leminewx/leego/middlewares/cors"
+	"gitee.com/leminewx/leego/middlewares/jwt"
+	"gitee.com/leminewx/leego/middlewares/limiter"
 	"gitee.com/leminewx/leego/response/sse"
 )
 
@@ -87,8 +88,8 @@ func newEngine() *leego.Engine {
 
 // registerMiddlewares 注册全局与路由组中间件。
 func registerMiddlewares(engine *leego.Engine) {
-	// 令牌桶：每秒补充 30 个令牌，允许 60 个瞬时突发。
-	rateLimiter := limiter.NewTokenBucketLimiter(30, 60)
+	// 令牌桶：每秒补充 30 个令牌，允许 60 个瞬时突发；等待上限 5 秒。
+	rateLimiter := limiter.NewTokenBucketLimiter(30, 60, limiter.Config{WaitTimeout: 5 * time.Second})
 
 	corsMiddleware := cors.NewDefaultCORS()
 	corsMiddleware.SetAllowOrigins("*")
@@ -96,13 +97,13 @@ func registerMiddlewares(engine *leego.Engine) {
 
 	engine.UseMiddlewares(
 		// 访问日志：输出方法、路径、状态码与耗时。
-		middleware.Log(),
+		middlewares.NewLogger().AdaptToMiddleware(),
 		// 恢复：捕获 panic 并返回 500，避免进程退出。
-		middleware.Recover(),
-		// 限流：等待上限 5 秒，超时返回 429。
-		rateLimiter.GetMiddleware(5*time.Second),
+		middlewares.NewRecovery().AdaptToMiddleware(),
+		// 限流：等待上限由 Config.WaitTimeout 决定，超时返回 429。
+		rateLimiter.AdaptToMiddleware(),
 		// 跨域：自动处理预检请求。
-		corsMiddleware.GetMiddleware(),
+		corsMiddleware.AdaptToMiddleware(),
 		// 自定义中间件：注入请求 ID，便于链路追踪。
 		func(next leego.HandleFunc) leego.HandleFunc {
 			return func(ctx *leego.Context) {
@@ -270,27 +271,17 @@ func registerLoginRoutes(engine *leego.Engine) {
 		})
 	}, "SSE 接口", "长连接", "SSE")
 
-	// 文件在线查看与下载：*filepath 通配符会匹配剩余路径。
+	// 文件在线查看与下载：路径限定在演示数据目录 harness/testdata 内。
 	login.GET("/files/show/*filepath", func(ctx *leego.Context) {
-		ctx.ResponseFile(normalizeFilePath(ctx.GetPathValue("filepath")))
+		ctx.ResponseFile(assetpath.Resolve(ctx.GetPathValue("filepath")))
 	}, "在线查看文件", "文件", "查看")
 
 	login.GET("/files/download/*filepath", func(ctx *leego.Context) {
-		ctx.ResponseAttachment(normalizeFilePath(ctx.GetPathValue("filepath")))
+		ctx.ResponseAttachment(assetpath.Resolve(ctx.GetPathValue("filepath")))
 	}, "下载文件", "文件", "下载")
 
-	// 静态目录：把当前工作目录挂载到 /static。
-	engine.SetStatic("/static", ".")
-}
-
-// normalizeFilePath 去掉通配符带来的前导斜杠，避免被当作绝对路径。
-func normalizeFilePath(filePath string) string {
-	filePath = strings.TrimPrefix(strings.TrimSpace(filePath), "/")
-	if filePath == "" {
-		return "."
-	}
-
-	return filePath
+	// 静态目录：把演示数据目录 harness/testdata 挂载到 /static。
+	engine.SetStatic("/static", assetpath.GetDir())
 }
 
 // registerDashboard 注册内置指标分析后台。

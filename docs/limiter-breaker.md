@@ -1,9 +1,9 @@
 # 限流与熔断
 
-`middleware/limiter` 提供三种服务端限流算法，`middleware/breaker` 提供基于失败率的滑动窗口熔断器。
+`middlewares/limiter` 提供三种服务端限流算法，`middlewares/breaker` 提供基于失败率的滑动窗口熔断器。
 两者都实现为普通中间件，可与 `Engine.Use`、`Group.Use`、`Handler.Use` 自由组合。
 
-- 包路径：`gitee.com/leminewx/leego/middleware/limiter`、`gitee.com/leminewx/leego/middleware/breaker`
+- 包路径：`gitee.com/leminewx/leego/middlewares/limiter`、`gitee.com/leminewx/leego/middlewares/breaker`
 - 共同约定：创建后即生效、配置支持热更新、拒绝请求时不会进入后续处理链
 
 ---
@@ -19,7 +19,7 @@ type Limiter interface {
 	Allow() bool
 	AllowWithTimeout(ctx context.Context, timeout time.Duration) bool
 	Wait(ctx context.Context) error
-	GetMiddleware(timeout time.Duration) leego.MiddlewareFunc
+	AdaptToMiddleware() leego.MiddlewareFunc
 	Enable()
 	Disable()
 	IsEnabled() bool
@@ -31,7 +31,7 @@ type Limiter interface {
 | `Allow()` | 否 | 放行时消耗 | 单纯的“试一次”，适合网关或非 HTTP 场景 |
 | `AllowWithTimeout(ctx, timeout)` | 最多阻塞 `timeout` | 放行时消耗 | `timeout <= 0` 时退化为 `Allow()` |
 | `Wait(ctx)` | 是 | 放行时消耗 | 直到放行、上下文取消或返回错误 |
-| `GetMiddleware(timeout)` | 取决于 `timeout` | 放行时消耗 | 中间件形态，见下节 |
+| `AdaptToMiddleware()` | 取决于 `Config.WaitTimeout` | 放行时消耗 | 中间件形态，见下节 |
 | `Enable()` / `Disable()` | 否 | — | 运行期开关，`Disable` 后中间件直接放行 |
 | `IsEnabled()` | 否 | — | 读取当前开关 |
 
@@ -47,15 +47,16 @@ var ErrNoDeadline = errors.New("limiter: context has no deadline")
 > 令牌桶的 `Wait` 直接委托给 `golang.org/x/time/rate`，不做截止时间检查。
 > 传入 `context.Background()` 且限额很低时，它会一直阻塞到拿到令牌。生产代码请始终传带超时的上下文。
 
-### 1.2 `GetMiddleware` 的等待语义
+### 1.2 `AdaptToMiddleware` 的等待语义
 
-`GetMiddleware(waitTimeout)` 的 `waitTimeout` 是**每个请求**的最大等待时长：
+等待上限不再由方法参数传入，而是构造时写入的 `limiter.Config.WaitTimeout`
+（**每个请求**的最大等待时长）：
 
-| `waitTimeout` | 行为 |
+| `WaitTimeout` | 行为 |
 | --- | --- |
-| `0` | 不等待，配额不足立即返回 `429`（推荐用于对外接口） |
-| 负数 | 使用默认值 `3s` 等待 |
-| 正数 | 在 `waitTimeout` 内轮询等待，期间请求被挂起 |
+| `0`（默认） | 不等待，配额不足立即返回 `429`（推荐用于对外接口） |
+| 正数 | 在超时内轮询等待，期间请求被挂起 |
+| 负数 | 归一化为 `0` |
 
 等待使用请求自身的上下文派生超时上下文：客户端断开或超时后立刻停止等待。
 
@@ -86,7 +87,7 @@ func waitForQuota(ctx context.Context, allow func() bool) error
 
 ```go
 limiter := limiter.NewFixedWindowLimiter(100, time.Second)
-engine.Use(limiter.GetMiddleware(0))
+engine.Use(limiter.AdaptToMiddleware())
 ```
 
 **参数**：
@@ -117,7 +118,7 @@ engine.Use(limiter.GetMiddleware(0))
 
 ```go
 limiter := limiter.NewSlidingWindowLimiter(100, 10, time.Second)
-engine.Use(limiter.GetMiddleware(0))
+engine.Use(limiter.AdaptToMiddleware())
 ```
 
 **参数**：
@@ -155,7 +156,7 @@ engine.Use(limiter.GetMiddleware(0))
 
 ```go
 limiter := limiter.NewTokenBucketLimiter(100, 20)
-engine.Use(limiter.GetMiddleware(0))
+engine.Use(limiter.AdaptToMiddleware())
 ```
 
 **参数**：
@@ -190,7 +191,7 @@ engine.Use(limiter.GetMiddleware(0))
 
 ### 1.7 选型建议
 
-- **对外 API 的粗粒度配额**：固定窗口，`waitTimeout = 0`，快速失败。
+- **对外 API 的粗粒度配额**：固定窗口，`WaitTimeout = 0`，快速失败。
 - **需要避免边界突刺**：滑动窗口，桶数量取 `10`～`20`。
 - **限速调用第三方服务**：令牌桶，`limit` 等于对方的 QPS 配额，`burst` 取 `limit` 的 10%～50%。
 - **多个限流器叠加**：例如“每 IP 固定窗口 + 全局令牌桶”，注意顺序——外层先拦掉明显超限的请求。
@@ -204,18 +205,18 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/middleware/limiter"
+	"gitee.com/leminewx/leego/middlewares/limiter"
 )
 
 func main() {
 	engine := leego.NewEngine()
 
 	global := limiter.NewTokenBucketLimiter(2000, 200)
-	perRoute := limiter.NewSlidingWindowLimiter(50, 10, time.Second)
+	perRoute := limiter.NewSlidingWindowLimiter(50, 10, time.Second, limiter.Config{WaitTimeout: 100 * time.Millisecond})
 
-	engine.Use(global.GetMiddleware(0))
+	engine.Use(global.AdaptToMiddleware())
 
-	group := engine.NewGroup("/api", perRoute.GetMiddleware(100*time.Millisecond))
+	group := engine.NewGroup("/api", perRoute.AdaptToMiddleware())
 	group.GET("/ping", func(ctx *leego.Context) {
 		ctx.ResponseJSON(200, map[string]string{"message": "pong"})
 	})
@@ -280,7 +281,7 @@ type Config struct {
 
 ```go
 circuitBreaker := breaker.NewCircuitBreaker(breaker.NewDefaultConfig())
-engine.Use(circuitBreaker.GetMiddleware())
+engine.Use(circuitBreaker.AdaptToMiddleware())
 ```
 
 三种状态以字符串常量表示，便于日志与 JSON 输出：
@@ -310,7 +311,7 @@ HalfOpen --(任意一次失败)-->                                          Open
 ### 2.4 中间件行为
 
 ```go
-func (own *CircuitBreaker) GetMiddleware() leego.MiddlewareFunc
+func (own *CircuitBreaker) AdaptToMiddleware() leego.MiddlewareFunc
 ```
 
 | 情况 | 行为 |
@@ -336,9 +337,9 @@ circuitBreaker.SetSuccessChecker(func(status int, err error) bool {
 
 传入 `nil` 恢复默认策略。
 
-> **panic 不会被记录**：中间件在 `next(ctx)` 返回后才调用 `afterExecute`。若处理链发生 panic，
-> 该次调用不会计入成功或失败。请把 `Recover` 挂在熔断器的**外层**，先让 panic 被捕获，
-> 再依赖日志与指标发现异常；不要把熔断器当作 panic 计数器。
+> **panic 会计为失败后继续上抛**：中间件用 `defer` 捕获 panic，先以 500 记录失败、
+> 归还半开探测额度，再把 panic 重新抛出。因此恢复中间件仍应挂在熔断器的**外层**，
+> 由它负责向客户端返回 500；熔断器只保证不会因 panic 泄漏探测额度而导致永久 503。
 
 ### 2.5 非 HTTP 场景
 

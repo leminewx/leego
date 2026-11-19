@@ -73,8 +73,8 @@ func TestNewBalancerValidation(t *testing.T) {
 		t.Fatalf("NewBalancer() error = %v", err)
 	}
 
-	if balancer.Len() != 1 {
-		t.Fatalf("上游数量 = %d, want 1", balancer.Len())
+	if balancer.CountUpstreams() != 1 {
+		t.Fatalf("上游数量 = %d, want 1", balancer.CountUpstreams())
 	}
 }
 
@@ -89,7 +89,7 @@ func TestBalancerWeightedDistribution(t *testing.T) {
 
 	counts := make(map[string]int, 2)
 	for index := 0; index < 400; index++ {
-		counts[balancer.Next().Host]++
+		counts[balancer.PickNext().Host]++
 	}
 
 	if counts["a.example"] != 300 || counts["b.example"] != 100 {
@@ -107,7 +107,7 @@ func TestBalancerTagRouting(t *testing.T) {
 	}
 
 	for index := 0; index < 20; index++ {
-		if host := balancer.NextFor("v2").Host; host != "canary.example" {
+		if host := balancer.PickNextFor("v2").Host; host != "canary.example" {
 			t.Fatalf("灰度命中 = %q, want canary.example", host)
 		}
 	}
@@ -115,7 +115,7 @@ func TestBalancerTagRouting(t *testing.T) {
 	// 未知标签回落到全量分配，两个上游都应出现。
 	seen := make(map[string]struct{}, 2)
 	for index := 0; index < 8; index++ {
-		seen[balancer.NextFor("unknown").Host] = struct{}{}
+		seen[balancer.PickNextFor("unknown").Host] = struct{}{}
 	}
 
 	if len(seen) != 2 {
@@ -258,8 +258,43 @@ func TestProxyUpstreamFailure(t *testing.T) {
 		t.Fatalf("错误响应异常: %s", recorder.Body.String())
 	}
 
+	// 502 不能回显上游地址，避免泄露内网拓扑。
+	upstreamHost := mustParseURL(t, target).Host
+	if strings.Contains(recorder.Body.String(), upstreamHost) {
+		t.Fatalf("错误响应泄露了上游地址 %q: %s", upstreamHost, recorder.Body.String())
+	}
+
 	if reported.Load() != 1 {
 		t.Fatalf("错误回调次数 = %d, want 1", reported.Load())
+	}
+}
+
+// TestProxyDropsClientForwardedHeaders 验证客户端伪造的转发头不会透传到上游。
+func TestProxyDropsClientForwardedHeaders(t *testing.T) {
+	forwarded := make(chan string, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, request *http.Request) {
+		forwarded <- request.Header.Get("X-Forwarded-For")
+		resp.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(upstream.Close)
+
+	balancer, err := NewBalancer(Upstream{URL: mustParseURL(t, upstream.URL), Weight: 1})
+	if err != nil {
+		t.Fatalf("NewBalancer() error = %v", err)
+	}
+
+	engine := newProxyEngine(balancer)
+	recorder := perform(engine, http.MethodGet, "/api/hello", nil, map[string]string{
+		"X-Forwarded-For":  "1.2.3.4",
+		"X-Forwarded-Host": "evil.example",
+	})
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("状态码 = %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	value := <-forwarded
+	if strings.Contains(value, "1.2.3.4") {
+		t.Fatalf("客户端伪造的 X-Forwarded-For 被透传: %q", value)
 	}
 }
 

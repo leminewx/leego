@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 )
 
 // createTestEngine 构造一个关闭启动日志的测试引擎。
@@ -564,6 +564,29 @@ func TestEngineRunTLSWithoutCertificate(t *testing.T) {
 	}
 }
 
+// TestUseWriteTimeoutAllowsZero 验证长连接可以显式关闭写入超时。
+//
+// UseServerTimeouts 会忽略非正数，SSE/WebSocket 无法借它关闭 WriteTimeout，
+// 因此必须提供允许 0 的独立选项。
+func TestUseWriteTimeoutAllowsZero(t *testing.T) {
+	engine := NewEngine(DisableStartupLog(), UseWriteTimeout(0), UseServerTimeouts(0, 0, 5*time.Second, 0))
+
+	// UseServerTimeouts 中的正数仍然生效，但 0 不会把显式关闭覆盖回默认值。
+	if got := engine.GetConfig().WriteTimeout; got != 5*time.Second {
+		t.Fatalf("WriteTimeout = %v, want 5s", got)
+	}
+
+	longLived := NewEngine(DisableStartupLog(), UseWriteTimeout(0))
+	if got := longLived.GetConfig().WriteTimeout; got != 0 {
+		t.Fatalf("WriteTimeout = %v, want 0（SSE/WebSocket 需要无限期写入）", got)
+	}
+
+	negative := NewEngine(DisableStartupLog(), UseWriteTimeout(-time.Second))
+	if got := negative.GetConfig().WriteTimeout; got != 0 {
+		t.Fatalf("负数应视为 0，实际 = %v", got)
+	}
+}
+
 // TestEngineMultipartMemoryOptions 验证 multipart 内存上限的配置与回退。
 func TestEngineMultipartMemoryOptions(t *testing.T) {
 	engine := NewEngine(UseMultipartMemory(4<<20), DisableStartupLog())
@@ -858,6 +881,28 @@ func TestGroupSetStaticFSRejectsNil(t *testing.T) {
 	}()
 
 	group.SetStaticFS("/assets", nil)
+}
+
+// TestEngineRecoversHandlerPanic 验证未挂恢复中间件时 panic 也返回 500。
+func TestEngineRecoversHandlerPanic(t *testing.T) {
+	engine := createTestEngine()
+
+	engine.GET("/panic", func(*Context) {
+		panic("boom")
+	}, "panic")
+
+	engine.GET("/ping", func(ctx *Context) {
+		_ = ctx.ResponseText(http.StatusOK, "pong")
+	}, "ping")
+
+	if recorder := performRequest(engine, http.MethodGet, "/panic", nil); recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("panic 请求状态码 = %d, want 500", recorder.Code)
+	}
+
+	// 后续请求仍能正常处理，说明上下文与写入器已归还对象池。
+	if recorder := performRequest(engine, http.MethodGet, "/ping", nil); recorder.Code != http.StatusOK {
+		t.Fatalf("后续请求状态码 = %d, want 200", recorder.Code)
+	}
 }
 
 // BenchmarkEngineServeHTTP 测量端到端请求处理开销。

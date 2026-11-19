@@ -184,6 +184,32 @@ func TestRegisterRule(t *testing.T) {
 	}
 }
 
+// cycleA 与 cycleB 互相匿名嵌入，用于验证类型环不会导致无限递归。
+type cycleA struct {
+	*cycleB
+	Name string `validate:"required"`
+}
+
+// cycleB 与 cycleA 构成环。
+type cycleB struct {
+	*cycleA
+	Age int `validate:"gte=0"`
+}
+
+func TestCheckBreaksAnonymousPointerCycle(t *testing.T) {
+	// 如果元信息解析没有阻断环，这里会因重复展开而栈溢出。
+	target := &cycleA{Name: "leego"}
+
+	if err := validate.Check(target); err != nil {
+		t.Fatalf("期望校验通过，实际: %v", err)
+	}
+
+	broken := &cycleA{}
+	if err := validate.Check(broken); err == nil {
+		t.Fatal("缺少必填字段应报错")
+	}
+}
+
 func TestCheckMapDive(t *testing.T) {
 	type data struct {
 		Labels map[string]string `validate:"dive,required,min=2"`

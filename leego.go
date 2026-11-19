@@ -1,7 +1,7 @@
 package leego
 
 var (
-	year    = "2025"
-	version = "v0.15.0.0"
-	release = "2025.10.19"
+	year    = "2026"
+	version = "v0.17.0.0"
+	release = "2026.11.20"
 )

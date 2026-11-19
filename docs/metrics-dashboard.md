@@ -75,6 +75,7 @@ monitor.Decrease(ctx.GetStatusCode(), time.Since(start))
 细节：
 
 - `Decrease` 在状态码为 0 时按 `200` 记录，避免「未写响应」的路由出现 `0` 桶；
+- `Decrease` 用原子 CAS 夹零：`Reset` 与正在结束的请求并发时，`Flights` 不会变成负数；
 - 耗时以微秒记录，负数被截断为 0；
 - 最大/最小值的「读-比较-写」由互斥锁保护，与 `Flights` 的原子计数分属不同
   同步域，二者不混用；
@@ -194,6 +195,54 @@ Cache-Control: no-store
 
 ---
 
+## 指标导出端点
+
+`dashboard` 面向人看，`RegisterMetrics` 面向机器抓取。它把全局水位按固定间隔写入
+`metrics.Store`，并提供历史查询与 Prometheus 文本两个端点：
+
+```go
+import "gitee.com/leminewx/leego/metrics"
+
+store := metrics.NewMemoryStore(24*time.Hour, 60) // 也可用 NewFileStore
+defer store.Close()
+
+err := engine.RegisterMetrics("/observe", store,
+	leego.UseMetricsInterval(5*time.Second),
+	leego.UseMetricsStep(30*time.Second),
+	leego.UseMetricsAuthorizer(func(ctx *leego.Context) bool {
+		return ctx.GetRequestHeader("X-Admin-Token") == os.Getenv("ADMIN_TOKEN")
+	}),
+)
+```
+
+注册的端点（相对前缀）：
+
+| 端点 | 说明 |
+| --- | --- |
+| `GET <prefix>` | 回溯 24 小时、按 `Step` 聚合的历史趋势 JSON |
+| `GET <prefix>/prometheus` | Prometheus 文本格式，可用 `DisableMetricsPrometheus()` 关闭 |
+
+选项：
+
+| 选项 | 默认 | 说明 |
+| --- | --- | --- |
+| `UseMetricsInterval(d)` | 5 s | 后台采样间隔；非正数回退默认 |
+| `UseMetricsStep(d)` | 30 s | 查询聚合步长 |
+| `DisableMetricsPrometheus()` | 关闭 | 不注册抓取路由 |
+| `UseMetricsAuthorizer(fn)` | `nil`（放行） | 返回 `false` 时响应 `401` |
+
+约束与注意事项：
+
+- `store` 不能为 `nil`，否则注册直接返回错误；
+- 存储只保存全局汇总（`Total` / `Failed` / `Flights` / `TotalCostMicro`），
+  按路由的明细仍由 dashboard 提供；
+- 采集协程与存储随 `Engine.Shutdown` 关闭，无需手动停止；
+- 前缀为空时使用 `/metrics`，与 `RegisterDashboard` 同时使用时务必错开，
+  否则重复注册会失败；
+- 端点会暴露路由名、请求量与耗时，生产环境必须配置鉴权或限制在内网。
+
+---
+
 ## 扩展后台
 
 ### 自定义数据源
@@ -287,5 +336,6 @@ for range ticker.C {
 缓存，请检查反向代理配置。
 
 **Q：能直接对接 Prometheus 吗？**
-可以。用 `GetAllHandlerSnapshots()` 或 `CollectReport()` 自行转换为文本格式，
-挂到独立端点即可；`dashboard` 不绑定具体监控系统。
+可以。优先用 `engine.RegisterMetrics(prefix, store)`，它已包含 `<prefix>/prometheus`；
+也可以 `metrics.NewPrometheusHandler(engine.CollectReport)` 自行挂到任意路由。
+`dashboard` 本身不绑定具体监控系统。

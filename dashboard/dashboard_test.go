@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 )
 
 // createTestReport 构造包含多种方法、状态码与启用状态的测试报告。

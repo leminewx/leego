@@ -15,43 +15,43 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"gitee.com/leminewx/leego"
+	"gitee.com/leminewx/leego/harness/assetpath"
 	"gitee.com/leminewx/leego/headers"
-	"gitee.com/leminewx/leego/middleware"
+	"gitee.com/leminewx/leego/middlewares"
 )
 
 func main() {
 	engine := leego.NewEngine(leego.UseEngineName("leego-file-example"))
 	engine.UseMiddlewares(
-		middleware.Log(),
-		middleware.Recover(),
+		middlewares.NewLogger().AdaptToMiddleware(),
+		middlewares.NewRecovery().AdaptToMiddleware(),
 	)
 
-	// 直接读取本地文件：路径相对于进程工作目录。
+	// 直接读取本地文件：路径限定在演示数据目录 harness/testdata 内。
 	engine.GET("/apis/files/show/*filepath", func(ctx *leego.Context) {
-		ctx.ResponseFile(normalizeFilePath(ctx.GetPathValue("filepath")))
+		ctx.ResponseFile(assetpath.Resolve(ctx.GetPathValue("filepath")))
 	}, "在线查看文件", "文件", "查看")
 
 	engine.GET("/apis/files/download/*filepath", func(ctx *leego.Context) {
-		ctx.ResponseAttachment(normalizeFilePath(ctx.GetPathValue("filepath")))
+		ctx.ResponseAttachment(assetpath.Resolve(ctx.GetPathValue("filepath")))
 	}, "下载文件", "文件", "下载")
 
 	// 通过 http.FileSystem 访问文件：可替换为任意实现。
-	fileSystem := http.Dir(".")
+	fileSystem := http.Dir(assetpath.GetDir())
 	engine.GET("/apis/files/show/fs/*filepath", func(ctx *leego.Context) {
-		ctx.ResponseFileFromFS(normalizeFilePath(ctx.GetPathValue("filepath")), fileSystem)
+		ctx.ResponseFileFromFS(ctx.GetPathValue("filepath"), fileSystem)
 	}, "通过文件系统查看文件", "文件", "FileSystem")
 
 	engine.GET("/apis/files/download/fs/*filepath", func(ctx *leego.Context) {
-		ctx.ResponseAttachmentFromFS(normalizeFilePath(ctx.GetPathValue("filepath")), fileSystem)
+		ctx.ResponseAttachmentFromFS(ctx.GetPathValue("filepath"), fileSystem)
 	}, "通过文件系统下载文件", "文件", "FileSystem")
 
 	// 流式下载大文件：不把文件整体读入内存，适合 GB 级文件。
 	engine.GET("/apis/files/download/bigfile", func(ctx *leego.Context) {
-		file, err := os.Open("file.txt")
+		file, err := os.Open(assetpath.Resolve("data.txt"))
 		if err != nil {
 			ctx.ResponseError(http.StatusNotFound, "文件不存在")
 			return
@@ -65,7 +65,7 @@ func main() {
 		}
 
 		ctx.SetResponseHeader(headers.CONTENT_TYPE, "application/octet-stream")
-		ctx.SetResponseHeader(headers.CONTENT_DISPOSITION, `attachment; filename="file.txt"`)
+		ctx.SetResponseHeader(headers.CONTENT_DISPOSITION, `attachment; filename="data.txt"`)
 		ctx.SetResponseHeader(headers.CONTENT_LENGTH, strconv.FormatInt(info.Size(), 10))
 		ctx.SetStatusCode(http.StatusOK)
 
@@ -78,8 +78,8 @@ func main() {
 		ctx.Response.Flush()
 	}, "流式下载大文件", "文件", "流式")
 
-	// 静态目录：把当前工作目录挂载到 /static。
-	engine.SetStatic("/static", ".")
+	// 静态目录：把演示数据目录 harness/testdata 挂载到 /static。
+	engine.SetStatic("/static", assetpath.GetDir())
 
 	// 启动服务并等待退出信号。
 	go func() {
@@ -91,14 +91,4 @@ func main() {
 	if err := engine.WaitSignalAndShutdown(5*time.Second, nil); err != nil {
 		log.Printf("优雅关闭失败: %v", err)
 	}
-}
-
-// normalizeFilePath 去掉通配符带来的前导斜杠，避免被当作绝对路径。
-func normalizeFilePath(filePath string) string {
-	filePath = strings.TrimPrefix(strings.TrimSpace(filePath), "/")
-	if filePath == "" {
-		return "."
-	}
-
-	return filePath
 }

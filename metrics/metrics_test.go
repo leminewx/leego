@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 )
 
 // buildReport 构造用于导出测试的报告。

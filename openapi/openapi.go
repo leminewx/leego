@@ -257,7 +257,7 @@ func (own *Spec) AddSchema(name string, value any) {
 		return
 	}
 
-	own.schemas[name] = SchemaOf(value)
+	own.schemas[name] = BuildSchema(value)
 }
 
 // MarshalJSON 序列化文档。

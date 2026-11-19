@@ -368,7 +368,7 @@ func TestManagerCloseReleasesClients(t *testing.T) {
 	}
 
 	select {
-	case <-manager.Done():
+	case <-manager.GetDoneChan():
 	default:
 		t.Fatal("Done 通道应已关闭")
 	}

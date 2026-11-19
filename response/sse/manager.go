@@ -18,6 +18,11 @@ const (
 	_DEFAULT_ERROR_BUFFER_SIZE = 16
 	// _DEFAULT_FLUSH_WAIT 为关闭前等待关闭消息刷出连接的时间。
 	_DEFAULT_FLUSH_WAIT = 50 * time.Millisecond
+	// _DEFAULT_BROADCAST_CONCURRENCY 限制一次广播同时存在的投递协程数。
+	//
+	// 直接为每个客户端起一个协程，在万级连接时瞬间放大成万个协程；
+	// 限制并发数后吞吐仍能饱和，而内存与调度开销有了上界。
+	_DEFAULT_BROADCAST_CONCURRENCY = 64
 )
 
 // 管理器错误定义。
@@ -227,6 +232,7 @@ func (own *Manager) SendTo(clientId string, msg *Message) error {
 // Broadcast 向所有在线客户端广播消息。
 //
 // 广播是并发投递的：单个客户端阻塞不会拖慢其它客户端；
+// 并发度受 _DEFAULT_BROADCAST_CONCURRENCY 限制，避免连接数大时协程爆炸。
 // 投递失败的客户端会被自动注销，失败原因可通过 GetErrorChan 获取。
 func (own *Manager) Broadcast(msg *Message) error {
 	if msg == nil || !msg.format() {
@@ -237,20 +243,9 @@ func (own *Manager) Broadcast(msg *Message) error {
 		return ErrManagerIsClosed
 	}
 
-	var waitGroup sync.WaitGroup
-	own.clients.Range(func(key, value any) bool {
-		client, isClient := value.(*Client)
-		if !isClient || client == nil {
-			return true
-		}
-
-		waitGroup.Go(func() {
-			own.deliver(client, msg)
-		})
-
-		return true
+	own.visitConcurrently(own.snapshotClients(), func(client *Client) {
+		own.deliver(client, msg)
 	})
-	waitGroup.Wait()
 
 	return nil
 }
@@ -265,25 +260,59 @@ func (own *Manager) BroadcastTo(clientIds []string, msg *Message) error {
 		return ErrManagerIsClosed
 	}
 
-	var waitGroup sync.WaitGroup
+	clients := make([]*Client, 0, len(clientIds))
 	for _, clientId := range clientIds {
 		value, isLoaded := own.clients.Load(clientId)
 		if !isLoaded {
 			continue
 		}
 
-		client, isClient := value.(*Client)
-		if !isClient || client == nil {
-			continue
+		if client, isClient := value.(*Client); isClient && client != nil {
+			clients = append(clients, client)
 		}
-
-		waitGroup.Go(func() {
-			own.deliver(client, msg)
-		})
 	}
-	waitGroup.Wait()
+
+	own.visitConcurrently(clients, func(client *Client) {
+		own.deliver(client, msg)
+	})
 
 	return nil
+}
+
+// snapshotClients 返回当前在线客户端的快照。
+func (own *Manager) snapshotClients() []*Client {
+	clients := make([]*Client, 0, own.CountClients())
+	own.clients.Range(func(key, value any) bool {
+		if client, isClient := value.(*Client); isClient && client != nil {
+			clients = append(clients, client)
+		}
+
+		return true
+	})
+
+	return clients
+}
+
+// visitConcurrently 以有限并发对客户端集合执行访问。
+//
+// 信号量在循环内获取，形成天然背压：同时运行的协程数不会超过上限。
+func (own *Manager) visitConcurrently(clients []*Client, visit func(*Client)) {
+	if len(clients) == 0 {
+		return
+	}
+
+	slots := make(chan struct{}, _DEFAULT_BROADCAST_CONCURRENCY)
+	var waitGroup sync.WaitGroup
+
+	for _, client := range clients {
+		slots <- struct{}{}
+		waitGroup.Go(func() {
+			defer func() { <-slots }()
+			visit(client)
+		})
+	}
+
+	waitGroup.Wait()
 }
 
 // deliver 向单个客户端投递消息，失败时记录错误并注销该客户端。
@@ -353,13 +382,13 @@ func (own *Manager) sendError(err error) {
 
 // GetErrorChan 返回只读错误通道。
 //
-// 消费方应在收到关闭信号（通道关闭或 Done 被关闭）后退出循环。
+// 消费方应在收到关闭信号（通道关闭或 GetDoneChan 被关闭）后退出循环。
 func (own *Manager) GetErrorChan() <-chan error {
 	return own.errorChan
 }
 
-// Done 返回在管理器关闭时被关闭的只读通道，便于与 select 组合使用。
-func (own *Manager) Done() <-chan struct{} {
+// GetDoneChan 返回在管理器关闭时被关闭的只读通道，便于与 select 组合使用。
+func (own *Manager) GetDoneChan() <-chan struct{} {
 	return own.closeChan
 }
 
@@ -387,21 +416,11 @@ func (own *Manager) Close() error {
 		close(own.closeChan)
 
 		// 1. 通知所有客户端服务器即将关闭。
+		// 同样限制并发：关闭时也不能一次拉起上万个协程。
 		shutdownMessage := NewShutdownMessage()
-		var notifyWaitGroup sync.WaitGroup
-		own.clients.Range(func(key, value any) bool {
-			client, isClient := value.(*Client)
-			if !isClient || client == nil {
-				return true
-			}
-
-			notifyWaitGroup.Go(func() {
-				_ = client.WriteMessage(shutdownMessage)
-			})
-
-			return true
+		own.visitConcurrently(own.snapshotClients(), func(client *Client) {
+			_ = client.WriteMessage(shutdownMessage)
 		})
-		notifyWaitGroup.Wait()
 
 		// 2. 给写协程一点时间把关闭消息真正刷到连接上。
 		time.Sleep(_DEFAULT_FLUSH_WAIT)

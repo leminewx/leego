@@ -12,7 +12,9 @@ package job
 import (
 	"container/heap"
 	"context"
+	"fmt"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -206,10 +208,10 @@ func (own *Scheduler) GetWorkers() int {
 	return own.workers
 }
 
-// Every 注册周期任务，返回取消函数。
+// ScheduleEvery 注册周期任务，返回取消函数。
 //
 // 调度器已停止或参数非法时返回空操作函数。
-func (own *Scheduler) Every(interval time.Duration, job Job) func() {
+func (own *Scheduler) ScheduleEvery(interval time.Duration, job Job) func() {
 	if interval <= 0 {
 		return func() {}
 	}
@@ -217,8 +219,8 @@ func (own *Scheduler) Every(interval time.Duration, job Job) func() {
 	return own.schedule(interval, interval, job)
 }
 
-// After 注册一次性任务，延迟 d 后执行。
-func (own *Scheduler) After(delay time.Duration, job Job) {
+// ScheduleAfter 注册一次性任务，延迟 d 后执行。
+func (own *Scheduler) ScheduleAfter(delay time.Duration, job Job) {
 	if delay < 0 {
 		return
 	}
@@ -431,9 +433,18 @@ func (own *Scheduler) dispatch(ctx context.Context, current Job) {
 	own.runs.Add(1)
 
 	go func() {
+		// 额度归还必须无论如何都执行，因此放在最外层的 defer。
 		defer func() {
 			<-own.slots
 			own.running.Done()
+		}()
+
+		// 业务任务 panic 不能传染到调度器：转为错误上报后归还额度，
+		// 否则会直接杀死进程，并让 Stop 永远等不到在途任务结束。
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				own.report(current, fmt.Errorf("job: task panicked: %v\n%s", recovered, debug.Stack()))
+			}
 		}()
 
 		if err := current.Run(ctx); err != nil {
@@ -443,7 +454,14 @@ func (own *Scheduler) dispatch(ctx context.Context, current Job) {
 }
 
 // report 报告任务错误。
+//
+// 错误处理器由调用方提供，其自身的 panic 在此被吞掉：
+// 上报失败不应影响额度归还，也不应终止进程。
 func (own *Scheduler) report(current Job, err error) {
+	defer func() {
+		_ = recover()
+	}()
+
 	if own.onError != nil {
 		own.onError(current, err)
 		return

@@ -40,12 +40,12 @@ import (
 	"gitee.com/leminewx/leego/gateway"
 	"gitee.com/leminewx/leego/job"
 	"gitee.com/leminewx/leego/metrics"
-	"gitee.com/leminewx/leego/middleware"
-	"gitee.com/leminewx/leego/middleware/cache"
-	"gitee.com/leminewx/leego/middleware/compress"
-	"gitee.com/leminewx/leego/middleware/cors"
-	"gitee.com/leminewx/leego/middleware/limiter"
-	middletrace "gitee.com/leminewx/leego/middleware/trace"
+	"gitee.com/leminewx/leego/middlewares"
+	"gitee.com/leminewx/leego/middlewares/cache"
+	"gitee.com/leminewx/leego/middlewares/compress"
+	"gitee.com/leminewx/leego/middlewares/cors"
+	"gitee.com/leminewx/leego/middlewares/limiter"
+	middletrace "gitee.com/leminewx/leego/middlewares/trace"
 	"gitee.com/leminewx/leego/openapi"
 	"gitee.com/leminewx/leego/response/sse"
 	"gitee.com/leminewx/leego/session"
@@ -330,7 +330,7 @@ func NewService(options ...Option) (*Service, error) {
 		metricStore: metrics.NewMemoryStore(5*time.Minute, 300),
 		startedAt:   time.Now(),
 	}
-	own.tracer = middletrace.New(own.exporter, middletrace.WithFlushInterval(500*time.Millisecond))
+	own.tracer = middletrace.NewTracer(own.exporter, middletrace.WithFlushInterval(500*time.Millisecond))
 	own.bucket = limiter.NewTokenBucketLimiter(config.RateLimit, config.RateBurst, limiter.Config{PollInterval: 10 * time.Millisecond})
 
 	if err = own.startUpstreams(); err != nil {
@@ -359,8 +359,8 @@ func (own *Service) GetConfig() Config {
 	return own.config.clone()
 }
 
-// Handler 返回可直接挂到 HTTP 服务器或测试服务器上的处理器。
-func (own *Service) Handler() http.Handler {
+// GetHandler 返回可直接挂到 HTTP 服务器或测试服务器上的处理器。
+func (own *Service) GetHandler() http.Handler {
 	return own.engine.GetHTTPHandler()
 }
 
@@ -384,7 +384,7 @@ func (own *Service) Run(ctx context.Context) error {
 	}
 
 	server := &http.Server{
-		Handler:           own.Handler(),
+		Handler:           own.GetHandler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
@@ -442,18 +442,18 @@ func (own *Service) buildEngine() *leego.Engine {
 		leego.UseServerTimeouts(10*time.Second, 0, 0, 120*time.Second),
 	)
 
-	middlewares := make([]leego.MiddlewareFunc, 0, 6)
-	middlewares = append(middlewares, middleware.Recover())
+	chain := make([]leego.MiddlewareFunc, 0, 6)
+	chain = append(chain, middlewares.NewRecovery().AdaptToMiddleware())
 	if own.config.EnableLogging {
-		middlewares = append(middlewares, middleware.Log())
+		chain = append(chain, middlewares.NewLogger().AdaptToMiddleware())
 	}
-	middlewares = append(
-		middlewares,
-		own.tracer.Middleware(),
-		cors.NewDefaultCORS().GetMiddleware(),
-		compress.New(compress.NewDefaultConfig()),
+	chain = append(
+		chain,
+		own.tracer.AdaptToMiddleware(),
+		cors.NewDefaultCORS().AdaptToMiddleware(),
+		compress.NewCompress(compress.NewDefaultConfig()).AdaptToMiddleware(),
 	)
-	engine.UseMiddlewares(middlewares...)
+	engine.UseMiddlewares(chain...)
 
 	engine.GET("/", own.serveIndexPage, "index")
 	engine.GET("/api/hello", own.serveHello, "hello")
@@ -492,11 +492,11 @@ func (own *Service) registerSessionRoutes(engine *leego.Engine) {
 // registerCacheRoutes 注册响应缓存演示路由。
 func (own *Service) registerCacheRoutes(engine *leego.Engine) {
 	group := engine.NewGroup("/api/cache")
-	group.UseMiddlewares(cache.New(cache.Config{
+	group.UseMiddlewares(cache.NewCache(cache.Config{
 		TTL:   own.config.CacheTTL,
 		Stale: own.config.CacheStale,
 		Vary:  []string{"Accept-Encoding"},
-	}))
+	}).AdaptToMiddleware())
 
 	group.GET("/timestamp", own.serveCacheTimestamp, "cache-timestamp")
 }
@@ -505,7 +505,7 @@ func (own *Service) registerCacheRoutes(engine *leego.Engine) {
 func (own *Service) registerLimiterRoutes(engine *leego.Engine) {
 	group := engine.NewGroup("/api/limited")
 	// 非阻塞判定：额度不足立即返回 429，前端连点即可观察到效果。
-	group.UseMiddlewares(own.bucket.GetMiddleware(0))
+	group.UseMiddlewares(own.bucket.AdaptToMiddleware())
 
 	group.GET("/ping", own.serveLimitedPing, "limited-ping")
 }
@@ -630,7 +630,7 @@ func (own *Service) closeUpstreams() {
 
 // startBackground 启动定时任务并注册全部关闭钩子。
 func (own *Service) startBackground() {
-	own.scheduler.Every(3*time.Second, job.JobFunc(func(context.Context) error {
+	own.scheduler.ScheduleEvery(3*time.Second, job.JobFunc(func(context.Context) error {
 		own.ticks.Add(1)
 		return nil
 	}))
@@ -732,7 +732,7 @@ func (own *Service) serveEcho(ctx *leego.Context) {
 
 // serveSessionCurrent 返回当前会话内容。
 func (own *Service) serveSessionCurrent(ctx *leego.Context) {
-	current, ok := session.From(ctx.Request.Context())
+	current, ok := session.GetFromContext(ctx.Request.Context())
 	if !ok {
 		_ = ctx.ResponseJSON(http.StatusInternalServerError, map[string]string{"error": "session middleware missing"})
 		return
@@ -741,11 +741,11 @@ func (own *Service) serveSessionCurrent(ctx *leego.Context) {
 	name, _ := current.Get("name")
 	loginAt, _ := current.Get("login_at")
 	_ = ctx.ResponseJSON(http.StatusOK, map[string]any{
-		"id":       current.ID(),
+		"id":       current.GetID(),
 		"new":      current.IsNew(),
 		"name":     name,
 		"login_at": loginAt,
-		"keys":     current.Keys(),
+		"keys":     current.GetKeys(),
 	})
 }
 
@@ -772,7 +772,7 @@ func (own *Service) serveSessionLogin(ctx *leego.Context) {
 		return
 	}
 
-	current, ok := session.From(ctx.Request.Context())
+	current, ok := session.GetFromContext(ctx.Request.Context())
 	if !ok {
 		_ = ctx.ResponseJSON(http.StatusInternalServerError, map[string]string{"error": "session middleware missing"})
 		return
@@ -788,7 +788,7 @@ func (own *Service) serveSessionLogin(ctx *leego.Context) {
 	current.Set("login_at", loginAt)
 
 	_ = ctx.ResponseJSON(http.StatusOK, map[string]any{
-		"id":       current.ID(),
+		"id":       current.GetID(),
 		"name":     request.Name,
 		"login_at": loginAt,
 	})
@@ -796,7 +796,7 @@ func (own *Service) serveSessionLogin(ctx *leego.Context) {
 
 // serveSessionLogout 销毁会话。
 func (own *Service) serveSessionLogout(ctx *leego.Context) {
-	current, ok := session.From(ctx.Request.Context())
+	current, ok := session.GetFromContext(ctx.Request.Context())
 	if !ok {
 		_ = ctx.ResponseJSON(http.StatusInternalServerError, map[string]string{"error": "session middleware missing"})
 		return
@@ -842,7 +842,7 @@ func (own *Service) serveUploadDownload(ctx *leego.Context) {
 		return
 	}
 
-	ctx.ResponseAttachmentFromFS("/"+name, http.Dir(own.uploads.Root()))
+	ctx.ResponseAttachmentFromFS("/"+name, http.Dir(own.uploads.GetRoot()))
 }
 
 // serveEvents 通过 SSE 持续推送服务运行状态。
@@ -905,7 +905,7 @@ func (own *Service) serveJobs(ctx *leego.Context) {
 
 // serveTraces 返回最近导出的链路片段。
 func (own *Service) serveTraces(ctx *leego.Context) {
-	spans := own.exporter.Spans()
+	spans := own.exporter.GetSpans()
 	total := len(spans)
 
 	limit := 20
@@ -921,7 +921,7 @@ func (own *Service) serveTraces(ctx *leego.Context) {
 			"span_id":     span.SpanID,
 			"name":        span.Name,
 			"status":      span.Status,
-			"duration_ms": float64(span.Duration().Microseconds()) / 1000,
+			"duration_ms": float64(span.GetDuration().Microseconds()) / 1000,
 			"at":          span.Start,
 			"tags":        span.Attrs,
 		})

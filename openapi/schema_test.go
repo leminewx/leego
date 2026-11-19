@@ -14,8 +14,8 @@ type tagSample struct {
 	secret  string
 }
 
-// TestSchemaOfNumberKinds 验证有符号、无符号与浮点的模式映射。
-func TestSchemaOfNumberKinds(t *testing.T) {
+// TestBuildSchemaNumberKinds 验证有符号、无符号与浮点的模式映射。
+func TestBuildSchemaNumberKinds(t *testing.T) {
 	cases := []struct {
 		name       string
 		value      any
@@ -29,7 +29,7 @@ func TestSchemaOfNumberKinds(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			schema := SchemaOf(testCase.value)
+			schema := BuildSchema(testCase.value)
 			if schema["type"] != testCase.wantType || schema["format"] != testCase.wantFormat {
 				t.Fatalf("模式 = %v, want type=%s format=%s", schema, testCase.wantType, testCase.wantFormat)
 			}
@@ -37,9 +37,9 @@ func TestSchemaOfNumberKinds(t *testing.T) {
 	}
 }
 
-// TestSchemaOfCollections 验证切片与映射的元素模式。
-func TestSchemaOfCollections(t *testing.T) {
-	array := SchemaOf([]int32{})
+// TestBuildSchemaCollections 验证切片与映射的元素模式。
+func TestBuildSchemaCollections(t *testing.T) {
+	array := BuildSchema([]int32{})
 	if array["type"] != "array" {
 		t.Fatalf("切片模式 = %v", array)
 	}
@@ -49,7 +49,7 @@ func TestSchemaOfCollections(t *testing.T) {
 		t.Fatalf("切片元素模式 = %v", array["items"])
 	}
 
-	mapped := SchemaOf(map[string]bool{})
+	mapped := BuildSchema(map[string]bool{})
 	if mapped["type"] != "object" {
 		t.Fatalf("映射模式 = %v", mapped)
 	}
@@ -60,15 +60,15 @@ func TestSchemaOfCollections(t *testing.T) {
 	}
 }
 
-// TestSchemaOfPointerAndInterface 验证指针透传与接口回退。
-func TestSchemaOfPointerAndInterface(t *testing.T) {
+// TestBuildSchemaPointerAndInterface 验证指针透传与接口回退。
+func TestBuildSchemaPointerAndInterface(t *testing.T) {
 	value := 1
-	if pointer := SchemaOf(&value); pointer["type"] != "integer" {
+	if pointer := BuildSchema(&value); pointer["type"] != "integer" {
 		t.Fatalf("指针模式 = %v", pointer)
 	}
 
 	var target *any
-	if schema := SchemaOf(target); len(schema) != 0 {
+	if schema := BuildSchema(target); len(schema) != 0 {
 		t.Fatalf("接口模式应为空对象: %v", schema)
 	}
 }
@@ -103,9 +103,9 @@ func TestFieldNameParsesTags(t *testing.T) {
 	}
 }
 
-// TestSchemaOfSkipsUnexportedFields 验证未导出字段不参与模式生成。
-func TestSchemaOfSkipsUnexportedFields(t *testing.T) {
-	schema := SchemaOf(tagSample{})
+// TestBuildSchemaSkipsUnexportedFields 验证未导出字段不参与模式生成。
+func TestBuildSchemaSkipsUnexportedFields(t *testing.T) {
+	schema := BuildSchema(tagSample{})
 
 	properties, ok := schema["properties"].(map[string]any)
 	if !ok {

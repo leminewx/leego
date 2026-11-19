@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/middleware"
-	"gitee.com/leminewx/leego/middleware/cors"
+	"gitee.com/leminewx/leego/middlewares"
+	"gitee.com/leminewx/leego/middlewares/cors"
 	"gitee.com/leminewx/leego/response/sse"
 )
 
@@ -32,9 +32,9 @@ type ssePayload struct {
 func main() {
 	engine := leego.NewEngine(leego.UseEngineName("leego-sse-example"))
 	engine.UseMiddlewares(
-		middleware.Log(),
-		middleware.Recover(),
-		cors.NewDefaultCORS().GetMiddleware(),
+		middlewares.NewLogger().AdaptToMiddleware(),
+		middlewares.NewRecovery().AdaptToMiddleware(),
+		cors.NewDefaultCORS().AdaptToMiddleware(),
 	)
 
 	manager := sse.NewManager()
@@ -57,7 +57,7 @@ func main() {
 
 		for {
 			select {
-			case <-manager.Done():
+			case <-manager.GetDoneChan():
 				return
 			case <-ticker.C:
 				payload, _ := json.Marshal(ssePayload{

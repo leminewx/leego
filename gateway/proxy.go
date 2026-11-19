@@ -124,8 +124,11 @@ type proxy struct {
 	balancer *Balancer
 	// options 为规范化后的配置。
 	options Options
-	// proxies 按上游地址缓存 ReverseProxy，复用底层连接池。
-	proxies map[string]*httputil.ReverseProxy
+	// proxies 按上游地址指针缓存 ReverseProxy，复用底层连接池。
+	//
+	// 以 *url.URL 指针而不是 String() 作键：节点地址在均衡器生命周期内不变，
+	// 既省掉每个请求的字符串拼接，也避免了聚合分配。
+	proxies map[*url.URL]*httputil.ReverseProxy
 }
 
 // NewProxy 创建反向代理处理器。
@@ -133,7 +136,7 @@ type proxy struct {
 // 每个上游对应一个 ReverseProxy 实例，共享同一个 Transport；
 // 灰度命中时只在同标签上游之间轮询，未命中则走全量加权轮询。
 func NewProxy(balancer *Balancer, options ...Option) leego.HandleFunc {
-	if balancer == nil || balancer.Len() == 0 {
+	if balancer == nil || balancer.CountUpstreams() == 0 {
 		panic("gateway: balancer must contain at least one upstream")
 	}
 
@@ -148,11 +151,11 @@ func NewProxy(balancer *Balancer, options ...Option) leego.HandleFunc {
 	own := &proxy{
 		balancer: balancer,
 		options:  settings,
-		proxies:  make(map[string]*httputil.ReverseProxy, balancer.Len()),
+		proxies:  make(map[*url.URL]*httputil.ReverseProxy, balancer.CountUpstreams()),
 	}
 
-	for _, upstream := range balancer.GetUpstreams() {
-		own.proxies[upstream.URL.String()] = own.newReverseProxy(upstream.URL)
+	for _, item := range balancer.nodesSnapshot() {
+		own.proxies[item.url] = own.newReverseProxy(item.url)
 	}
 
 	return own.serve
@@ -167,6 +170,9 @@ func (own *proxy) newReverseProxy(target *url.URL) *httputil.ReverseProxy {
 			// SetURL 保留原始路径与查询串，只替换 scheme 与 host。
 			request.SetURL(target)
 			// SetXForwarded 补齐 X-Forwarded-For/Host/Proto。
+			//
+			// Rewrite 模式下标准库已剥离客户端自带的转发头，
+			// 因此上游只会看到直连对端 IP，无法伪造链路。
 			request.SetXForwarded()
 		},
 		ErrorHandler: func(resp http.ResponseWriter, request *http.Request, err error) {
@@ -189,7 +195,7 @@ func (own *proxy) serve(ctx *leego.Context) {
 		return
 	}
 
-	current := own.proxies[target.String()]
+	current := own.proxies[target]
 	if current == nil {
 		ctx.ResponseError(http.StatusServiceUnavailable, "no upstream available")
 		return
@@ -201,28 +207,28 @@ func (own *proxy) serve(ctx *leego.Context) {
 	})
 	request := ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), errorKey{}, reporter))
 
-	cancel := func() {}
 	if own.options.Timeout > 0 {
-		var requestCtx context.Context
-		requestCtx, cancel = context.WithTimeout(request.Context(), own.options.Timeout)
+		requestCtx, cancel := context.WithTimeout(request.Context(), own.options.Timeout)
+		// 无论转发是否 panic 都必须释放定时器，否则超时时间内会持续占用资源。
+		defer cancel()
+
 		request = request.WithContext(requestCtx)
 		ctx.SetRequestHeader(own.options.TimeoutHeader, strconv.FormatInt(own.options.Timeout.Milliseconds(), 10))
 	}
 
 	ctx.Request = request
 	current.ServeHTTP(ctx.Response, request)
-	cancel()
 }
 
 // selectUpstream 先按灰度标签选择，未命中再按权重选择。
 func (own *proxy) selectUpstream(ctx *leego.Context) *url.URL {
 	if tag := strings.TrimSpace(ctx.GetRequestHeader(own.options.TagHeader)); tag != "" {
-		if target := own.balancer.NextFor(tag); target != nil {
+		if target := own.balancer.PickNextFor(tag); target != nil {
 			return target
 		}
 	}
 
-	return own.balancer.Next()
+	return own.balancer.PickNext()
 }
 
 // handleError 输出统一的上游失败响应。
@@ -238,7 +244,8 @@ func (own *proxy) handleError(ctx *leego.Context, target *url.URL, err error) {
 	}
 
 	_ = ctx.ResponseJSON(http.StatusBadGateway, map[string]string{
-		"error":  "upstream unavailable",
-		"target": target.Redacted(),
+		// 不向客户端回显上游地址：host:port 属于内网拓扑信息，
+		// 泄露后可被用于探测内部服务。
+		"error": "upstream unavailable",
 	})
 }

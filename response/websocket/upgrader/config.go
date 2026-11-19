@@ -2,6 +2,8 @@ package upgrader
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -20,8 +22,9 @@ type Config struct {
 	MaxReadLimit int64
 	// OriginCheckFunc 为来源校验函数；为 nil 时允许任意来源。
 	//
-	// 生产环境务必实现该函数（例如校验 Origin 是否在本站域名白名单内），
-	// 否则任何站点都能发起跨站 WebSocket 连接（CSWSH）。
+	// 默认实现只允许同源请求（Origin 缺失时放行，用于非浏览器客户端）。
+	// 不做校验时，任意站点都能发起跨站 WebSocket 连接（CSWSH）；
+	// 如需支持多域名，请显式替换本函数。
 	OriginCheckFunc func(req *http.Request) bool
 	// Subprotocols 为允许协商的子协议列表；为空表示不协商子协议。
 	Subprotocols []string
@@ -29,14 +32,30 @@ type Config struct {
 
 // NewDefaultConfig 返回默认配置。
 //
-// 默认值：读超时 60 秒、写超时 10 秒、单条消息上限 16 MiB、允许任意来源。
+// 默认值：读超时 60 秒、写超时 10 秒、单条消息上限 16 MiB、只允许同源。
 func NewDefaultConfig() *Config {
 	return &Config{
-		ReadTimeout:  60 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		MaxReadLimit: _DEFAULT_MAX_READ_LIMIT,
-		OriginCheckFunc: func(req *http.Request) bool {
-			return true
-		},
+		ReadTimeout:     60 * time.Second,
+		WriteTimeout:    10 * time.Second,
+		MaxReadLimit:    _DEFAULT_MAX_READ_LIMIT,
+		OriginCheckFunc: checkSameOrigin,
 	}
+}
+
+// checkSameOrigin 只允许 Origin 与请求 Host 一致的跨站请求。
+//
+// Origin 缺失时放行：非浏览器客户端（CLI、服务间调用）不会携带该头，
+// 也就不存在浏览器自动附带凭据的跨站攻击面。
+func checkSameOrigin(req *http.Request) bool {
+	origin := strings.TrimSpace(req.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+
+	return strings.EqualFold(parsed.Host, req.Host)
 }

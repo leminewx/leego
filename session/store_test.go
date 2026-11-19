@@ -82,12 +82,12 @@ func TestMemoryStoreDestroyAndSweep(t *testing.T) {
 		t.Fatalf("重复 Destroy 应成功: %v", err)
 	}
 
-	if length := store.Len(); length != 1 {
+	if length := store.Count(); length != 1 {
 		t.Fatalf("会话数量 = %d, want 1", length)
 	}
 
 	store.sweep(time.Now().Add(2 * time.Minute))
-	if length := store.Len(); length != 0 {
+	if length := store.Count(); length != 0 {
 		t.Fatalf("过期条目未被清理: %d", length)
 	}
 }

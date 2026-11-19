@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 )
 
 // TestPrometheusHandlerWithoutSource 验证未接线时输出空指标集而不是报错。

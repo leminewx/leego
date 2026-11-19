@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8">
+    <title>leego WebSocket 调试页</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 720px; line-height: 1.7; }
+        code { background: #f2f4f7; padding: .15rem .4rem; border-radius: 4px; }
+        input[type="text"] { width: 60%; padding: .35rem .5rem; }
+        #log {
+            margin-top: 1rem;
+            padding: .75rem;
+            height: 320px;
+            overflow-y: auto;
+            border: 1px solid #dde2e8;
+            border-radius: 6px;
+            font-family: ui-monospace, Consolas, monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>leego WebSocket 调试页</h1>
+    <p>连接地址：<code id="target"></code>（由 <code>harness/examples/websocket</code> 提供）</p>
+
+    <form onsubmit="onSubmit(); return false;">
+        <input type="text" id="input" value="hello leego" autocomplete="off">
+        <input type="submit" value="发送">
+        <button onclick="onCloseClick(); return false;">断开</button>
+    </form>
+
+    <div id="log"></div>
+
+    <script type="text/javascript">
+        var ws;
+        var target = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+
+        document.getElementById("target").textContent = target;
+
+        function init() {
+            // 子协议与服务端的 Subprotocols 配置保持一致。
+            ws = new WebSocket(target, "leego.v1");
+
+            ws.onopen = function () {
+                output("onopen");
+            };
+
+            ws.onmessage = function (e) {
+                // e.data 为服务端下发的文本帧内容。
+                output("onmessage: " + e.data);
+            };
+
+            ws.onclose = function () {
+                output("onclose");
+            };
+
+            ws.onerror = function (e) {
+                output("onerror");
+                console.log(e);
+            };
+        }
+
+        function onSubmit() {
+            var input = document.getElementById("input");
+
+            // 客户端可发送的 JSON 协议：identify / ping / broadcast / private。
+            ws.send(input.value);
+            output("send: " + input.value);
+            input.focus();
+        }
+
+        function onCloseClick() {
+            ws.close();
+        }
+
+        function output(str) {
+            var log = document.getElementById("log");
+            var escaped = str.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+            log.innerHTML = escaped + "<br>" + log.innerHTML;
+        }
+
+        window.addEventListener("DOMContentLoaded", init);
+    </script>
+</body>
+
+</html>

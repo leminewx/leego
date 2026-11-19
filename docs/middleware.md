@@ -85,15 +85,15 @@ engine.GET("/admin", auth(adminHandler))
 ## 与 http.Handler 互操作
 
 ```go
-import "gitee.com/leminewx/leego/middleware"
+import "gitee.com/leminewx/leego/middlewares"
 
 // 标准库处理器 → 中间件（先执行标准处理器，再进入后续链）
-engine.UseMiddlewares(middleware.WrapFromHTTPHandler(pprofHandler))
-engine.UseMiddlewares(middleware.WrapFromHTTPHandlerFunc(myHandlerFunc))
+engine.UseMiddlewares(middlewares.WrapFromHTTPHandler(pprofHandler))
+engine.UseMiddlewares(middlewares.WrapFromHTTPHandlerFunc(myHandlerFunc))
 
 // 中间件 → 标准库处理器（只关心中间件副作用时使用）
-stdHandler := middleware.UnwrapFromMiddlewareFuncToHTTPHandler(myMiddleware)
-stdHandlerFunc := middleware.UnwrapFromMiddlewareFuncToHTTPHandleFunc(myMiddleware)
+stdHandler := middlewares.UnwrapFromMiddlewareFuncToHTTPHandler(myMiddleware)
+stdHandlerFunc := middlewares.UnwrapFromMiddlewareFuncToHTTPHandleFunc(myMiddleware)
 ```
 
 注意两种解包的语义差异：
@@ -106,22 +106,29 @@ stdHandlerFunc := middleware.UnwrapFromMiddlewareFuncToHTTPHandleFunc(myMiddlewa
 
 ## 内置中间件
 
-| 包 | 入口 | 说明 |
+| 包 | 构造器 | 说明 |
 | --- | --- | --- |
-| `middleware` | `Log()` / `LogWithConfig(cfg)` | 访问日志 |
-| `middleware` | `Recover()` / `RecoverWithConfig(cfg)` | panic 恢复 |
-| `middleware` | `Collect(collector)` | 为手工挂载的处理器补充指标 |
-| `middleware/cors` | `NewDefaultCORS()` | 跨域 |
-| `middleware/jwt` | `NewHMACSigner` / `NewParser` | JWT（见 [jwt.md](jwt.md)） |
-| `middleware/limiter` | 三种限流构造器 | 限流（见 [limiter-breaker.md](limiter-breaker.md)） |
-| `middleware/breaker` | `NewCircuitBreaker(config)` | 熔断（同上） |
+| `middlewares` | `NewLogger()` / `NewLoggerWithConfig(cfg)` | 访问日志 |
+| `middlewares` | `NewRecovery()` / `NewRecoveryWithConfig(cfg)` | panic 恢复 |
+| `middlewares` | `NewMonitor(collector)` | 为手工挂载的处理器补充指标 |
+| `middlewares/cors` | `NewDefaultCORS()` | 跨域 |
+| `middlewares/jwt` | `NewHMACSigner` / `NewParser` | JWT（见 [jwt.md](jwt.md)） |
+| `middlewares/limiter` | 三种限流构造器 | 限流（见 [limiter-breaker.md](limiter-breaker.md)） |
+| `middlewares/breaker` | `NewCircuitBreaker(config)` | 熔断（同上） |
+| `middlewares/cache` | `NewCache(cache.Config{...})` | 响应缓存，默认旁路 Cookie 请求（见 README「拓展能力」） |
+| `middlewares/compress` | `NewCompress(compress.Config{...})` | gzip 压缩，按内容类型与阈值判定（同上） |
+| `middlewares/trace` | `NewTracer(exporter, ...)` | W3C `traceparent` 传播与异步导出（同上） |
+
+所有构造器都只创建实例（结构体或接口），实例通过 `AdaptToMiddleware()` 适配为
+`leego.MiddlewareFunc` 后才能挂载；包装/解包工具函数除外。这样实例可以在多处复用
+（同一限流器挂多个路由组、同一熔断器同时用于 `Execute` 与中间件）。
 
 ### 访问日志
 
 ```go
-engine.UseMiddlewares(middleware.Log())
+engine.UseMiddlewares(middlewares.NewLogger().AdaptToMiddleware())
 
-engine.UseMiddlewares(middleware.LogWithConfig(&middleware.LoggerConfig{
+engine.UseMiddlewares(middlewares.NewLoggerWithConfig(&middlewares.LoggerConfig{
 	Output:          os.Stdout,
 	WithColor:       true,
 	WithQuery:       true,
@@ -130,7 +137,7 @@ engine.UseMiddlewares(middleware.LogWithConfig(&middleware.LoggerConfig{
 		"/healthz":  {},
 		"/favicon.ico": {},
 	},
-}))
+}).AdaptToMiddleware())
 ```
 
 `LoggerConfig` 字段：
@@ -151,9 +158,9 @@ engine.UseMiddlewares(middleware.LogWithConfig(&middleware.LoggerConfig{
 ### 恢复
 
 ```go
-engine.UseMiddlewares(middleware.Recover())
+engine.UseMiddlewares(middlewares.NewRecovery().AdaptToMiddleware())
 
-engine.UseMiddlewares(middleware.RecoverWithConfig(&middleware.RecoveryConfig{
+engine.UseMiddlewares(middlewares.NewRecoveryWithConfig(&middlewares.RecoveryConfig{
 	Output:          os.Stderr,
 	DumpRequest:     true,
 	DumpRequestBody: false,
@@ -161,7 +168,7 @@ engine.UseMiddlewares(middleware.RecoverWithConfig(&middleware.RecoveryConfig{
 		log.Printf("panic: %v", recovered)
 		_ = ctx.ResponseJSON(http.StatusInternalServerError, leego.JSON{"error": "internal"})
 	},
-}))
+}).AdaptToMiddleware())
 ```
 
 | 字段 | 说明 |
@@ -171,18 +178,20 @@ engine.UseMiddlewares(middleware.RecoverWithConfig(&middleware.RecoveryConfig{
 | `DumpRequestBody` | 是否转储请求体（可能包含敏感信息，默认关闭） |
 | `HandleFunc` | 自定义收尾逻辑；为 `nil` 时返回 `500` 纯文本 |
 
-恢复中间件只捕获其后链路上的 panic。若需要覆盖「路由匹配阶段」的 panic，必须
-把 `Recover()` 注册为全局中间件（推荐做法）。
+恢复中间件只捕获其后链路上的 panic。引擎在请求入口还有一道兜底：即使没有挂
+`NewRecovery()`，panic 也会记录堆栈并在响应尚未开始时返回 500（`http.ErrAbortHandler`
+仍按标准库语义上抛）。若需要覆盖「路由匹配阶段」的 panic、输出请求转储或自定义
+收尾，仍应把 `NewRecovery()` 注册为全局中间件（推荐做法）。
 
 ### 指标采集补充
 
 ```go
 thirdParty := collector.NewCollector(http.MethodGet, "/debug/vars")
-engine.UseMiddlewares(middleware.Collect(thirdParty))
+engine.UseMiddlewares(middlewares.NewMonitor(thirdParty).AdaptToMiddleware())
 ```
 
-引擎已为每条注册路由内建采集器，**不要**再叠加 `Collect`，否则同一请求会被
-计数两次。`Collect` 只用于框架外挂载的处理器。
+引擎已为每条注册路由内建采集器，**不要**再叠加 `NewMonitor`，否则同一请求会被
+计数两次。它只用于框架外挂载的处理器。
 
 ### CORS
 
@@ -195,7 +204,7 @@ corsInstance.SetExposeHeaders("X-Request-Id")
 corsInstance.SetAllowCredentials(true)
 corsInstance.SetMaxAge(3600)
 
-engine.UseMiddlewares(corsInstance.GetMiddleware())
+engine.UseMiddlewares(corsInstance.AdaptToMiddleware())
 ```
 
 默认值：
@@ -225,20 +234,20 @@ engine.UseMiddlewares(corsInstance.GetMiddleware())
 ## 组合示例
 
 ```go
-rateLimiter := limiter.NewTokenBucketLimiter(100, 200)
+rateLimiter := limiter.NewTokenBucketLimiter(100, 200, limiter.Config{WaitTimeout: 3 * time.Second})
 
 engine.UseMiddlewares(
-	middleware.Log(),
-	middleware.Recover(),
-	cors.NewDefaultCORS().GetMiddleware(),
-	rateLimiter.GetMiddleware(3*time.Second),
+	middlewares.NewLogger().AdaptToMiddleware(),
+	middlewares.NewRecovery().AdaptToMiddleware(),
+	cors.NewDefaultCORS().AdaptToMiddleware(),
+	rateLimiter.AdaptToMiddleware(),
 )
 ```
 
 推荐顺序与理由：
 
-1. `Log` 放在最外层，能记录后续中间件产生的错误响应；
-2. `Recover` 紧随其后，覆盖其余中间件与业务处理器；
+1. `NewLogger` 放在最外层，能记录后续中间件产生的错误响应；
+2. `NewRecovery` 紧随其后，覆盖其余中间件与业务处理器；
 3. `CORS` 在限流之前，保证 429 响应也带跨域头；
 4. 限流放在业务之前、日志与恢复之后，429 依然可观测。
 

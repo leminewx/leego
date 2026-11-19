@@ -91,11 +91,11 @@ func (own *Client) Delete(path string, options ...RequestOption) *Response {
 	return own.send(http.MethodDelete, path, nil, options...)
 }
 
-// JSON 以 application/json 发送请求。
+// SendJSON 以 application/json 发送请求。
 //
 // body 为 nil 时不写请求体；否则使用 json.Marshal 序列化，失败时返回
 // 一个包含错误说明的伪响应，避免让测试代码额外处理错误分支。
-func (own *Client) JSON(method, path string, body any, options ...RequestOption) *Response {
+func (own *Client) SendJSON(method, path string, body any, options ...RequestOption) *Response {
 	payload, err := marshalJSON(body)
 	if err != nil {
 		return newFailureResponse(err)

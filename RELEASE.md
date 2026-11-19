@@ -5,6 +5,136 @@
 
 ---
 
+## v0.17.0.0 — 中间件构造器与包名统一
+
+> 发布日期：2026-11-20
+> 要求：Go 1.27.4+
+
+本版本把中间件统一为「构造器创建实例 + 实例适配为中间件」两段式，并把
+`middleware` 包重命名为 `middlewares`。旧包路径与旧函数名全部删除，不保留别名。
+
+### 一、包重命名
+
+| 旧路径 | 新路径 |
+| --- | --- |
+| `gitee.com/leminewx/leego/middleware` | `gitee.com/leminewx/leego/middlewares` |
+| `.../middleware/{breaker,cache,collector,compress,cors,jwt,limiter,trace}` | `.../middlewares/...` |
+
+包声明同步改为 `package middlewares`，导入后的默认标识也是 `middlewares`。
+
+### 二、构造器与适配器分离
+
+所有中间件都改为「`New*` 只创建结构体或接口实例，实例的 `AdaptToMiddleware()`
+返回 `leego.MiddlewareFunc`」：
+
+| 旧用法 | 新用法 |
+| --- | --- |
+| `middlewares.Log()` / `LogWithConfig(cfg)` | `middlewares.NewLogger()` / `NewLoggerWithConfig(cfg)` |
+| `middlewares.Recover()` | `middlewares.NewRecovery()` / `NewRecoveryWithConfig(cfg)` |
+| `middlewares.Collect(target)` | `middlewares.NewMonitor(target)` |
+| `cache.New(cfg)` | `cache.NewCache(cfg)` |
+| `compress.New(cfg)` | `compress.NewCompress(cfg)` |
+| `trace.New(exporter, opts...)` | `trace.NewTracer(exporter, opts...)` |
+| `(*trace.Tracer).BuildMiddleware()` | `(*trace.Tracer).AdaptToMiddleware()` |
+| `(*CORS).GetMiddleware()` | `(*CORS).AdaptToMiddleware()` |
+| `(*CircuitBreaker).GetMiddleware()` | `(*CircuitBreaker).AdaptToMiddleware()` |
+| `limiter.Limiter.GetMiddleware(timeout)` | `limiter.Limiter.AdaptToMiddleware()` |
+
+上表全部需要尾部再调用 `.AdaptToMiddleware()` 才能传入 `UseMiddlewares`。
+`NewLoggerWithConfig` 与 `NewRecoveryWithConfig` 在构造时复制一份配置快照，
+运行期修改原始配置对象不再影响已创建的实例。
+
+### 三、限流等待语义下沉
+
+`GetMiddleware(waitTimeout)` 的参数被移除，等待上限改由构造时写入的
+`limiter.Config.WaitTimeout` 决定：
+
+| `WaitTimeout` | 行为 |
+| --- | --- |
+| `0`（默认） | 不等待，配额不足立即返回 `429` |
+| 正数 | 在超时内以 50ms 轮询等待 |
+| 负数 | 归一化为 `0` |
+
+**行为变化**：旧版本默认等待 3 秒，本版本默认立即拒绝。需要排队语义的调用方
+必须显式设置 `limiter.Config{WaitTimeout: ...}`。
+
+### 四、Logo 样式
+
+- 删除极简卡片样式常量 `LOGO_STYLE_CARD` 及对应模板，内置样式由 5 种减少为 4 种；
+- `SetLogoStyle` 的合法上界改为 `LOGO_STYLE_ASCII`，越界值仍被忽略。
+
+### 五、升级步骤
+
+1. 全局把 `leego/middleware` 替换为 `leego/middlewares`（含子包路径）；
+2. 按第二节表格把旧函数改为 `New*` 构造器，并在挂载处补 `.AdaptToMiddleware()`；
+3. 原 `GetMiddleware(3 * time.Second)` 一类调用改为
+   `limiter.NewXxxLimiter(..., limiter.Config{WaitTimeout: 3 * time.Second})`；
+4. 检查文档、示例、脚本中的旧包路径与 `LOGO_STYLE_CARD` 引用。
+
+验证：`gofmt -l .` 无输出，`go build ./...`、`go vet ./...`、
+`go test ./... -count=1` 全部通过（38 个包）。
+
+---
+
+## v0.16.0.0 — 导出命名一致性补全
+
+> 发布日期：2026-11-20
+> 要求：Go 1.27.4+
+
+本版本把上一版漏改的导出标识符一次性对齐 `docs/conventions.md` §1.1：
+首词不得为介词、名词或形容词。**旧名称全部删除，不保留 `Deprecated` 别名**，
+升级时需要同步修改调用点与自定义实现。
+
+### 一、破坏性变更：重新命名
+
+| 旧名 | 新名 | 词性原因 |
+| --- | --- | --- |
+| `config.Config.OnChange` | `SubscribeChange` | `On` 是介词 |
+| `config.Config.Snapshot` | `GetSnapshot` | `Snapshot` 是名词 |
+| `session.From` | `GetFromContext` | `From` 是介词 |
+| `session.FromRequest` | `GetFromRequest` | 同上 |
+| `session.Session.ID` | `GetID` | 名词缩写 |
+| `session.Session.Keys` | `GetKeys` | 名词 |
+| `session.Session.Values` | `GetValues` | 名词 |
+| `session.MemoryStore.Len` | `Count` | 名词缩写 |
+| `job.Scheduler.Every` | `ScheduleEvery` | 限定词开头 |
+| `job.Scheduler.After` | `ScheduleAfter` | `After` 是介词 |
+| `gateway.Balancer.Len` | `CountUpstreams` | 名词缩写 |
+| `gateway.Balancer.Next` | `PickNext` | 名词 |
+| `gateway.Balancer.NextFor` | `PickNextFor` | 名词 |
+| `upload.Storage.Status` | `GetStatus` | 名词 |
+| `upload.LocalStorage.Status` | `GetStatus` | 同上 |
+| `upload.LocalStorage.Root` | `GetRoot` | 名词 |
+| `trace.Span.Duration` | `GetDuration` | 名词 |
+| `trace.MemoryExporter.Spans` | `GetSpans` | 名词 |
+| `trace.Tracer.Middleware` | `BuildMiddleware` | 名词 |
+| `openapi.SchemaOf` | `BuildSchema` | 名词 |
+| `harness.Service.Handler` | `GetHandler` | 名词 |
+| `testutil.Client.JSON` | `SendJSON` | 名词 |
+| `testutil.Response.JSONMap` | `GetJSONMap` | 名词 |
+| `sse.Manager.Done` | `GetDoneChan` | 分词 |
+| `websocket.Manager.Done` | `GetDoneChan` | 分词 |
+
+### 二、保持不变（已写入规范）
+
+- 函数式选项：`trace.With*` / `trace.WithoutPropagation` / `testutil.With*`
+  属于 `Option` 白名单，保留原前缀；
+- 标准库契约：`Len`/`Less`/`Swap`/`Push`/`Pop`（`container/heap.Interface`）、
+  `Header`/`Write`/`WriteHeader`/`Flush`/`Hijack`/`ReadFrom`（`http.ResponseWriter` 族）、
+  `Unwrap`/`Error`/`String`/`MarshalJSON`/`ServeHTTP`；
+- `testutil.Clock.Now` 对齐 `time.Now`，不改名。
+
+### 三、升级步骤
+
+1. 全局替换上表旧名（IDE 重构或 `gofmt -r` 均可）；
+2. 自定义 `upload.Storage` 实现需把 `Status` 方法改名为 `GetStatus`；
+3. 断言旧名称是否还在字符串/反射中（如日志、配置键、模板），这些不受编译器检查。
+
+验证：`gofmt -l .` 无输出，`go build ./...`、`go vet ./...`、
+`go test ./... -count=1` 全部通过（33 个包）。
+
+---
+
 ## v0.15.0.0 — 工程化拓展与体验服务
 
 > 发布日期：2026-11-19
@@ -40,9 +170,9 @@
 | `upload` | 分片上传、断点续传与 SHA-256 秒传 |
 | `job` | 最小堆任务调度 |
 | `gateway` | 反向代理、平滑加权轮询与标签灰度 |
-| `middleware/cache` | 响应缓存与 stale-while-revalidate |
-| `middleware/compress` | gzip 压缩中间件 |
-| `middleware/trace` | W3C 链路追踪与异步导出 |
+| `middlewares/cache` | 响应缓存与 stale-while-revalidate |
+| `middlewares/compress` | gzip 压缩中间件 |
+| `middlewares/trace` | W3C 链路追踪与异步导出 |
 | `metrics` | 指标存储抽象、内存实现与 Prometheus 输出 |
 | `openapi` | OpenAPI 快照与浏览页 |
 
@@ -67,6 +197,49 @@
   而 `net/http` 在 `WriteHeader` 后忽略响应头修改。现改为包装 `response.Writer`，
   在首次写响应/刷新前同步 Cookie，新建与轮换会话均能正确下发；
   补充基于 `httptest.Server` + `cookiejar` 的回归测试。
+
+### 六、安全审计与稳定性收敛（23 项）
+
+本版本还对根包、中间件、长连接、网关与可观测性做了一轮完整审计，修复 23 项
+安全/并发/性能缺陷，并为每项补充回归测试。核心 API 不变。
+
+**安全**
+
+- `GetClientIP` 仅在直连对端属于 `TrustedProxies` 时解析转发头，且从右向左跳过
+  可信代理，防止伪造 `X-Forwarded-For` 绕过限流与审计；
+- 响应缓存键纳入 Host，默认旁路携带 Cookie 的请求，且不缓存含 `Set-Cookie` 的
+  响应，避免跨身份/跨租户串味；`forbidsCache` 支持参数化指令；
+- WebSocket 默认同源校验（Origin 缺失放行，跨站拒绝）；
+- `metrics` / `dashboard` 管理端点支持鉴权函数；上传错误只返回白名单文案；
+- 网关 502 不再回显上游地址；`Rewrite` 模式剥离客户端转发头后重新生成。
+
+**稳定性**
+
+- 引擎请求入口增加 panic 兜底：记录堆栈、返回 500，并保证 Context/Writer 归还；
+- `job` 单任务、metrics 采集、SSE 管理、upload 后台协程均 `recover` 隔离；
+- 熔断器半开探测在 panic 后回收令牌；metrics FileStore 轮转失败可自愈重开；
+- 上传会话锁按引用计数回收；秒传索引改为 `index.jsonl` 追加写，重启可恢复；
+- `config.OnChange` 按订阅 ID 精确取消；`validate` 阻断匿名指针环。
+
+**性能**
+
+- `context` 的 body 缓存超过 64 KiB 时不再驻留对象池，`BindJSON`/`BindXML`
+  直接读 `bytes.Reader`，省去一次字符串拷贝；
+- SSE 广播/关闭的逐连接通知限制 64 并发；`trace` 未采样且不传播时零分配；
+- openapi handler 在构造期序列化文档并只读一次 UI 页面；gateway 按 `*url.URL`
+  缓存 ReverseProxy；`Collector.Decrease` 原子夹零。
+
+**升级注意**
+
+1. WebSocket 默认拒绝跨站 Origin，独立域名部署需配置 `OriginCheckFunc` 白名单。
+2. 上传秒传索引由 `index.json` 变为 `index.jsonl`，旧索引不会自动迁移，
+   升级后重建一次即可。
+3. `config.OnChange` 返回的 `cancel` 只取消本次订阅，不再按函数指针批量删除。
+4. 长连接服务需 `leego.UseWriteTimeout(0)`；`SetCookieData` 改用 `url.PathEscape`，
+   与 `GetCookieValue` 的 `url.PathUnescape` 对称，空格与 `+` 可原样往返。
+
+验证：`gofmt -l .` 无输出，`go build ./...`、`go vet ./...`、
+`go test -race -count=1 ./...` 全部通过（35 个包）。
 
 ---
 
@@ -125,7 +298,7 @@
 
 ### 二、新增能力
 
-- **指标体系**：`middleware/collector` 提供 `Snapshot` / `Metric` / `Totals` /
+- **指标体系**：`middlewares/collector` 提供 `Snapshot` / `Metric` / `Totals` /
   `Report`，按路由与状态码分桶，`CollectReport()` 直接产出可序列化报告。
 - **指标分析后台**：`dashboard` 包内置单页后台（`go:embed`），支持过滤、排序、
   JSON / CSV 导出、健康检查，并通过 `UseProvider` / `UseAuthorizer` 扩展数据源与鉴权。
@@ -159,9 +332,9 @@
 - 全量测试通过 `go test ./... -count=1`，并发正确性通过 `go test -race ./...`。
 - 补齐 WebSocket 升级器与连接管理测试：握手、掩码方向、分片拒绝、控制帧、
   关闭码、读写并发、心跳与连接清理。
-- 覆盖率：根包 89.3%、`dashboard` 99.4%、`middleware/collector` 99.0%、
+- 覆盖率：根包 89.3%、`dashboard` 99.4%、`middlewares/collector` 99.0%、
   `response/websocket/upgrader` 93.4%、`response/websocket` 89.8%、`response/sse` 94.7%、
-  `middleware/jwt` 91.6%、`middleware/limiter` 93.5%、`tree` 96.6%；未覆盖部分仅
+  `middlewares/jwt` 91.6%、`middlewares/limiter` 93.5%、`tree` 96.6%；未覆盖部分仅
   `examples/*` 与压测靶机。
 - 基准覆盖路由匹配、参数解析、上下文获取、响应写入、指标聚合、帧编解码等热路径。
 - 仓库统一为 `gofmt` 干净状态（LF 换行）。
@@ -169,7 +342,7 @@
 ### 五、文档
 
 新增/重写：`README.md`、`docs/architecture.md`、`docs/routing.md`、`docs/context.md`、
-`docs/middleware.md`、`docs/metrics-dashboard.md`、`docs/sse-websocket.md`、
+`docs/middlewares.md`、`docs/metrics-dashboard.md`、`docs/sse-websocket.md`、
 `docs/jwt.md`、`docs/limiter-breaker.md`、`docs/stresstest.md`、
 `docs/testing.md`、`docs/conventions.md`、`docs/extension-roadmap.md`。
 

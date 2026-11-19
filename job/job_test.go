@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -46,7 +47,7 @@ func TestEveryRunsRepeatedly(t *testing.T) {
 	scheduler := NewScheduler(UseWorkers(4))
 	events := make(chan struct{}, 64)
 
-	cancel := scheduler.Every(10*time.Millisecond, JobFunc(func(context.Context) error {
+	cancel := scheduler.ScheduleEvery(10*time.Millisecond, JobFunc(func(context.Context) error {
 		select {
 		case events <- struct{}{}:
 		default:
@@ -80,7 +81,7 @@ func TestAfterRunsOnce(t *testing.T) {
 	scheduler := NewScheduler(UseWorkers(2))
 	events := make(chan struct{}, 4)
 
-	scheduler.After(10*time.Millisecond, JobFunc(func(context.Context) error {
+	scheduler.ScheduleAfter(10*time.Millisecond, JobFunc(func(context.Context) error {
 		events <- struct{}{}
 		return nil
 	}))
@@ -102,7 +103,7 @@ func TestCancelBeforeStart(t *testing.T) {
 	scheduler := NewScheduler(UseWorkers(2))
 	events := make(chan struct{}, 4)
 
-	cancel := scheduler.Every(5*time.Millisecond, JobFunc(func(context.Context) error {
+	cancel := scheduler.ScheduleEvery(5*time.Millisecond, JobFunc(func(context.Context) error {
 		events <- struct{}{}
 		return nil
 	}))
@@ -121,7 +122,7 @@ func TestStopWaitsForRunningJob(t *testing.T) {
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
 
-	scheduler.After(0, JobFunc(func(context.Context) error {
+	scheduler.ScheduleAfter(0, JobFunc(func(context.Context) error {
 		started <- struct{}{}
 		<-release
 		return nil
@@ -158,7 +159,7 @@ func TestStopReturnsDeadlineExceeded(t *testing.T) {
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
 
-	scheduler.After(0, JobFunc(func(context.Context) error {
+	scheduler.ScheduleAfter(0, JobFunc(func(context.Context) error {
 		started <- struct{}{}
 		<-release
 		return nil
@@ -183,7 +184,7 @@ func TestDropsWhenWorkersBusy(t *testing.T) {
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
 
-	scheduler.Every(5*time.Millisecond, JobFunc(func(context.Context) error {
+	scheduler.ScheduleEvery(5*time.Millisecond, JobFunc(func(context.Context) error {
 		select {
 		case started <- struct{}{}:
 		default:
@@ -227,7 +228,7 @@ func TestScheduleAfterStopIsIgnored(t *testing.T) {
 	}
 
 	var runs atomic.Int64
-	cancel := scheduler.Every(5*time.Millisecond, JobFunc(func(context.Context) error {
+	cancel := scheduler.ScheduleEvery(5*time.Millisecond, JobFunc(func(context.Context) error {
 		runs.Add(1)
 		return nil
 	}))
@@ -255,7 +256,7 @@ func TestErrorHandlerReceivesFailure(t *testing.T) {
 	}))
 
 	want := errors.New("boom")
-	scheduler.After(0, JobFunc(func(context.Context) error {
+	scheduler.ScheduleAfter(0, JobFunc(func(context.Context) error {
 		return want
 	}))
 
@@ -275,13 +276,88 @@ func TestErrorHandlerReceivesFailure(t *testing.T) {
 	}
 }
 
+func TestPanickingJobIsReportedAndReleased(t *testing.T) {
+	reported := make(chan error, 1)
+	scheduler := NewScheduler(UseWorkers(1), UseErrorHandler(func(_ Job, err error) {
+		select {
+		case reported <- err:
+		default:
+		}
+	}))
+
+	scheduler.ScheduleAfter(0, JobFunc(func(context.Context) error {
+		panic("boom")
+	}))
+	scheduler.Start(context.Background())
+
+	select {
+	case err := <-reported:
+		if err == nil || !strings.Contains(err.Error(), "panicked") {
+			t.Fatalf("错误 = %v, want 包含 panicked", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("panic 未被转为错误上报")
+	}
+
+	// 额度必须已归还：再投递一个任务仍能执行。
+	done := make(chan struct{}, 1)
+	scheduler.ScheduleAfter(0, JobFunc(func(context.Context) error {
+		done <- struct{}{}
+		return nil
+	}))
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("panic 后并发额度未归还")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := scheduler.Stop(ctx); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestPanickingErrorHandlerDoesNotBreakScheduler(t *testing.T) {
+	scheduler := NewScheduler(UseWorkers(1), UseErrorHandler(func(Job, error) {
+		panic("handler boom")
+	}))
+
+	scheduler.ScheduleAfter(0, JobFunc(func(context.Context) error {
+		return errors.New("boom")
+	}))
+	scheduler.Start(context.Background())
+
+	// 错误处理器 panic 被吞掉后，额度仍应归还且 Stop 能结束。
+	done := make(chan struct{}, 1)
+	scheduler.ScheduleAfter(20*time.Millisecond, JobFunc(func(context.Context) error {
+		done <- struct{}{}
+		return nil
+	}))
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("错误处理器 panic 后调度器失去执行能力")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := scheduler.Stop(ctx); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
 func TestNilJobIsIgnored(t *testing.T) {
 	scheduler := NewScheduler()
 
-	cancel := scheduler.Every(10*time.Millisecond, nil)
+	cancel := scheduler.ScheduleEvery(10*time.Millisecond, nil)
 	cancel()
 
-	scheduler.After(10*time.Millisecond, nil)
+	scheduler.ScheduleAfter(10*time.Millisecond, nil)
 	scheduler.Start(context.Background())
 
 	if err := scheduler.Stop(context.Background()); err != nil {
@@ -297,7 +373,7 @@ func TestStartIsIdempotent(t *testing.T) {
 	scheduler := NewScheduler(UseWorkers(2))
 	events := make(chan struct{}, 32)
 
-	scheduler.Every(10*time.Millisecond, JobFunc(func(context.Context) error {
+	scheduler.ScheduleEvery(10*time.Millisecond, JobFunc(func(context.Context) error {
 		select {
 		case events <- struct{}{}:
 		default:

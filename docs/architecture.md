@@ -126,7 +126,7 @@ Snapshot（一条路由）
 ├── Method / Pattern / Name / Tags / Enabled
 ├── Flights   进行中的请求数
 ├── Total     总请求数
-├── Failed    非 2xx/3xx 数量
+├── Failed    5xx 响应数量（4xx 不计入失败率）
 ├── TotalCostMicro 总耗时（微秒）
 └── Metrics[]（按状态码）
     ├── Code
@@ -153,11 +153,15 @@ Snapshot（一条路由）
 | --- | --- | --- |
 | `ResponseError(code, message)` | 明确的业务错误 | 纯文本 + 状态码，同时写入错误链 |
 | `Fail(err)` | 统一错误出口 | 自定义 `ErrorHandlerFunc` → 默认 JSON |
-| `middleware.Recover()` | 捕获 panic | 500 + 堆栈日志，可自定义回调 |
+| `middlewares.NewRecovery()` | 捕获 panic | 500 + 堆栈日志，可自定义回调 |
 
 `ResponseError` 在状态码已写入时只记录错误，不重复写响应，避免「头已发送」导致
 的无效写入。`Fail` 依次尝试引擎级错误处理器与默认格式，便于把领域错误映射为
 HTTP 语义。
+
+除了 `middlewares.NewRecovery()`，引擎在请求入口还有最后一道兜底：用户没挂恢复中间件
+时，panic 也会被捕获并记录堆栈，在响应尚未开始时返回 500，同时保证上下文与响应
+写入器归还对象池；`http.ErrAbortHandler` 保持标准库语义上抛给 `net/http`。
 
 ---
 

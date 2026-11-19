@@ -109,8 +109,8 @@ func (own *MemoryStore) Destroy(_ context.Context, id string) error {
 	return nil
 }
 
-// Len 返回当前会话数量（包含尚未清理的过期条目），供测试与诊断使用。
-func (own *MemoryStore) Len() int {
+// Count 返回当前会话数量（包含尚未清理的过期条目），供测试与诊断使用。
+func (own *MemoryStore) Count() int {
 	own.mu.RLock()
 	defer own.mu.RUnlock()
 

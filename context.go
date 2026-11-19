@@ -1,6 +1,7 @@
 package leego
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -35,6 +36,12 @@ type JSON map[string]any
 //
 // 该错误可通过 errors.Is 判断，便于调用方统一转换为 415 响应。
 var ErrUnsupportedMediaType = errors.New("leego: context: unsupported content type")
+
+// _BODY_CACHE_LIMIT 为上下文中保留请求体缓存的容量上限（64 KiB）。
+//
+// 超过上限的请求体在上下文回池时直接丢弃，避免对象池长期驻留
+// 接近 MaxBodyBytes（默认 8 MiB）的大块内存。
+const _BODY_CACHE_LIMIT = 64 << 10
 
 // 编译期断言：*Context 必须实现 http.ResponseWriter 的常用辅助能力。
 var _ = (*Context)(nil)
@@ -128,7 +135,7 @@ func (own *Context) reset(engine *Engine, writer response.Writer, req *http.Requ
 	own.errorChain = own.errorChain[:0]
 	own.pathValues = nil
 	own.queryValues = nil
-	own.bodyCache = own.bodyCache[:0]
+	own.releaseBodyCache()
 	own.bodyErr = nil
 	own.bodyRead = false
 	own.pooled = true
@@ -151,10 +158,20 @@ func (own *Context) clear() {
 	own.errorChain = own.errorChain[:0]
 	own.pathValues = nil
 	own.queryValues = nil
-	own.bodyCache = own.bodyCache[:0]
+	own.releaseBodyCache()
 	own.bodyErr = nil
 	own.bodyRead = false
 	own.pooled = false
+}
+
+// releaseBodyCache 释放过大的请求体缓存，小缓存保留容量以便复用。
+func (own *Context) releaseBodyCache() {
+	if cap(own.bodyCache) > _BODY_CACHE_LIMIT {
+		own.bodyCache = nil
+		return
+	}
+
+	own.bodyCache = own.bodyCache[:0]
 }
 
 // contextPool 复用 Context 对象，降低高并发下的堆分配压力。
@@ -481,8 +498,10 @@ func (own *Context) DeleteResponseHeader(keys ...string) {
 //
 // 安全策略：
 //   - 未配置可信代理时，只返回直连对端 IP，忽略任何代理头；
-//   - 配置可信代理后，从右向左遍历 X-Forwarded-For，跳过可信代理，
-//     返回第一个不可信地址；
+//   - 配置可信代理后，仅当直连对端本身属于可信网段时才解析代理头，
+//     否则代理头可能由任意客户端伪造，仍只返回直连对端 IP；
+//   - 解析时从右向左遍历 X-Forwarded-For（X-Real-IP 视作最右侧一跳），
+//     跳过可信代理，返回第一个不可信地址；
 //   - 若全部地址均可信，则回退为直连对端 IP。
 func (own *Context) GetClientIP() string {
 	if own.clientIP != "" {
@@ -490,7 +509,8 @@ func (own *Context) GetClientIP() string {
 	}
 
 	remote := own.GetRemoteIP()
-	if own.engine == nil || len(own.engine.trustedProxies) == 0 {
+	if own.engine == nil || len(own.engine.trustedProxies) == 0 || !own.isTrustedProxy(remote) {
+		// 直连对端不可信：代理头由客户端自行携带，采信即可被伪造 IP。
 		own.clientIP = remote
 		return own.clientIP
 	}
@@ -748,7 +768,9 @@ func (own *Context) BindJSON(object any) error {
 		return err
 	}
 
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	// 直接用字节切片构造解码器：转成 string 会额外拷贝一份请求体，
+	// 对接近 MaxBodyBytes 的大请求相当于双倍内存峰值。
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	if own.engine != nil && own.engine.config.StrictJSON {
 		decoder.DisallowUnknownFields()
 	}
@@ -773,7 +795,7 @@ func (own *Context) BindXML(object any) error {
 		return err
 	}
 
-	if err := xml.NewDecoder(strings.NewReader(string(data))).Decode(object); err != nil {
+	if err := xml.NewDecoder(bytes.NewReader(data)).Decode(object); err != nil {
 		return err
 	}
 
@@ -935,7 +957,11 @@ func (own *Context) SetCookie(cookie *http.Cookie) {
 	http.SetCookie(own.Response, cookie)
 }
 
-// SetCookieData 设置响应 Cookie，并对值执行 URL 编码。
+// SetCookieData 设置响应 Cookie，并对值执行 URL 路径段编码。
+//
+// 这里必须与 GetCookieValue 的 url.PathUnescape 对称：
+// url.QueryEscape 会把空格编码成 “+”，而路径解码不会把 “+” 还原成空格，
+// 值中的加号也会因此产生歧义。
 func (own *Context) SetCookieData(name, value string, maxAge int, cookiePath, domain string, secure, httpOnly bool) {
 	if cookiePath == "" {
 		cookiePath = "/"
@@ -943,7 +969,7 @@ func (own *Context) SetCookieData(name, value string, maxAge int, cookiePath, do
 
 	http.SetCookie(own.Response, &http.Cookie{
 		Name:     name,
-		Value:    url.QueryEscape(value),
+		Value:    url.PathEscape(value),
 		MaxAge:   maxAge,
 		Path:     cookiePath,
 		Domain:   domain,
@@ -959,13 +985,22 @@ func (own *Context) SetSameSite(sameSite http.SameSite) {
 }
 
 // GetCookieValue 返回指定 Cookie 的值。
+//
+// Cookie 值按百分号编码解码；与 url.QueryUnescape 不同，
+// 这里的加号是字面量而不是空格，否则值中含 “+” 的 Cookie 会被静默篡改。
 func (own *Context) GetCookieValue(name string) (string, error) {
 	cookie, err := own.Request.Cookie(name)
 	if err != nil {
 		return "", err
 	}
 
-	value, _ := url.QueryUnescape(cookie.Value)
+	value, err := url.PathUnescape(cookie.Value)
+	if err != nil {
+		// 非法转义时退回原始值：Cookie 可能由其它系统写入，
+		// 不应因为解码失败就变成空串。
+		return cookie.Value, nil
+	}
+
 	return value, nil
 }
 

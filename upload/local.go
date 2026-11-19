@@ -1,6 +1,7 @@
 package upload
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -31,8 +32,8 @@ const (
 	_FILES_DIR = "files"
 	// _META_DIR 为索引目录。
 	_META_DIR = ".meta"
-	// _INDEX_FILE 为秒传索引文件名。
-	_INDEX_FILE = "index.json"
+	// _INDEX_FILE 为秒传索引的追加日志文件名。
+	_INDEX_FILE = "index.jsonl"
 	// _MAX_PARTS 为单个文件的切片数量上限，避免一次分配过大位图。
 	_MAX_PARTS = 100000
 	// _MAX_EXTENSION 为保留的文件扩展名最大长度。
@@ -51,7 +52,7 @@ var ErrInvalidRoot = errors.New("upload: storage root must not be empty")
 //	<root>/files/            拼接后的文件
 //	<root>/.parts/<id>/      分片临时文件
 //	<root>/.sessions/<id>.json 上传会话元信息
-//	<root>/.meta/index.json  SHA-256 → 相对路径，用于秒传
+//	<root>/.meta/index.jsonl  SHA-256 → 相对路径，用于秒传（追加写）
 type LocalStorage struct {
 	// root 为存储根目录。
 	root string
@@ -71,6 +72,8 @@ type LocalStorage struct {
 	loaded bool
 	// locks 保存每个会话的互斥锁，串行化同一会话的写操作。
 	locks sync.Map
+	// locksMu 保护会话锁的引用计数与回收，避免条目随会话数无限增长。
+	locksMu sync.Mutex
 }
 
 // NewLocalStorage 创建本地分片存储，并按需创建目录。
@@ -98,8 +101,8 @@ func NewLocalStorage(root string) (*LocalStorage, error) {
 	return own, nil
 }
 
-// Root 返回存储根目录的绝对路径。
-func (own *LocalStorage) Root() string {
+// GetRoot 返回存储根目录的绝对路径。
+func (own *LocalStorage) GetRoot() string {
 	absolute, err := filepath.Abs(own.root)
 	if err != nil {
 		return own.root
@@ -147,8 +150,8 @@ func (own *LocalStorage) Init(ctx context.Context, request InitRequest) (Session
 	return session, nil
 }
 
-// Status 返回上传会话状态。
-func (own *LocalStorage) Status(ctx context.Context, id string) (Session, error) {
+// GetStatus 返回上传会话状态。
+func (own *LocalStorage) GetStatus(ctx context.Context, id string) (Session, error) {
 	if err := ctx.Err(); err != nil {
 		return Session{}, err
 	}
@@ -438,7 +441,18 @@ func (own *LocalStorage) lookupIndex(sum string) (string, bool) {
 	return path, ok
 }
 
-// rememberIndex 写入秒传索引并落盘。
+// indexEntry 是秒传索引的一行记录。
+type indexEntry struct {
+	// Sum 为文件内容的 SHA-256（小写十六进制）。
+	Sum string `json:"sum"`
+	// Path 为相对存储根目录的文件路径。
+	Path string `json:"path"`
+}
+
+// rememberIndex 追加写入秒传索引。
+//
+// 采用逐行追加而不是整表重写：文件数增长后，每次全量 Marshal
+// 会让单次上传的耗时随历史文件数线性变差。
 func (own *LocalStorage) rememberIndex(sum, relative string) error {
 	own.mu.Lock()
 	defer own.mu.Unlock()
@@ -447,11 +461,39 @@ func (own *LocalStorage) rememberIndex(sum, relative string) error {
 		return err
 	}
 
+	if _, exists := own.index[sum]; exists {
+		return nil
+	}
+
+	data, err := json.Marshal(indexEntry{Sum: sum, Path: relative})
+	if err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(own.indexPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, _FILE_MODE)
+	if err != nil {
+		return err
+	}
+
+	if _, err = file.Write(append(data, '\n')); err == nil {
+		err = file.Sync()
+	}
+
+	if closeErr := file.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+
+	if err != nil {
+		return err
+	}
+
 	own.index[sum] = relative
-	return writeJSON(own.indexPath, own.index)
+	return nil
 }
 
 // loadIndexLocked 从磁盘加载索引；调用方必须已持有锁。
+//
+// 文件是逐行追加的 JSON，损坏行直接跳过，不影响其余记录。
 func (own *LocalStorage) loadIndexLocked() error {
 	if own.loaded {
 		return nil
@@ -468,10 +510,18 @@ func (own *LocalStorage) loadIndexLocked() error {
 	}
 
 	index := make(map[string]string)
-	if len(data) > 0 {
-		if err = json.Unmarshal(data, &index); err != nil {
-			return err
+	for _, line := range bytes.Split(data, []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
 		}
+
+		var entry indexEntry
+		if json.Unmarshal(line, &entry) != nil || entry.Sum == "" || entry.Path == "" {
+			continue
+		}
+
+		index[entry.Sum] = entry.Path
 	}
 
 	own.index = index
@@ -485,13 +535,37 @@ func (own *LocalStorage) discardTemp(temp *os.File) {
 	_ = os.Remove(temp.Name())
 }
 
+// sessionLock 是带引用计数的会话锁。
+//
+// 只在没有任何持锁者/等待者时才从 locks 中删除，
+// 这样既不会随上传会话数无限增长，也不会让新旧锁同时存在而失去互斥。
+type sessionLock struct {
+	// mu 为真正的互斥锁。
+	mu sync.Mutex
+	// refs 为当前持锁与等锁的调用方数量，由 locksMu 保护。
+	refs int
+}
+
 // lockSession 返回会话锁的解锁函数。
 func (own *LocalStorage) lockSession(id string) func() {
-	value, _ := own.locks.LoadOrStore(id, &sync.Mutex{})
-	mutex := value.(*sync.Mutex)
-	mutex.Lock()
+	own.locksMu.Lock()
+	value, _ := own.locks.LoadOrStore(id, &sessionLock{})
+	lock := value.(*sessionLock)
+	lock.refs++
+	own.locksMu.Unlock()
 
-	return mutex.Unlock
+	lock.mu.Lock()
+
+	return func() {
+		lock.mu.Unlock()
+
+		own.locksMu.Lock()
+		lock.refs--
+		if lock.refs <= 0 {
+			own.locks.Delete(id)
+		}
+		own.locksMu.Unlock()
+	}
 }
 
 // expectedPartSize 返回指定分片的预期字节数。

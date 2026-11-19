@@ -1,6 +1,6 @@
 # JWT
 
-`middleware/jwt` 提供最小可用的 JWT（JSON Web Token）签发与校验能力，只内置
+`middlewares/jwt` 提供最小可用的 JWT（JSON Web Token）签发与校验能力，只内置
 HMAC 系列算法（HS256 / HS384 / HS512），刻意不引入非对称算法与密钥管理体系。
 
 ---
@@ -24,7 +24,7 @@ HMAC 系列算法（HS256 / HS384 / HS512），刻意不引入非对称算法与
 ## 签名
 
 ```go
-import "gitee.com/leminewx/leego/middleware/jwt"
+import "gitee.com/leminewx/leego/middlewares/jwt"
 
 signer, err := jwt.NewHMACSigner(jwt.HS256, []byte("your-256-bit-secret"))
 if err != nil {

@@ -15,11 +15,11 @@ const (
 // timeType 缓存 time.Time 的类型对象，避免每次反射查表。
 var timeType = reflect.TypeOf(time.Time{})
 
-// SchemaOf 基于示例值生成 JSON Schema（OpenAPI 3.1 子集）。
+// BuildSchema 基于示例值生成 JSON Schema（OpenAPI 3.1 子集）。
 //
 // 支持：基本类型、time.Time、结构体、map、切片/数组、指针与接口；
 // 递归深度超过 8 层时回退为 {"type":"object"}，避免自引用类型无限展开。
-func SchemaOf(value any) map[string]any {
+func BuildSchema(value any) map[string]any {
 	if value == nil {
 		return map[string]any{}
 	}

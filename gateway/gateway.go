@@ -107,8 +107,8 @@ func (own *Balancer) GetUpstreams() []Upstream {
 	return upstreams
 }
 
-// Len 返回上游数量。
-func (own *Balancer) Len() int {
+// CountUpstreams 返回上游数量。
+func (own *Balancer) CountUpstreams() int {
 	own.mu.Lock()
 	length := len(own.nodes)
 	own.mu.Unlock()
@@ -116,15 +116,27 @@ func (own *Balancer) Len() int {
 	return length
 }
 
-// Next 按权重选择一个上游。
-func (own *Balancer) Next() *url.URL {
+// nodesSnapshot 返回内部节点的浅拷贝。
+//
+// 节点元素的指针在均衡器生命周期内保持不变，因此可以安全地用作
+// 反向代理缓存的键，避免每个请求都调用 url.URL.String() 拼接字符串。
+func (own *Balancer) nodesSnapshot() []*node {
+	own.mu.Lock()
+	nodes := append([]*node(nil), own.nodes...)
+	own.mu.Unlock()
+
+	return nodes
+}
+
+// PickNext 按权重选择一个上游。
+func (own *Balancer) PickNext() *url.URL {
 	return own.pick("")
 }
 
-// NextFor 优先在同标签上游中选择，没有匹配标签时回落到全量选择。
-func (own *Balancer) NextFor(tag string) *url.URL {
+// PickNextFor 优先在同标签上游中选择，没有匹配标签时回落到全量选择。
+func (own *Balancer) PickNextFor(tag string) *url.URL {
 	if tag == "" {
-		return own.Next()
+		return own.PickNext()
 	}
 
 	own.mu.Lock()
@@ -132,7 +144,7 @@ func (own *Balancer) NextFor(tag string) *url.URL {
 	own.mu.Unlock()
 
 	if !exists {
-		return own.Next()
+		return own.PickNext()
 	}
 
 	return own.pick(tag)

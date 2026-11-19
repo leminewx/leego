@@ -20,8 +20,12 @@
 
 1. 函数与方法名描述「做什么」，首词必须是**动词、be 动词或情态动词**。
 2. 构造函数是唯一允许使用固定前缀 `New` 的例外：`New` 在此语境下是约定俗成的构造谓词。
-3. 不允许用名词、形容词、副词或介词开头，例如 `Path()`、`Allowed()`、`NextSegment()`、`WithPrefix()`。
+3. 不允许用名词、形容词、副词或介词开头，例如 `Path()`、`Allowed()`、`NextSegment()`、`WithPrefix()`（函数式选项见第 5 条）。
 4. 名称应表达**语义**而非**实现**：`countActiveConnections` 优于 `loopMap`。
+5. **函数式选项白名单**：返回 `Option` 类型、专门用于配置的选项函数，允许 `With<属性>` /
+   `Without<属性>` 前缀（`trace.WithSampler`、`trace.WithoutPropagation`、
+   `testutil.WithQuery`），与 `Use<属性>`（`engine.UseH2C`、`session.UseTTL`）并存。
+   这里的 `With` 是「携带某属性」而非介词短语，仅限该用途；普通函数仍不得用 `With` 开头。
 
 ### 1.2 构造函数：`New` / `new`
 
@@ -203,6 +207,7 @@
 | `Register` / `Unregister` | 注册与注销 | `RegisterDashboard` |
 | `Subscribe` / `Unsubscribe` | 订阅与退订 | `SubscribeTopic` |
 | `Use` | 启用中间件或选项 | `UseMiddlewares`、`UseH2C` |
+| `With` / `Without` | 函数式选项携带属性（仅限返回 `Option` 的函数） | `WithSampler`、`WithoutPropagation` |
 | `Enable` / `Disable` / `Toggle` | 开关 | `Enable`、`DisableStartupLog` |
 | `Lock` / `Unlock` / `Freeze` / `Unfreeze` | 加解锁或冻结 | `Freeze` |
 | `Mark` / `Unmark` | 打标记 | `MarkPrepared` |
@@ -335,7 +340,8 @@ var (
 ### 3.2 不 panic 的边界
 
 框架代码只在**编译期断言**与**不可恢复的误用**处 panic；请求处理路径一律返回错误。
-已设置的 recover 边界：引擎级 `Recovery` 中间件、WebSocket 读/写协程。
+已设置的 recover 边界：引擎请求入口兜底、`Recovery` 中间件、后台任务派发、
+指标采集协程、缓存后台刷新、WebSocket 读/写协程、熔断器与 trace 导出协程。
 
 已知的主动 panic：
 - `Context.ResponseRedirect` 传入非 3xx 状态码；
@@ -482,7 +488,7 @@ go list -deps ./... | grep -E '^[A-Za-z0-9._-]+\.[A-Za-z]{2,}/' | grep -v '^gola
 1. 构造函数是否使用 `New*` / `new*`，且没有引入 `Create*` 内存构造？
 2. `Context` 新增的响应方法是否命名为 `Response*`，并在 1.3 的表格中补充？
 3. 常量是否满足：导出全大写下划线、私有 `_` 开头全大写？
-4. 新增导出函数首词是否为动词 / be / 情态动词（接口实现除外）？
+4. 新增导出函数首词是否为动词 / be / 情态动词（接口实现与函数式选项除外）？
 5. 兼类词（`Group`、`Stream`、`Broadcast`、`Cache`）是否已确认词性？
 6. 导出类型、字段、函数是否都有中文注释并说明取舍？
 7. 新增错误是否为哨兵错误并带 `leego:` 前缀？

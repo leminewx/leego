@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 )
 
 const (

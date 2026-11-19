@@ -31,7 +31,7 @@ import (
 	"sync"
 	"time"
 
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 )
 
 // indexHTML 为内嵌的单页应用，包含全部样式与脚本。

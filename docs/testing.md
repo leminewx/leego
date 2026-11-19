@@ -27,7 +27,7 @@ go test ./... -coverprofile=cover.out
 go tool cover -html=cover.out -o cover.html
 
 # 只跑某个包 / 某个用例
-go test ./middleware/jwt/ -run TestParser -v
+go test ./middlewares/jwt/ -run TestParser -v
 
 # 基准测试（带内存分配统计）
 go test ./... -run '^$' -bench . -benchmem
@@ -66,10 +66,17 @@ go test -race ./...
 | --- | --- |
 | `*_test.go`（根包） | 引擎启停、路由匹配/405、分组、Handler 链、Context 绑定与响应、密码哈希 |
 | `tree/` | 节点类型、Trie 插入与匹配优先级、冲突检测 |
-| `middleware/` | 日志、恢复、CORS、JWT、限流三算法、熔断状态机与指标 |
-| `middleware/collector/` | 指标累计、快照、并发安全、报告聚合 |
+| `middlewares/` | 日志、恢复、CORS、JWT、限流三算法、熔断状态机与指标 |
+| `middlewares/collector/` | 指标累计、快照、并发安全、报告聚合 |
 | `dashboard/` | 端点解析、过滤、截断、CSV、安全头、页面渲染 |
 | `response/` | 写入器池化、状态码、SSE 消息与管理器、WebSocket 帧与握手 |
+| `config/` | 优先级合并、类型转换、兄弟订阅隔离、热更新与停止 |
+| `validate/` | 规则表、嵌套与 `dive`、匿名指针环、并发首次解析 |
+| `problem/` | RFC 7807 输出、校验错误映射、状态码与字段细节 |
+| `session/` `upload/` `job/` | 签名会话、分片与秒传索引、调度器 panic 隔离 |
+| `gateway/` | 平滑加权轮询、灰度、超时预算、转发头与服务端错误脱敏 |
+| `metrics/` `openapi/` | 环形序列、FileStore 回放、Prometheus 编码、文档缓存 |
+| `middlewares/cache` `middlewares/compress` `middlewares/trace` | 缓存键/Cookie 旁路、压缩阈值与池化复用、traceparent 与未采样快路径 |
 | `harness/stresstest/` | 配置校验、请求分配、分位数算法、报告格式 |
 | `harness/testutil/` | 测试客户端、响应断言、Cookie 与冻结时钟 |
 | `harness/` | 体验服务集成：会话、缓存、限流、上传、网关、SSE、任务与链路 |
@@ -292,9 +299,9 @@ b.RunParallel(func(pb *testing.PB) {
 | --- | --- |
 | 根包 | `BenchmarkEngineServeHTTP`、`BenchmarkEngineServeHTTPParallel`、`BenchmarkRouterSearchStatic`、`BenchmarkRouterSearchParam`、`BenchmarkRouterSearchWildcard`、`BenchmarkRouterParallelSearch` |
 | `tree` | `BenchmarkTrieSearchStatic`、`BenchmarkTrieSearchParameter`、`BenchmarkTrieSearchParallel` |
-| `middleware/collector` | `BenchmarkIncreaseDecrease`、`BenchmarkGetSnapshot` |
-| `middleware/limiter` | `BenchmarkFixedWindowAllow`、`BenchmarkSlidingWindowAllow`、`BenchmarkTokenBucketAllow` |
-| `middleware/jwt` | `BenchmarkHMACSignerSign`、`BenchmarkCreateHeader`、`BenchmarkParserParse` |
+| `middlewares/collector` | `BenchmarkIncreaseDecrease`、`BenchmarkGetSnapshot` |
+| `middlewares/limiter` | `BenchmarkFixedWindowAllow`、`BenchmarkSlidingWindowAllow`、`BenchmarkTokenBucketAllow` |
+| `middlewares/jwt` | `BenchmarkHMACSignerSign`、`BenchmarkCreateHeader`、`BenchmarkParserParse` |
 | `response` | `BenchmarkCreateWriter`、`BenchmarkWriterPool` |
 | `response/sse` | `BenchmarkMessageWrite`、`BenchmarkMessageFormat`、`BenchmarkClientWriteMessage`、`BenchmarkManagerBroadcast` |
 | `dashboard` | `BenchmarkServePage`、`BenchmarkServeReport` |

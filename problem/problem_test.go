@@ -94,7 +94,7 @@ func TestProblemWrite(t *testing.T) {
 		Code     string `json:"code"`
 	}
 
-	payloadData := response.JSONMap(t)
+	payloadData := response.GetJSONMap(t)
 	if payloadData["instance"] != "/users/42" {
 		t.Fatalf("Instance = %v", payloadData["instance"])
 	}

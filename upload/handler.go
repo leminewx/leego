@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"gitee.com/leminewx/leego"
+	"gitee.com/leminewx/leego/logging"
 )
 
 const (
@@ -294,7 +295,7 @@ func (own *handler) abort(ctx *leego.Context) {
 func (own *handler) status(ctx *leego.Context) {
 	id := strings.TrimSpace(ctx.GetQueryValue(own.options.IDParam))
 
-	session, err := own.storage.Status(ctx.Request.Context(), id)
+	session, err := own.storage.GetStatus(ctx.Request.Context(), id)
 	if err != nil {
 		own.fail(ctx, statusForError(err), err)
 		return
@@ -303,9 +304,39 @@ func (own *handler) status(ctx *leego.Context) {
 	_ = ctx.ResponseJSON(http.StatusOK, session)
 }
 
+// _GENERIC_ERROR 为未知内部错误的对外文案。
+const _GENERIC_ERROR = "upload: internal error"
+
 // fail 输出统一错误响应。
+//
+// 只有白名单内的业务错误才回显原文；其它错误通常来自 os/json，
+// 可能携带服务器绝对路径等实现细节，因此只记日志并返回固定文案。
 func (own *handler) fail(ctx *leego.Context, code int, err error) {
-	_ = ctx.ResponseJSON(code, map[string]string{"error": err.Error()})
+	message := publicMessage(err)
+	if message == "" {
+		logging.LogWarn("upload: request failed: %v", err)
+		message = _GENERIC_ERROR
+	}
+
+	_ = ctx.ResponseJSON(code, map[string]string{"error": message})
+}
+
+// publicMessage 返回可安全回显的错误文案；未知错误返回空字符串。
+func publicMessage(err error) string {
+	switch {
+	case errors.Is(err, ErrSessionNotFound),
+		errors.Is(err, ErrIncomplete),
+		errors.Is(err, ErrPartSize),
+		errors.Is(err, ErrPartIndex),
+		errors.Is(err, ErrMergedSize),
+		errors.Is(err, ErrInvalidSession),
+		errors.Is(err, ErrInvalidRoot),
+		errors.Is(err, context.Canceled),
+		errors.Is(err, context.DeadlineExceeded):
+		return err.Error()
+	}
+
+	return ""
 }
 
 // statusForError 把存储错误映射为 HTTP 状态码。

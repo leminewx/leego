@@ -92,7 +92,7 @@ func TestGetFallbacks(t *testing.T) {
 		t.Fatal("时长回退失效")
 	}
 
-	if len(instance.Snapshot()) != 0 {
+	if len(instance.GetSnapshot()) != 0 {
 		t.Fatal("空配置快照应为空")
 	}
 }
@@ -184,9 +184,9 @@ func TestWatchFileUpdatesSubscription(t *testing.T) {
 
 	portChanged := make(chan any, 4)
 	nameChanged := make(chan any, 4)
-	cancelPort := instance.OnChange("server.port", func(value any) { portChanged <- value })
+	cancelPort := instance.SubscribeChange("server.port", func(value any) { portChanged <- value })
 	defer cancelPort()
-	instance.OnChange("server.name", func(value any) { nameChanged <- value })
+	instance.SubscribeChange("server.name", func(value any) { nameChanged <- value })
 
 	if err = instance.Watch(10 * time.Millisecond); err != nil {
 		t.Fatalf("启动监听失败: %v", err)
@@ -231,14 +231,14 @@ func TestWatchFileUpdatesSubscription(t *testing.T) {
 	}
 }
 
-func TestOnChangeCancel(t *testing.T) {
+func TestSubscribeChangeCancel(t *testing.T) {
 	instance, err := config.Load(config.NewMapSource(nil))
 	if err != nil {
 		t.Fatalf("加载失败: %v", err)
 	}
 
 	var count atomic.Int32
-	cancel := instance.OnChange("server.port", func(any) { count.Add(1) })
+	cancel := instance.SubscribeChange("server.port", func(any) { count.Add(1) })
 	cancel()
 	cancel() // 幂等
 
@@ -246,13 +246,60 @@ func TestOnChangeCancel(t *testing.T) {
 		t.Fatalf("启动监听失败: %v", err)
 	}
 
-	instance.OnChange("", nil)
+	instance.SubscribeChange("", nil)
 	if err = instance.Close(); err != nil {
 		t.Fatalf("关闭失败: %v", err)
 	}
 
 	if count.Load() != 0 {
 		t.Fatal("取消后不应触发回调")
+	}
+}
+
+func TestSubscribeChangeCancelDoesNotAffectSibling(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	writeJSON(t, path, `{"server": {"port": 8080}}`)
+
+	instance, err := config.Load(config.NewJSONSource(path, config.UseWatchInterval(10*time.Millisecond)))
+	if err != nil {
+		t.Fatalf("加载失败: %v", err)
+	}
+
+	// 两个订阅来自同一个函数字面量：闭包共享代码地址，
+	// 旧实现按函数指针取消会把兄弟订阅一起删掉。
+	cancelled := make(chan any, 4)
+	kept := make(chan any, 4)
+	subscribe := func(target chan any) func() {
+		return instance.SubscribeChange("server.port", func(value any) { target <- value })
+	}
+
+	cancelFirst := subscribe(cancelled)
+	subscribe(kept)
+	cancelFirst()
+
+	if err = instance.Watch(10 * time.Millisecond); err != nil {
+		t.Fatalf("启动监听失败: %v", err)
+	}
+
+	writeJSON(t, path, `{"server": {"port": 9091}}`)
+
+	select {
+	case value := <-kept:
+		if number, _ := value.(float64); number != 9091 {
+			t.Fatalf("回调值 = %v, 期望 9091", value)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("取消一个订阅后，兄弟订阅必须继续生效")
+	}
+
+	select {
+	case value := <-cancelled:
+		t.Fatalf("已取消的订阅不应触发: %v", value)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	if err = instance.Close(); err != nil {
+		t.Fatalf("关闭失败: %v", err)
 	}
 }
 
@@ -302,7 +349,7 @@ func TestWatchZeroIntervalKeepsSourceOption(t *testing.T) {
 	defer instance.Close()
 
 	changed := make(chan any, 1)
-	instance.OnChange("server.port", func(value any) { changed <- value })
+	instance.SubscribeChange("server.port", func(value any) { changed <- value })
 
 	if err = instance.Watch(0); err != nil {
 		t.Fatalf("启动监听失败: %v", err)
@@ -332,7 +379,7 @@ func TestWatchIgnoresFormattingOnlyChange(t *testing.T) {
 	defer instance.Close()
 
 	changed := make(chan any, 4)
-	instance.OnChange("server.port", func(value any) { changed <- value })
+	instance.SubscribeChange("server.port", func(value any) { changed <- value })
 
 	if err = instance.Watch(5 * time.Millisecond); err != nil {
 		t.Fatalf("启动监听失败: %v", err)

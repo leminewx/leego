@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,7 +22,7 @@ import (
 
 	"gitee.com/leminewx/leego/dashboard"
 	"gitee.com/leminewx/leego/logging"
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/tree"
 	"golang.org/x/net/http2"
@@ -77,6 +78,9 @@ type EngineConfig struct {
 	// ReadTimeout 为读取完整请求的超时时间。
 	ReadTimeout time.Duration
 	// WriteTimeout 为写入响应的超时时间。
+	//
+	// 注意：SSE / WebSocket 等长连接必须设为 0（不限制），
+	// 否则连接会在默认 60 秒后被切断；可用 UseWriteTimeout 单独调整。
 	WriteTimeout time.Duration
 	// IdleTimeout 为空闲连接的超时时间。
 	IdleTimeout time.Duration
@@ -174,6 +178,21 @@ func UseServerTimeouts(readHeader, read, write, idle time.Duration) EngineOption
 		if idle > 0 {
 			config.IdleTimeout = idle
 		}
+	}
+}
+
+// UseWriteTimeout 单独设置响应写入超时。
+//
+// 与 UseServerTimeouts 不同，这里允许传入 0：SSE / WebSocket 等长连接
+// 依赖该值关闭全局写入超时，否则默认 60 秒会直接切断连接。
+// 负数视为 0。
+func UseWriteTimeout(timeout time.Duration) EngineOption {
+	return func(config *EngineConfig) {
+		if timeout < 0 {
+			timeout = 0
+		}
+
+		config.WriteTimeout = timeout
 	}
 }
 
@@ -649,17 +668,40 @@ func (own *Engine) serveHTTP(resp http.ResponseWriter, req *http.Request) {
 
 	ctx := own.createRequestContext(resp, req)
 
+	// 池化对象必须在任何出口归还：panic 时不归还会让每次崩溃
+	// 永久丢失一个上下文与写入器。
+	defer own.destroyRequestContext(ctx)
+
+	// 最后一道防线：用户没挂恢复中间件时，也不能让 panic 直接穿透到
+	// net/http（连接被断开、客户端看不到任何响应）。
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			own.handlePanic(ctx, recovered)
+		}
+	}()
+
 	handle := own.globalHandle.Load()
 	if handle == nil {
-		own.destroyRequestContext(ctx)
 		http.Error(resp, response.GetStatusLowerText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 		return
 	}
 
-	// 请求处理是最高频路径，这里不用 defer：正常路径与错误路径各自显式归还。
-	// 业务 panic 由 recovery 中间件在链内拦截，不会跳过下面的归还语句。
 	(*handle)(ctx)
-	own.destroyRequestContext(ctx)
+}
+
+// handlePanic 记录 panic 堆栈，并在响应尚未开始时返回 500。
+//
+// http.ErrAbortHandler 保持标准库语义：上抛给 net/http 静默中止请求。
+func (own *Engine) handlePanic(ctx *Context, recovered any) {
+	if recovered == http.ErrAbortHandler {
+		panic(recovered)
+	}
+
+	logging.LogWarn("leego: panic recovered: %v\n%s", recovered, debug.Stack())
+
+	if ctx != nil && ctx.GetStatusCode() == 0 {
+		ctx.ResponseError(http.StatusInternalServerError, response.GetStatusLowerText(http.StatusInternalServerError))
+	}
 }
 
 // ServeHTTP 实现 http.Handler 接口。

@@ -294,9 +294,11 @@ go run ./harness/stresstest/test/base
 | --- | --- |
 | `GET /examples` | 返回固定 JSON，测量框架自身吞吐上限 |
 | `GET /metadata` | 返回全部路由指标，观察采集开销 |
-| `GET /files/*` | 静态文件服务，测量文件传输性能 |
+| `GET /files/*` | 静态文件服务，内容来自 `harness/testdata`，测量文件传输性能 |
 
 它默认监听 `:8080`，并调用 `WaitSignalAndShutdown(5s, nil)` 支持优雅关闭。
+静态目录通过 `harness/internal/assetpath` 解析，与示例服务共用同一份演示数据；
+浏览器打开 `http://127.0.0.1:8080/files/stress.html` 可看到端点说明页。
 
 ---
 
@@ -306,7 +308,7 @@ go run ./harness/stresstest/test/base
 2. **区分瓶颈**：客户端与服务端不要跑在同一台机器的同一核上；必要时用 `GOMAXPROCS` 限制服务端。
 3. **观察状态码**：先看 `StatusCodes` 与 `ErrorCount`，再看延迟——大量失败时的低延迟没有意义。
 4. **关注 P99**：平均值会被大量快请求拉低，P99 更能反映长尾。
-5. **开启指标时注意开销**：`middleware.Collect()` 为每个请求记录指标，压测框架上限时应关闭它，
+5. **开启指标时注意开销**：`middlewares.NewMonitor()` 为每个请求记录指标，压测框架上限时应关闭它，
    单独测一次“开启采集”的损耗。
 6. **复用 Client**：多次 `Run` 复用同一 `Client` 可避免重复建连；不同场景分别创建。
 7. **结束后 `Close()`**：释放空闲连接，避免 `TIME_WAIT` 堆积；重复调用安全。

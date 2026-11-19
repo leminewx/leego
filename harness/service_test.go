@@ -50,7 +50,7 @@ func newTestService(t *testing.T, options ...harness.Option) (*harness.Service, 
 		}
 	})
 
-	server := httptest.NewServer(service.Handler())
+	server := httptest.NewServer(service.GetHandler())
 	t.Cleanup(server.Close)
 
 	return service, server

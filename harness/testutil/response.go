@@ -219,8 +219,8 @@ func (own *Response) GetCookie(name string) (*http.Cookie, bool) {
 	return nil, false
 }
 
-// JSONMap 将响应体解码为 map，便于快速断言字段。
-func (own *Response) JSONMap(t *testing.T) map[string]any {
+// GetJSONMap 将响应体解码为 map，便于快速断言字段。
+func (own *Response) GetJSONMap(t *testing.T) map[string]any {
 	t.Helper()
 
 	target := make(map[string]any)

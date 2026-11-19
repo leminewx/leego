@@ -24,7 +24,7 @@
 | 中间件 | 链式 `MiddlewareFunc`、注册期组装、按 tag 归属 | `Handler`、`collector` 采集点 |
 | 指标 | `collector`（延迟分位、状态码分布、失败率）+ `dashboard` 后台 | `Snapshot`、`Report`、`CollectReport` |
 | 实时通信 | SSE（单写者）、WebSocket（收写双协程 + Manager 广播） | `sse.Manager`、`websocket.Manager` |
-| 安全 | JWT（HMAC）、CORS、限流（固定/滑动/令牌桶）、熔断 | `middleware/jwt`、`limiter`、`breaker` |
+| 安全 | JWT（HMAC）、CORS、限流（固定/滑动/令牌桶）、熔断 | `middlewares/jwt`、`limiter`、`breaker` |
 | 工程化 | `stresstest` 压测、`logging`、`headers`、`response` | 压测客户端、日志前缀约定 |
 
 对照 gin / echo / fiber / chi / beego 的常见能力面，缺口集中在：
@@ -141,7 +141,7 @@ tags、参数名、绑定结构体标签推导 schema。
   复用现有 `newStaticHandler` 的路径穿越防护（`containsPathTraversal`）。
 - SPA 回退：`SetSpaFallback(prefix, index string)`，未命中文件时返回 index.html，
   但**仅对 GET/HEAD 且无扩展名**的路径生效，避免把 API 404 吞掉。
-- 压缩：新增 `middleware.Compress`，基于 `sync.Pool` 复用 `gzip.Writer`，
+- 压缩：新增 `middlewares.Compress`，基于 `sync.Pool` 复用 `gzip.Writer`，
   按 `Accept-Encoding` 协商；对 `text/event-stream` 与 WebSocket 升级请求跳过。
 - Brotli 在标准库中没有编码器，因此不做内建；压缩层抽象为 `Compressor` 接口
   （`gzip` 为默认实现），使用方可注入 br 实现，核心不新增依赖。
@@ -156,20 +156,21 @@ tags、参数名、绑定结构体标签推导 schema。
 风险是压缩中间件与 `Flush`/SSE 的兼容性，必须在 `ResponseSSE` 路径上显式旁路。
 优先级：**高**。
 
-### 2.6 测试工具包（`testutil` 包）
+### 2.6 测试工具包（`testutil` 包，已落地于 `harness/testutil`）
 
 **功能描述**
-为使用方提供断言友好的测试辅助：`testutil.NewServer(t, engine)` 返回可直接请求的
-客户端；`testutil.MustBindJSON`；可注入时钟 `Clock` 以稳定测试限流/熔断/JWT 过期。
+为使用方提供断言友好的测试辅助：`testutil.NewClient(engine)` 返回可直接请求的
+客户端；`Response.BindJSON(t, &target)`；不可变冻结时钟 `NewFrozenClock` 以稳定
+TTL、限流窗口与 JWT 过期断言（限流/熔断/JWT 仍用各自内部时钟，冻结时钟不注入它们）。
 
 **方案**
-- 新增 `testutil` 包（不进入 `go test` 主链路，仅作为库）：封装 `httptest.Server` +
-  `Request(method, path).JSON(body).Header(k, v).Do()` 链式 DSL。
-- 时钟注入：把 `limiter`、`breaker`、`jwt.Parser` 中的 `time.Now()` 收敛到
-  `Clock` 接口（`Now()`、`Since()`），生产默认 `realClock`；这是对现有代码的
-  小改造，但能显著降低测试的 sleep 依赖。
-- 提供 `testutil.FuzzHandler(f)` 与 `testdata` 约定，复用现有 `stresstest` 的
-  场景服务器作为压测靶机。
+- 新增 `harness/testutil` 包（不进入 `go test` 主链路，仅作为库）：基于
+  `httptest.ResponseRecorder` 进程内调用，`UseHeader` / `UseCookie` 固定头，
+  `WithHeader` / `WithCookie` / `WithQuery` / `WithRawQuery` 为单请求选项。
+- 时钟注入：目前只提供 `FrozenClock`（`Advance` / `Set`）供业务测试使用；
+  `limiter`、`breaker`、`jwt.Parser` 仍各自读系统时间，未收敛到 `Clock`（规划中）。
+- `FuzzHandler` 与 `testdata` 约定尚未实现；现有压测靶机为
+  `harness/stresstest/test/base`。
 
 **应用场景**
 业务方写 handler 单测；框架自身的回归测试减少 `time.Sleep`；
@@ -189,7 +190,7 @@ CI 中稳定的限流/熔断时间相关测试。
 日志携带 trace_id。
 
 **方案**
-- 不引入 OTel SDK：新增 `middleware/trace`，自实现 W3C `traceparent` 解析与生成
+- 不引入 OTel SDK：新增 `middlewares/trace`，自实现 W3C `traceparent` 解析与生成
   （`encoding/hex` 即可），`SpanName` 优先用路由 pattern（`GET /users/:id`）而非
   原始路径，避免高基数；span 数据通过 `Exporter` 接口交由使用方上报。
 - `logging` 增加 `WithFields`，把 `trace_id`/`span_id` 注入日志前缀。
@@ -225,7 +226,7 @@ CI 中稳定的限流/熔断时间相关测试。
 工作量 6～8 人日；框架侧零依赖（只新增接口与降级包装器），Redis 实现由使用方
 在独立模块提供；风险是时钟漂移与网络分区下的配额不准。优先级：**中**。
 
-### 3.3 缓存中间件（`middleware/cache`）
+### 3.3 缓存中间件（`middlewares/cache`）
 
 **功能描述**
 HTTP 响应缓存：`ETag`/`Last-Modified` 协商、`stale-while-revalidate` 后台刷新、
@@ -234,8 +235,10 @@ HTTP 响应缓存：`ETag`/`Last-Modified` 协商、`stale-while-revalidate` 后
 **方案**
 - 需要可回放的响应：现有 `response.Writer` 只统计状态码与大小，需新增
   `Recorder`（镜像 body 到内存，超过阈值则不缓存并告警）。
-- 缓存键 = method + 路由 pattern + query + vary 头摘要；存储用 `lru`（可复用
+- 缓存键 = method + host + 原始路径 + query + vary 头摘要；存储用 `lru`（可复用
   `godis` 工作区中的 LRU 实现思路，但需在本仓库内独立实现以免跨模块依赖）。
+- Cookie 默认参与旁路：携带 Cookie 的请求不缓存，含 `Set-Cookie` 的响应也不缓存；
+  与身份无关的路由可显式开启。
 - 与 `Context` 池化兼容：缓存命中时直接写 body，不再执行后续 handler。
 
 **应用场景**

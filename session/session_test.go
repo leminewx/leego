@@ -113,7 +113,7 @@ func TestSessionPersistsAcrossRequests(t *testing.T) {
 		UseTTL(time.Hour),
 	)
 	engine.GET("/set", func(ctx *leego.Context) {
-		current, ok := From(ctx.Request.Context())
+		current, ok := GetFromContext(ctx.Request.Context())
 		if !ok {
 			t.Error("处理函数中缺少会话")
 			return
@@ -124,10 +124,10 @@ func TestSessionPersistsAcrossRequests(t *testing.T) {
 		}
 
 		current.Set("user", "leminewx")
-		_ = ctx.ResponseText(http.StatusOK, current.ID())
+		_ = ctx.ResponseText(http.StatusOK, current.GetID())
 	})
 	engine.GET("/get", func(ctx *leego.Context) {
-		current, ok := From(ctx.Request.Context())
+		current, ok := GetFromContext(ctx.Request.Context())
 		if !ok {
 			t.Error("处理函数中缺少会话")
 			return
@@ -186,19 +186,19 @@ func TestSessionRegenerate(t *testing.T) {
 
 	engine := newSessionEngine(store, UseSecret([]byte(_TEST_SECRET)))
 	engine.GET("/init", func(ctx *leego.Context) {
-		current, _ := From(ctx.Request.Context())
+		current, _ := GetFromContext(ctx.Request.Context())
 		current.Set("stage", 1)
-		_ = ctx.ResponseText(http.StatusOK, current.ID())
+		_ = ctx.ResponseText(http.StatusOK, current.GetID())
 	})
 	engine.GET("/login", func(ctx *leego.Context) {
-		current, _ := From(ctx.Request.Context())
+		current, _ := GetFromContext(ctx.Request.Context())
 		current.Set("user", "leminewx")
 
 		if err := current.Regenerate(ctx.Request.Context()); err != nil {
 			t.Errorf("Regenerate() error = %v", err)
 		}
 
-		_ = ctx.ResponseText(http.StatusOK, current.ID())
+		_ = ctx.ResponseText(http.StatusOK, current.GetID())
 	})
 
 	first := doRequest(engine, "/init", nil)
@@ -243,7 +243,7 @@ func TestSessionDestroy(t *testing.T) {
 
 	engine := newSessionEngine(store, UseSecret([]byte(_TEST_SECRET)))
 	engine.GET("/logout", func(ctx *leego.Context) {
-		current, _ := From(ctx.Request.Context())
+		current, _ := GetFromContext(ctx.Request.Context())
 		current.Set("user", "leminewx")
 		current.Destroy()
 		_ = ctx.ResponseText(http.StatusOK, "bye")
@@ -259,8 +259,8 @@ func TestSessionDestroy(t *testing.T) {
 		t.Fatalf("清理 Cookie MaxAge = %d, want -1", cookie.MaxAge)
 	}
 
-	if store.Len() != 0 {
-		t.Fatalf("存储中仍有 %d 个会话", store.Len())
+	if store.Count() != 0 {
+		t.Fatalf("存储中仍有 %d 个会话", store.Count())
 	}
 }
 
@@ -270,7 +270,7 @@ func TestSessionRejectsTamperedCookie(t *testing.T) {
 
 	engine := newSessionEngine(store, UseSecret([]byte(_TEST_SECRET)))
 	engine.GET("/whoami", func(ctx *leego.Context) {
-		current, _ := From(ctx.Request.Context())
+		current, _ := GetFromContext(ctx.Request.Context())
 		if value, ok := current.Get("user"); ok {
 			_ = ctx.ResponseText(http.StatusOK, value.(string))
 			return
@@ -295,15 +295,15 @@ func TestSessionRejectsTamperedCookie(t *testing.T) {
 }
 
 func TestSessionFromWithoutMiddleware(t *testing.T) {
-	if _, ok := From(context.Background()); ok {
+	if _, ok := GetFromContext(context.Background()); ok {
 		t.Fatal("无中间件时应返回 false")
 	}
 
-	if _, ok := From(nil); ok {
+	if _, ok := GetFromContext(nil); ok {
 		t.Fatal("nil 上下文应返回 false")
 	}
 
-	if _, ok := FromRequest(nil); ok {
+	if _, ok := GetFromRequest(nil); ok {
 		t.Fatal("nil 请求应返回 false")
 	}
 }
@@ -338,8 +338,8 @@ func TestMemoryStoreExpiry(t *testing.T) {
 		t.Fatalf("过期会话错误 = %v, want ErrNotFound", err)
 	}
 
-	if store.Len() != 0 {
-		t.Fatalf("过期条目未被删除，Len = %d", store.Len())
+	if store.Count() != 0 {
+		t.Fatalf("过期条目未被删除，Count = %d", store.Count())
 	}
 
 	if _, err = store.Get(ctx, ""); !errors.Is(err, ErrNotFound) {

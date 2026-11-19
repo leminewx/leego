@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/middleware"
+	"gitee.com/leminewx/leego/harness/assetpath"
+	"gitee.com/leminewx/leego/middlewares"
 )
 
 func main() {
@@ -21,8 +22,8 @@ func main() {
 		leego.DisableStartupLog(),
 	)
 	engine.UseMiddlewares(
-		middleware.Log(),
-		middleware.Recover(),
+		middlewares.NewLogger().AdaptToMiddleware(),
+		middlewares.NewRecovery().AdaptToMiddleware(),
 	)
 
 	engine.GET("/examples", func(ctx *leego.Context) {
@@ -37,7 +38,8 @@ func main() {
 		})
 	}, "获取所有路由监控数据", "压测", "监控数据")
 
-	engine.SetStatic("/files", ".", "静态文件服务接口", "压测", "静态文件")
+	// 静态文件：挂载演示数据目录 harness/testdata，供文件传输性能测试。
+	engine.SetStatic("/files", assetpath.GetDir(), "静态文件服务接口", "压测", "静态文件")
 
 	go func() {
 		if err := engine.Run(":8080"); err != nil {

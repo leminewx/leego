@@ -4,7 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 	"gitee.com/leminewx/leego/tree"
 )
 

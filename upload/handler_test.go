@@ -3,6 +3,7 @@ package upload
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 )
@@ -38,6 +39,19 @@ func TestUploadOptionsApplied(t *testing.T) {
 
 	if options.MaxSize != 1024 || options.DefaultPartSize != 256 || options.MaxParts != 8 {
 		t.Fatalf("容量选项未生效: %+v", options)
+	}
+}
+
+// TestPublicMessageHidesInternalDetails 验证未知内部错误不会原样回显。
+func TestPublicMessageHidesInternalDetails(t *testing.T) {
+	internal := errors.New(`open C:\srv\upload\files\abc: access is denied`)
+	if got := publicMessage(internal); got != "" {
+		t.Fatalf("未知内部错误必须脱敏, got %q", got)
+	}
+
+	known := fmt.Errorf("list part failed: %w", ErrSessionNotFound)
+	if got := publicMessage(known); got == "" {
+		t.Fatal("已知业务错误应回显原文")
 	}
 }
 

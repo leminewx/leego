@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"gitee.com/leminewx/leego/middleware/collector"
+	"gitee.com/leminewx/leego/middlewares/collector"
 )
 
 const (
@@ -242,6 +242,15 @@ func (own *FileStore) AppendPoint(point Point) error {
 		return ErrStoreClosed
 	}
 
+	// 上一次轮转重开文件失败时 writer 为空：这里重试，避免一次磁盘抖动
+	// 让指标永久停写（旧实现直接置 closed=true）。
+	if own.writer == nil {
+		if err = own.reopenLocked(); err != nil {
+			own.mu.Unlock()
+			return fmt.Errorf("metrics: reopen store: %w", err)
+		}
+	}
+
 	written, err := own.writer.Write(payload)
 	if err != nil {
 		own.mu.Unlock()
@@ -280,6 +289,13 @@ func (own *FileStore) rotate() error {
 		return nil
 	}
 
+	if own.writer == nil {
+		if err := own.reopenLocked(); err != nil {
+			own.mu.Unlock()
+			return err
+		}
+	}
+
 	if err := own.writer.Flush(); err != nil {
 		own.mu.Unlock()
 		return err
@@ -293,33 +309,39 @@ func (own *FileStore) rotate() error {
 
 	rotated := rotateName(own.path, time.Now())
 	if err := os.Rename(own.path, rotated); err != nil {
-		// 重命名失败时把文件重新打开，保证后续写入仍然有效。
-		file, openErr := os.OpenFile(own.path, os.O_CREATE|os.O_RDWR|os.O_APPEND, _FILE_MODE)
-		if openErr != nil {
-			own.closed = true
-			own.mu.Unlock()
-			return errors.Join(err, openErr)
-		}
-
-		own.file = file
-		own.writer = bufio.NewWriter(file)
+		// 重命名失败时把文件重新打开，保证后续写入仍能恢复；
+		// 即使重开失败也不关闭存储，下一次写入会再试。
+		own.reopenLocked()
 		own.mu.Unlock()
 		return err
 	}
 
+	own.size = 0
+	if err := own.reopenLocked(); err != nil {
+		own.mu.Unlock()
+		return err
+	}
+
+	own.mu.Unlock()
+
+	own.prune()
+	return nil
+}
+
+// reopenLocked 重新打开写入文件。
+//
+// 失败时清空句柄并返回错误，由调用方决定是否重试；
+// 调用方必须已持有 mu。
+func (own *FileStore) reopenLocked() error {
 	file, err := os.OpenFile(own.path, os.O_CREATE|os.O_RDWR|os.O_APPEND, _FILE_MODE)
 	if err != nil {
-		own.closed = true
-		own.mu.Unlock()
+		own.file = nil
+		own.writer = nil
 		return err
 	}
 
 	own.file = file
 	own.writer = bufio.NewWriter(file)
-	own.size = 0
-	own.mu.Unlock()
-
-	own.prune()
 	return nil
 }
 
@@ -375,8 +397,16 @@ func (own *FileStore) Close() error {
 	}
 
 	own.closed = true
-	flushErr := own.writer.Flush()
-	closeErr := own.file.Close()
+
+	var flushErr, closeErr error
+	if own.writer != nil {
+		flushErr = own.writer.Flush()
+	}
+
+	if own.file != nil {
+		closeErr = own.file.Close()
+	}
+
 	own.mu.Unlock()
 
 	return errors.Join(flushErr, closeErr)
