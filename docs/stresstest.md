@@ -1,10 +1,10 @@
 # 压力测试工具
 
-`stresstest` 目录下是包名为 `stress` 的轻量级 HTTP 压测工具。它只依赖标准库，
+`harness/stresstest` 目录下是包名为 `stress` 的轻量级 HTTP 压测工具。它只依赖标准库，
 适合在本地或 CI 中快速验证服务的吞吐与延迟分布。
 
 ```go
-import stress "gitee.com/leminewx/leego/stresstest"
+import stress "gitee.com/leminewx/leego/harness/stresstest"
 ```
 
 > 目录名是 `stresstest`，包名是 `stress`。导入时建议显式起别名，
@@ -284,10 +284,10 @@ fmt.Println(metrics.GetReport())
 
 ## 五、配套基准服务
 
-`stresstest/test/base` 是一个可直接运行的基准服务：
+`harness/stresstest/test/base` 是一个可直接运行的基准服务：
 
 ```bash
-go run ./stresstest/test/base
+go run ./harness/stresstest/test/base
 ```
 
 | 端点 | 用途 |

@@ -22,14 +22,6 @@ import (
 	"gitee.com/leminewx/leego"
 )
 
-// 限流器公共默认参数。
-const (
-	// _DEFAULT_WAIT_TIMEOUT 为中间件默认的等待配额时长（timeout 传负数时生效）。
-	_DEFAULT_WAIT_TIMEOUT = 3 * time.Second
-	// _DEFAULT_POLL_INTERVAL 为等待配额时的轮询间隔。
-	_DEFAULT_POLL_INTERVAL = 50 * time.Millisecond
-)
-
 // 限流器公共错误定义。
 var (
 	// ErrNoDeadline 表示等待配额时传入的上下文没有截止时间。
@@ -61,6 +53,14 @@ type Limiter interface {
 // 采用“先尝试一次再轮询”的策略：绝大多数请求都能在第一次检查时直接通过，
 // 只有真正触发限流的请求才会进入轮询分支，避免无谓的定时器开销。
 func waitForQuota(ctx context.Context, allow func() bool) error {
+	return waitForQuotaWith(ctx, allow, NewDefaultConfig())
+}
+
+// waitForQuotaWith 使用指定配置轮询等待配额。
+//
+// 与 waitForQuota 的差别只在轮询间隔：限流器把自己的 Config 传进来，
+// 让“等多久检查一次”成为进程级可调参数，而不是写死的常量。
+func waitForQuotaWith(ctx context.Context, allow func() bool, options Config) error {
 	if allow() {
 		return nil
 	}
@@ -73,19 +73,27 @@ func waitForQuota(ctx context.Context, allow func() bool) error {
 		return ErrNoDeadline
 	}
 
-	timer := time.NewTimer(_DEFAULT_POLL_INTERVAL)
-	defer timer.Stop()
-
+	options = options.normalize()
+	timer := time.NewTimer(options.PollInterval)
 	for {
 		select {
 		case <-ctx.Done():
+			// 显式停止定时器：上下文结束时可能仍有未消费的滴答，
+			// 取出一次以允许运行时回收，避免遗留的 timer 引用上下文。
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+
 			return ctx.Err()
 		case <-timer.C:
 			if allow() {
 				return nil
 			}
 
-			timer.Reset(_DEFAULT_POLL_INTERVAL)
+			timer.Reset(options.PollInterval)
 		}
 	}
 }

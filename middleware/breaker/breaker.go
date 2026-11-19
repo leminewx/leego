@@ -169,13 +169,13 @@ func (own *CircuitBreaker) beforeExecute() error {
 	own.metrics.totalRequests.Add(1)
 
 	own.mu.Lock()
-	defer own.mu.Unlock()
 
 	now := time.Now()
 	switch own.state {
 	case STATE_OPEN:
 		if now.Before(own.deadline) {
 			own.metrics.blockedRequests.Add(1)
+			own.mu.Unlock()
 			return ErrCircuitBreakerIsOpen
 		}
 
@@ -184,19 +184,20 @@ func (own *CircuitBreaker) beforeExecute() error {
 	case STATE_HALF_OPEN:
 		if own.probes >= own.config.HalfOpenMaxRequests {
 			own.metrics.blockedRequests.Add(1)
+			own.mu.Unlock()
 			return ErrCircuitBreakerIsOpen
 		}
 
 		own.probes++
 	}
 
+	own.mu.Unlock()
 	return nil
 }
 
 // afterExecute 记录本次调用结果并推进状态机。
 func (own *CircuitBreaker) afterExecute(status int, err error) {
 	own.mu.Lock()
-	defer own.mu.Unlock()
 
 	isSuccess := own.isSuccessFunc(status, err)
 	if !isSuccess {
@@ -217,6 +218,7 @@ func (own *CircuitBreaker) afterExecute(status int, err error) {
 
 		if !isSuccess {
 			own.transitionToOpenLocked(now)
+			own.mu.Unlock()
 			return
 		}
 
@@ -228,6 +230,8 @@ func (own *CircuitBreaker) afterExecute(status int, err error) {
 	case STATE_OPEN:
 		// 打开状态下正常不会执行到此处；保留分支以覆盖“执行中途被其他协程打开”的竞态。
 	}
+
+	own.mu.Unlock()
 }
 
 // recordLocked 将一次调用结果写入当前时间桶。

@@ -11,7 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -248,6 +248,11 @@ type Engine struct {
 	prepared atomic.Bool
 	// globalHandle 保存折叠后的全局中间件链。
 	globalHandle atomic.Pointer[HandleFunc]
+
+	// shutdownMu 保护关闭钩子列表。
+	shutdownMu sync.Mutex
+	// shutdownHooks 保存按注册顺序排列的关闭钩子。
+	shutdownHooks []ShutdownHook
 }
 
 // NewEngine 创建并初始化一个引擎。
@@ -443,19 +448,21 @@ func (own *Engine) getTemplate() *template.Template {
 
 // getTemplateFuncs 返回模板函数表的副本。
 func (own *Engine) getTemplateFuncs() template.FuncMap {
+	// 读取一次引用即可复制，无需在整个函数生命周期内持锁。
 	own.templatesMu.RLock()
-	defer own.templatesMu.RUnlock()
+	funcs := own.templateFuncs
+	own.templatesMu.RUnlock()
 
-	if len(own.templateFuncs) == 0 {
+	if len(funcs) == 0 {
 		return template.FuncMap{}
 	}
 
-	funcs := make(template.FuncMap, len(own.templateFuncs))
-	for name, fn := range own.templateFuncs {
-		funcs[name] = fn
+	copied := make(template.FuncMap, len(funcs))
+	for name, fn := range funcs {
+		copied[name] = fn
 	}
 
-	return funcs
+	return copied
 }
 
 // resolveTemplateName 返回路径的最后一段，用于给模板命名。
@@ -515,12 +522,12 @@ func (own *Engine) collectSnapshots() []collector.Snapshot {
 
 // sortSnapshots 按方法与模式排序快照。
 func sortSnapshots(snapshots []collector.Snapshot) {
-	sort.Slice(snapshots, func(i, j int) bool {
-		if snapshots[i].Method != snapshots[j].Method {
-			return snapshots[i].Method < snapshots[j].Method
+	slices.SortFunc(snapshots, func(a, b collector.Snapshot) int {
+		if compare := strings.Compare(a.Method, b.Method); compare != 0 {
+			return compare
 		}
 
-		return snapshots[i].Pattern < snapshots[j].Pattern
+		return strings.Compare(a.Pattern, b.Pattern)
 	})
 }
 
@@ -641,15 +648,18 @@ func (own *Engine) serveHTTP(resp http.ResponseWriter, req *http.Request) {
 	own.Prepare()
 
 	ctx := own.createRequestContext(resp, req)
-	defer own.destroyRequestContext(ctx)
 
 	handle := own.globalHandle.Load()
 	if handle == nil {
+		own.destroyRequestContext(ctx)
 		http.Error(resp, response.GetStatusLowerText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 		return
 	}
 
+	// 请求处理是最高频路径，这里不用 defer：正常路径与错误路径各自显式归还。
+	// 业务 panic 由 recovery 中间件在链内拦截，不会跳过下面的归还语句。
 	(*handle)(ctx)
+	own.destroyRequestContext(ctx)
 }
 
 // ServeHTTP 实现 http.Handler 接口。
@@ -787,12 +797,12 @@ type RouteInfo struct {
 
 // sortRoutes 按方法与模式排序路由信息。
 func sortRoutes(routes []RouteInfo) {
-	sort.Slice(routes, func(i, j int) bool {
-		if routes[i].Method != routes[j].Method {
-			return routes[i].Method < routes[j].Method
+	slices.SortFunc(routes, func(a, b RouteInfo) int {
+		if compare := strings.Compare(a.Method, b.Method); compare != 0 {
+			return compare
 		}
 
-		return routes[i].Pattern < routes[j].Pattern
+		return strings.Compare(a.Pattern, b.Pattern)
 	})
 }
 
@@ -950,18 +960,19 @@ func (own *Engine) GetHTTPHandler() http.Handler {
 
 // Shutdown 优雅关闭服务器。
 //
-// 服务器尚未启动时返回 nil，不触发空指针解引用。
+// 执行顺序：先停止接收新请求并等待在途请求结束，再逆序执行关闭钩子。
+// 服务器尚未启动时仍然会执行钩子，因此定时任务、指标落盘等资源不会泄漏。
 func (own *Engine) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	server := own.GetServer()
-	if server == nil {
-		return nil
+	var serverErr error
+	if server := own.GetServer(); server != nil {
+		serverErr = server.Shutdown(ctx)
 	}
 
-	return server.Shutdown(ctx)
+	return errors.Join(serverErr, own.RunShutdownHooks(ctx))
 }
 
 // WaitSignalAndShutdown 等待 SIGINT/SIGTERM 后优雅关闭服务器。

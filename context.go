@@ -753,7 +753,11 @@ func (own *Context) BindJSON(object any) error {
 		decoder.DisallowUnknownFields()
 	}
 
-	return decoder.Decode(object)
+	if err := decoder.Decode(object); err != nil {
+		return err
+	}
+
+	return validateBound(object)
 }
 
 // BindXML 将 XML 请求体绑定到指定对象。
@@ -769,7 +773,11 @@ func (own *Context) BindXML(object any) error {
 		return err
 	}
 
-	return xml.NewDecoder(strings.NewReader(string(data))).Decode(object)
+	if err := xml.NewDecoder(strings.NewReader(string(data))).Decode(object); err != nil {
+		return err
+	}
+
+	return validateBound(object)
 }
 
 // BindForm 将表单请求体绑定到指定对象。
@@ -791,7 +799,11 @@ func (own *Context) BindForm(object any) error {
 		}
 	}
 
-	return bindFormValues(own.Request.Form, object)
+	if err := bindFormValues(own.Request.Form, object); err != nil {
+		return err
+	}
+
+	return validateBound(object)
 }
 
 // requireNonNilPointer 校验绑定目标必须为非 nil 指针。

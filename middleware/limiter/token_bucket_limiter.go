@@ -28,6 +28,8 @@ type TokenBucketLimiter struct {
 	burst atomic.Int64
 	// limiter 为真正执行令牌发放的底层限流器。
 	limiter *rate.Limiter
+	// options 为中间件等待行为配置（等待时长与轮询间隔）。
+	options Config
 }
 
 // 编译期断言：令牌桶限流器必须满足 Limiter 接口。
@@ -38,17 +40,19 @@ NewTokenBucketLimiter 创建令牌桶限流器。
 
 参数：
   - limit：每秒补充的令牌数；小于等于 0 表示不限流；
-  - burst：桶容量，即允许的最大突发量；小于 1 时按 1 处理。
+  - burst：桶容量，即允许的最大突发量；小于 1 时按 1 处理；
+  - configs：可选等待配置，未传时使用 NewDefaultConfig()。
 
 限流器创建后即处于启用状态。
 */
-func NewTokenBucketLimiter(limit, burst int) *TokenBucketLimiter {
+func NewTokenBucketLimiter(limit, burst int, configs ...Config) *TokenBucketLimiter {
 	if burst < 1 {
 		burst = 1
 	}
 
 	instance := &TokenBucketLimiter{
 		limiter: newRateLimiter(limit, burst),
+		options: resolveConfig(configs...),
 	}
 	instance.limit.Store(int64(limit))
 	instance.burst.Store(int64(burst))
@@ -124,10 +128,10 @@ func (own *TokenBucketLimiter) GetConfig() (limit, burst int) {
 // GetMiddleware 返回令牌桶限流中间件。
 //
 // 参数 waitTimeout 语义与其它限流器一致：
-// 0 表示立即失败，负数表示使用默认的 3 秒等待。
+// 0 表示立即失败，负数表示使用 Config.WaitTimeout。
 func (own *TokenBucketLimiter) GetMiddleware(waitTimeout time.Duration) leego.MiddlewareFunc {
 	if waitTimeout < 0 {
-		waitTimeout = _DEFAULT_WAIT_TIMEOUT
+		waitTimeout = own.options.WaitTimeout
 	}
 
 	return func(next leego.HandleFunc) leego.HandleFunc {
@@ -170,9 +174,10 @@ func (own *TokenBucketLimiter) AllowWithTimeout(ctx context.Context, timeout tim
 	}
 
 	waitContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	err := own.limiter.Wait(waitContext)
+	cancel()
 
-	return own.limiter.Wait(waitContext) == nil
+	return err == nil
 }
 
 // Wait 阻塞等待令牌，直到放行或上下文结束。

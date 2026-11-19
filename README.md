@@ -3,9 +3,9 @@
 Leego 是一个构建在 Go 标准库 `net/http` 之上的轻量级 Web 框架。它在保持
 `http.Handler` 完全兼容的前提下，提供路由分组、中间件编排、上下文封装、
 参数绑定、指标采集、内置指标分析后台、SSE / WebSocket、JWT、限流、熔断
-与压测工具等能力。
+与压测工具等能力，并提供零第三方依赖的工程化拓展包与开发者体验服务。
 
-> 版本：`v0.14.0.0`（要求 Go 1.25+）
+> 版本：`v0.15.0.0`（要求 Go 1.27.4+）
 
 ---
 
@@ -21,7 +21,9 @@ Leego 是一个构建在 Go 标准库 `net/http` 之上的轻量级 Web 框架�
 | 分析后台 | `dashboard` 包内置单页后台，支持过滤、排序、JSON / CSV 导出与健康检查 |
 | 可观测中间件 | 访问日志、panic 恢复、CORS、JWT、限流（固定 / 滑动 / 令牌桶）、熔断 |
 | 长连接 | SSE（单连接回调式 + 管理器托管多连接）、WebSocket（自实现握手与帧解析） |
-| 压测工具 | `stresstest` 包提供并发压测、延迟分位数与报告格式化 |
+| 压测工具 | `harness/stresstest` 提供并发压测、延迟分位数与报告格式化 |
+| 工程化拓展 | `session` / `upload` / `job` / `gateway` / `cache` / `compress` / `trace` / `metrics` / `openapi` / `config` / `validate` / `problem`，全部只依赖标准库与 `golang.org/x/*` |
+| 体验工具 | `harness` 汇总测试客户端、压测入口与可运行示例，并内置带前端的实体服务 |
 
 ---
 
@@ -34,9 +36,11 @@ Leego 是一个构建在 Go 标准库 `net/http` 之上的轻量级 Web 框架�
 - [路由](#路由)
 - [Context 上下文](#context-上下文)
 - [中间件](#中间件)
+- [拓展能力](#拓展能力)
 - [指标与分析后台](#指标与分析后台)
 - [SSE 与 WebSocket](#sse-与-websocket)
 - [压力测试](#压力测试)
+- [开发者体验服务](#开发者体验服务)
 - [启动与优雅关闭](#启动与优雅关闭)
 - [测试与基准](#测试与基准)
 - [项目结构](#项目结构)
@@ -52,7 +56,7 @@ Leego 是一个构建在 Go 标准库 `net/http` 之上的轻量级 Web 框架�
 go get gitee.com/leminewx/leego
 ```
 
-依赖：Go 1.25+、`golang.org/x/crypto`、`golang.org/x/net`、`golang.org/x/time`。
+依赖：Go 1.27.4+、`golang.org/x/crypto`、`golang.org/x/net`、`golang.org/x/time`。
 
 ---
 
@@ -382,6 +386,9 @@ engine.UseMiddlewares(authMiddleware)
 | `limiter.NewSlidingWindowLimiter(limit, buckets, window)` | 滑动窗口限流 |
 | `limiter.NewTokenBucketLimiter(limit, burst)` | 令牌桶限流 |
 | `breaker.NewCircuitBreaker(config)` | 熔断器：失败率窗口 + 半开探测 |
+| `cache.New(cache.Config{...})` | 响应缓存：LRU 容量控制、`X-Cache` 标记与 stale-while-revalidate |
+| `compress.New(compress.Config{...})` | gzip 压缩：按内容类型与最小长度阈值决定是否压缩 |
+| `trace.New(exporter, ...)` | 链路追踪：解析/生成 W3C `traceparent`，批量异步导出 |
 
 ```go
 import (
@@ -416,6 +423,188 @@ engine.GET("/risky", func(ctx *leego.Context) {
 
 > 限流的 `GetMiddleware` 接收「等待配额的最长时间」，`<= 0` 表示立即返回 429；
 > 熔断器的 `ExecuteWithContext` 会把 5xx 或返回错误视为失败样本。
+
+---
+
+## 拓展能力
+
+核心框架之外，仓库提供一组零第三方依赖的工程化包（仅标准库与
+`golang.org/x/crypto`、`golang.org/x/net`、`golang.org/x/time`），按需引入；
+不引入的包不会被链接进最终二进制。
+
+| 包 | 能力 | 关键入口 |
+| --- | --- | --- |
+| `config` | 多源配置合并（Map / JSON / Env / Flag）、热更新与键级订阅 | `Load`、`GetString`、`OnChange`、`Watch` |
+| `validate` | 结构体标签校验，规则表可扩展，元信息按类型缓存 | `Check`、`CheckVar`、`RegisterRule` |
+| `problem` | RFC 7807 风格的统一错误响应 | `New`、`NewFromValidation`、`Write` |
+| `session` | 签名 Cookie 会话，存储接口可替换，支持轮换与销毁 | `session.New`、`From` |
+| `upload` | 分片上传：断点续传、乱序/重复分片、SHA-256 秒传 | `NewLocalStorage`、`NewHandler` |
+| `job` | 最小堆调度：周期/延迟任务、并发槽位与运行统计 | `NewScheduler`、`Every`、`After` |
+| `gateway` | 反向代理与平滑加权轮询，支持标签灰度与超时预算 | `NewBalancer`、`NewProxy` |
+| `middleware/cache` | 响应缓存：LRU 容量、`X-Cache` 标记、stale-while-revalidate | `cache.New` |
+| `middleware/compress` | 按内容类型与最小长度阈值决定是否 gzip | `compress.New` |
+| `middleware/trace` | W3C `traceparent` 解析/生成与异步批量导出 | `trace.New` |
+| `metrics` | 指标存储抽象、内存实现与 Prometheus 文本输出 | `NewMemoryStore`、`RegisterMetrics` |
+| `openapi` | 从已注册路由快照生成 OpenAPI 文档与浏览页 | `NewSpec`、`RegisterOpenAPI` |
+
+### 会话与分片上传
+
+```go
+import (
+	"gitee.com/leminewx/leego/session"
+	"gitee.com/leminewx/leego/upload"
+)
+
+store := session.NewMemoryStore()
+defer store.Close()
+
+engine.UseMiddlewares(session.New(
+	store,
+	session.UseTTL(30*time.Minute),
+	session.UseSecure(true),
+))
+
+engine.POST("/login", func(ctx *leego.Context) {
+	current, ok := session.FromRequest(ctx.Request)
+	if !ok {
+		ctx.ResponseError(http.StatusInternalServerError, "session unavailable")
+		return
+	}
+
+	current.Set("user", "leminewx")
+	// 登录成功必须轮换 ID，避免会话固定攻击。
+	if err := current.Regenerate(ctx.Request.Context()); err != nil {
+		ctx.ResponseError(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"id": current.ID()})
+})
+```
+
+分片上传由同一个处理器按 `action` 分发，分片体直接读原始字节，
+不经过 multipart 解析：
+
+```go
+storage, err := upload.NewLocalStorage("./data")
+if err != nil {
+	log.Fatal(err)
+}
+
+handler := upload.NewHandler(storage,
+	upload.UseMaxSize(1<<30),
+	upload.UseDefaultPartSize(4<<20),
+	upload.UseMaxParts(1024),
+)
+
+// POST ?action=init | PUT ?action=part&id=..&index=..
+// POST ?action=complete&id=.. | GET ?action=status&id=.. | DELETE ?action=abort&id=..
+engine.POST("/upload", handler)
+engine.PUT("/upload", handler)
+engine.GET("/upload", handler)
+engine.DELETE("/upload", handler)
+```
+
+### 任务调度、网关与链路追踪
+
+```go
+scheduler := job.NewScheduler(job.UseWorkers(4))
+scheduler.Start(context.Background())
+defer scheduler.Stop(context.Background())
+
+cancel := scheduler.Every(time.Minute, job.JobFunc(func(ctx context.Context) error {
+	return refreshCache(ctx)
+}))
+defer cancel() // 取消周期任务
+
+scheduler.After(5*time.Second, job.JobFunc(func(context.Context) error {
+	return warmUp()
+}))
+
+stats := scheduler.GetStats()
+// stats.Runs / Dropped / Pending / Started / Stopped
+```
+
+```go
+stable, _ := url.Parse("http://127.0.0.1:9001")
+canary, _ := url.Parse("http://127.0.0.1:9002")
+
+balancer, err := gateway.NewBalancer(
+	gateway.Upstream{URL: stable, Weight: 9, Tag: "stable"},
+	gateway.Upstream{URL: canary, Weight: 1, Tag: "v2"},
+)
+if err != nil {
+	log.Fatal(err)
+}
+
+proxy := gateway.NewProxy(balancer,
+	gateway.UseTimeout(3*time.Second),
+	gateway.UseErrorHandler(func(ctx *leego.Context, target *url.URL, err error) {
+		ctx.ResponseError(http.StatusBadGateway, "upstream unavailable")
+	}),
+)
+
+engine.GET("/proxy/*path", proxy)
+engine.POST("/proxy/*path", proxy)
+// 请求头带 X-Leego-Canary: v2 时优先路由到标签为 v2 的上游。
+```
+
+```go
+exporter := trace.NewMemoryExporter(1024)
+tracer := trace.New(exporter, trace.WithFlushInterval(time.Second))
+engine.UseMiddlewares(tracer.Middleware())
+// 关闭前刷新剩余 Span：tracer.Shutdown(ctx)
+```
+
+### 配置、校验与统一错误
+
+```go
+settings, err := config.Load(
+	config.NewJSONSource("config.json", config.UseWatchInterval(time.Second)),
+	config.NewEnvSource("APP_"),
+)
+if err != nil {
+	log.Fatal(err)
+}
+defer settings.Close()
+
+addr := settings.GetString("http.addr", "127.0.0.1:8080")
+settings.OnChange("http.addr", func(value any) {
+	log.Printf("监听地址变更: %v", value)
+})
+
+if err := settings.Watch(0); err != nil { // 0 表示默认 1 秒轮询
+	log.Printf("配置监听未启动: %v", err)
+}
+```
+
+```go
+type CreateUser struct {
+	Name  string `json:"name" validate:"required,min=2,max=32"`
+	Email string `json:"email" validate:"required,email"`
+	Age   int    `json:"age" validate:"gte=0,lte=150"`
+}
+
+engine.POST("/users", func(ctx *leego.Context) {
+	var request CreateUser
+	if err := ctx.BindJSON(&request); err != nil {
+		problem.New(http.StatusBadRequest, "invalid_json", err.Error()).Write(ctx)
+		return
+	}
+
+	if err := validate.Check(&request); err != nil {
+		problem.NewFromValidation(err).Write(ctx) // 422 + 字段级细节
+		return
+	}
+
+	_ = ctx.ResponseJSON(http.StatusCreated, request)
+})
+```
+
+内置校验规则包括 `required`、`omitempty`、`min`、`max`、`len`、`eq`、`ne`、
+`gt`、`gte`、`lt`、`lte`、`oneof`、`contains`、`prefix`、`suffix`、`email`、
+`url`、`uuid`、`ip`、`ipv4`、`ipv6`、`alpha`、`alnum`、`numeric`、`lowercase`、
+`uppercase` 与 `dive`；未知规则会在首次校验时报错，避免规则名写错后静默通过。
 
 ---
 
@@ -546,7 +735,7 @@ engine.GET("/ws", func(ctx *leego.Context) {
 `stresstest` 包只依赖标准库，可作为库调用或独立工具使用：
 
 ```go
-import stress "gitee.com/leminewx/leego/stresstest"
+import stress "gitee.com/leminewx/leego/harness/stresstest"
 
 config := stress.NewDefaultConfig("http://127.0.0.1:8080/ping")
 config.Concurrent = 50
@@ -566,7 +755,55 @@ fmt.Println(stress.FormatReport(snapshot))
 
 报告包含：总请求数、成功/失败数、成功率、错误数、状态码分布、平均/最小/最大
 延迟与 P50/P90/P99 分位延迟。延迟统计使用「最近秩」分位数，避免插值引入的
-乐观偏差。
+乐观偏差。`harness/stresstest/test/base` 提供可直接压测的基准服务：
+
+```bash
+go run ./harness/stresstest/test/base
+```
+
+---
+
+## 开发者体验服务
+
+`harness` 包把测试客户端（`harness/testutil`）、压测入口（`harness/stresstest`）、
+可运行示例（`harness/examples/*`）与一个开箱即用的实体服务整合在一起。
+实体服务内置单页前端，覆盖会话、缓存、限流、分片上传、SSE、网关灰度、
+任务调度与链路追踪，适合本地体验与联调：
+
+```bash
+go run ./harness/cmd/harness                     # 默认 127.0.0.1:8080
+go run ./harness/cmd/harness -addr :9000 -data ./tmp
+```
+
+打开 `http://127.0.0.1:8080/` 即为体验页面，页面顶部提供：
+
+| 入口 | 说明 |
+| --- | --- |
+| `/` | 体验前端（十张能力卡片，纯原生 JS，无外部 CDN） |
+| `/dashboard` | 指标分析后台 |
+| `/openapi` | OpenAPI 文档与浏览页 |
+| `/metrics/prometheus` | Prometheus 文本指标 |
+| `/api/traces` | 最近链路（内存导出器） |
+
+作为库使用时，`harness.NewService` 返回可嵌入的 `*Service`：
+
+```go
+service, err := harness.NewService(
+	harness.UseAddr("127.0.0.1:0"),
+	harness.UseDataDir(t.TempDir()),
+	harness.UseLogging(false),
+)
+if err != nil {
+	t.Fatal(err)
+}
+defer service.Shutdown(context.Background())
+
+server := httptest.NewServer(service.Handler())
+defer server.Close()
+```
+
+`Service.Run(ctx)` 负责监听、提供服务，并在 `ctx` 取消后优雅关闭；
+`GetEngine()` 返回底层引擎，可在其基础上继续注册业务路由。
 
 ---
 
@@ -634,12 +871,21 @@ leego/
 │   └── websocket/                                  # WebSocket 连接、帧解析、升级器
 ├── middleware/                                     # 日志、恢复、指标采集中间件
 │   ├── collector/                                  # 指标类型与报告聚合
-│   ├── cors/  jwt/  limiter/  breaker/             # 各功能中间件
+│   ├── cache/  compress/  trace/                   # 缓存、压缩、链路追踪中间件
+│   └── cors/  jwt/  limiter/  breaker/             # 各功能中间件
 ├── dashboard/                                      # 指标分析后台（页面内嵌）
+├── metrics/                                        # 指标存储抽象与 Prometheus 输出
+├── openapi/                                        # OpenAPI 快照与浏览页
+├── config/  validate/  problem/                    # 配置、校验与统一错误响应
+├── session/  upload/  job/  gateway/               # 会话、分片上传、调度与网关
 ├── headers/                                        # HTTP 头常量与内容类型识别
 ├── logging/                                        # 框架内部日志输出
-├── stresstest/                                     # 压测客户端与报告
-└── examples/                                       # 可运行示例
+└── harness/                                        # 开发者体验：测试客户端、压测、示例
+    ├── testutil/                                   # HTTP 测试客户端与冻结时钟
+    ├── stresstest/                                 # 压测客户端与报告
+    ├── examples/                                   # 可运行示例（base/file/sse/websocket/stress）
+    ├── cmd/harness/                                # 体验服务入口
+    └── statics/                                    # 体验前端（go:embed）
 ```
 
 ---
@@ -681,8 +927,10 @@ leego/
 | [docs/limiter-breaker.md](docs/limiter-breaker.md) | 三种限流算法与熔断状态机 |
 | [docs/stresstest.md](docs/stresstest.md) | 压测配置、执行模型与报告指标 |
 | [docs/testing.md](docs/testing.md) | 测试组织、并发测试技巧与基准 |
+| [docs/harness.md](docs/harness.md) | 体验服务、前端页面、测试客户端与压测入口 |
 | [docs/conventions.md](docs/conventions.md) | 命名、注释、错误处理与 API 命名迁移对照 |
 | [docs/extension-roadmap.md](docs/extension-roadmap.md) | 基于现有架构的拓展方向：功能、方案、场景与可行性分析 |
+| [docs/extension-design.md](docs/extension-design.md) | 拓展模块的实现方式与代码结构：包布局、接口签名、难点与 PR 切片 |
 | [RELEASE.md](RELEASE.md) | 当前版本的行为变更、缺陷修复与升级步骤 |
 | [ISSUES.md](ISSUES.md) | 能力边界、使用陷阱与后续规划 |
 

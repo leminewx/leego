@@ -52,11 +52,15 @@ go test -race ./...
 
 ## 二、测试组织
 
-所有测试都使用**与被测包相同的 package**（内部测试），以便直接验证未导出符号——
+绝大多数测试使用**与被测包相同的 package**（内部测试），以便直接验证未导出符号——
 例如路由器的 `search`、熔断器的窗口推进、SSE 的帧格式化。这是有意的取舍：
 
 - 好处：可以测到真正的实现细节，避免为了测试而导出内部 API；
 - 代价：测试与实现耦合更紧，重构时可能需要同步调整测试。
+
+例外是 `harness/service_test.go`：它使用外部包 `harness_test`，只通过 `NewService`
+与真实 HTTP 客户端验证公开契约，以便及早发现 Cookie 下发、响应头顺序等
+内部测试（`httptest.ResponseRecorder`）容易掩盖的问题。
 
 | 位置 | 覆盖重点 |
 | --- | --- |
@@ -66,7 +70,9 @@ go test -race ./...
 | `middleware/collector/` | 指标累计、快照、并发安全、报告聚合 |
 | `dashboard/` | 端点解析、过滤、截断、CSV、安全头、页面渲染 |
 | `response/` | 写入器池化、状态码、SSE 消息与管理器、WebSocket 帧与握手 |
-| `stresstest/` | 配置校验、请求分配、分位数算法、报告格式 |
+| `harness/stresstest/` | 配置校验、请求分配、分位数算法、报告格式 |
+| `harness/testutil/` | 测试客户端、响应断言、Cookie 与冻结时钟 |
+| `harness/` | 体验服务集成：会话、缓存、限流、上传、网关、SSE、任务与链路 |
 
 **命名约定**：
 
@@ -292,7 +298,7 @@ b.RunParallel(func(pb *testing.PB) {
 | `response` | `BenchmarkCreateWriter`、`BenchmarkWriterPool` |
 | `response/sse` | `BenchmarkMessageWrite`、`BenchmarkMessageFormat`、`BenchmarkClientWriteMessage`、`BenchmarkManagerBroadcast` |
 | `dashboard` | `BenchmarkServePage`、`BenchmarkServeReport` |
-| `stresstest` | `BenchmarkLatenciesAppend`、`BenchmarkLatenciesGetPercentile`、`BenchmarkMetricsRecord` |
+| `harness/stresstest` | `BenchmarkLatenciesAppend`、`BenchmarkLatenciesGetPercentile`、`BenchmarkMetricsRecord` |
 
 **编写基准的要点**：
 

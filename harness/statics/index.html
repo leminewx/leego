@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>leego harness · 开发者体验服务</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #141b31;
+    --panel-2: #1b2440;
+    --line: #263153;
+    --text: #e6ecff;
+    --muted: #93a1c7;
+    --accent: #5b8cff;
+    --accent-2: #29d3a2;
+    --warn: #ffb020;
+    --danger: #ff5d73;
+    --radius: 14px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 28px 20px 60px;
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(91, 140, 255, .18), transparent 60%),
+      radial-gradient(900px 500px at 110% 0%, rgba(41, 211, 162, .12), transparent 55%),
+      var(--bg);
+    color: var(--text);
+  }
+
+  header {
+    max-width: 1280px;
+    margin: 0 auto 22px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 26px;
+    letter-spacing: .5px;
+  }
+
+  header h1 span { color: var(--accent); }
+
+  header p {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .links { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .links a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 7px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(20, 27, 49, .7);
+    transition: border-color .2s, color .2s;
+  }
+
+  .links a:hover { border-color: var(--accent); color: var(--accent); }
+
+  main {
+    max-width: 1280px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 16px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 210px;
+  }
+
+  .card h2 {
+    margin: 0;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card h2 i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: inline-block;
+  }
+
+  .card p.hint {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  button {
+    cursor: pointer;
+    border: none;
+    border-radius: 9px;
+    padding: 8px 14px;
+    font-size: 13px;
+    color: #08101f;
+    background: linear-gradient(180deg, #7ea6ff, var(--accent));
+    font-weight: 600;
+    transition: filter .15s, transform .05s;
+  }
+
+  button:hover { filter: brightness(1.08); }
+  button:active { transform: translateY(1px); }
+
+  button.ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line);
+    font-weight: 500;
+  }
+
+  button.ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  button.danger { background: linear-gradient(180deg, #ff8393, var(--danger)); color: #20060b; }
+
+  input[type="text"] {
+    flex: 1;
+    min-width: 120px;
+    padding: 8px 10px;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    background: #0d1428;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+
+  input[type="text"]:focus { border-color: var(--accent); }
+
+  input[type="file"] {
+    color: var(--muted);
+    font-size: 12px;
+    max-width: 100%;
+  }
+
+  label.check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  pre {
+    margin: 0;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: #0a1022;
+    font-size: 12px;
+    line-height: 1.55;
+    overflow: auto;
+    max-height: 200px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #c9d6f7;
+    flex: 1;
+  }
+
+  pre:empty::before {
+    content: "等待操作…";
+    color: #56628a;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+  }
+
+  .badge.ok { color: var(--accent-2); border-color: rgba(41, 211, 162, .5); }
+  .badge.warn { color: var(--warn); border-color: rgba(255, 176, 32, .5); }
+  .badge.bad { color: var(--danger); border-color: rgba(255, 93, 115, .5); }
+
+  progress {
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    appearance: none;
+    border: none;
+    background: #0a1022;
+  }
+
+  progress::-webkit-progress-bar { background: #0a1022; }
+  progress::-webkit-progress-value { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+  progress::-moz-progress-bar { background: var(--accent); }
+
+  .stream {
+    height: 160px;
+    overflow: auto;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: #0a1022;
+    padding: 8px 10px;
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #c9d6f7;
+  }
+
+  .stream .tick { color: var(--accent-2); }
+  .stream .hello { color: var(--accent); }
+  .stream .error { color: var(--danger); }
+
+  a.download { color: var(--accent-2); font-size: 13px; }
+
+  footer {
+    max-width: 1280px;
+    margin: 26px auto 0;
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  code {
+    background: rgba(91, 140, 255, .12);
+    color: #a9c0ff;
+    padding: 1px 5px;
+    border-radius: 5px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>leego <span>harness</span></h1>
+    <p>零第三方依赖的框架扩展能力体验服务 · 会话 / 缓存 / 限流 / 分片上传 / SSE / 反向代理 / 任务 / 链路 / 指标</p>
+  </div>
+  <nav class="links">
+    <a href="/dashboard" target="_blank">分析后台</a>
+    <a href="/openapi" target="_blank">OpenAPI</a>
+    <a href="/metrics" target="_blank">指标趋势</a>
+    <a href="/metrics/prometheus" target="_blank">Prometheus</a>
+    <a href="/api/traces" target="_blank">链路快照</a>
+  </nav>
+</header>
+
+<main>
+  <section class="card">
+    <h2><i></i>服务概览</h2>
+    <p class="hint">读取服务名、Go 版本、运行时长与当前配置，确认服务已经就绪。</p>
+    <div class="row">
+      <button id="btn-hello">GET /api/hello</button>
+      <button class="ghost" id="btn-health">健康检查</button>
+    </div>
+    <pre id="out-hello"></pre>
+  </section>
+
+  <section class="card">
+    <h2><i></i>请求回显</h2>
+    <p class="hint">回显方法、路径、请求头与请求体，观察中间件对请求的改写（例如追踪头）。</p>
+    <div class="row">
+      <input type="text" id="echo-text" value="hello leego" placeholder="请求体">
+      <button id="btn-echo">POST /api/echo</button>
+    </div>
+    <pre id="out-echo"></pre>
+  </section>
+
+  <section class="card">
+    <h2><i></i>服务端会话</h2>
+    <p class="hint">Cookie 只保存 HMAC 签名后的会话 ID，数据留在服务端；登录时会轮换 ID 防止会话固定。</p>
+    <div class="row">
+      <input type="text" id="session-name" value="gopher" placeholder="用户名">
+      <button id="btn-login">登录</button>
+      <button class="ghost" id="btn-session">当前会话</button>
+      <button class="danger" id="btn-logout">退出</button>
+    </div>
+    <pre id="out-session"></pre>
+  </section>
+
+  <section class="card">
+    <h2><i></i>响应缓存</h2>
+    <p class="hint">接口内部随机延迟 10–40ms；连续请求两次，第二次应命中并被 <code>X-Cache</code> 标记。</p>
+    <div class="row">
+      <button id="btn-cache">连续请求两次</button>
+    </div>
+    <pre id="out-cache"></pre>
+  </section>
+
+  <section class="card">
+    <h2><i></i>令牌桶限流</h2>
+    <p class="hint">默认每秒 5 个令牌、突发 10；一次并发 20 个请求即可观察到 429。</p>
+    <div class="row">
+      <button id="btn-limit">并发 20 次</button>
+    </div>
+    <pre id="out-limit"></pre>
+  </section>
+
+  <section class="card">
+    <h2><i></i>分片上传</h2>
+    <p class="hint">前端按 256 KiB 切片，服务端逐片落盘并做长度校验，完成后按 SHA-256 合并并支持秒传。</p>
+    <div class="row">
+      <input type="file" id="upload-file">
+      <button id="btn-upload">开始上传</button>
+    </div>
+    <progress id="upload-progress" max="100" value="0"></progress>
+    <pre id="out-upload"></pre>
+    <a class="download" id="upload-link" href="#" hidden>下载文件</a>
+  </section>
+
+  <section class="card">
+    <h2><i></i>SSE 事件流</h2>
+    <p class="hint">每秒推送一次服务状态；事件类型由 <code>NewMessageWithEvent</code> 指定。</p>
+    <div class="row">
+      <button id="btn-sse-start">建立连接</button>
+      <button class="ghost" id="btn-sse-stop">断开</button>
+      <span class="badge" id="sse-status">未连接</span>
+    </div>
+    <div class="stream" id="sse-log"></div>
+  </section>
+
+  <section class="card">
+    <h2><i></i>反向代理与灰度</h2>
+    <p class="hint">两个内部上游按 3:1 平滑加权轮询；携带 <code>X-Leego-Canary: v2</code> 时只命中灰度实例。</p>
+    <div class="row">
+      <button id="btn-gateway">请求 /api/gateway/demo</button>
+      <label class="check"><input type="checkbox" id="gateway-canary"> 灰度流量</label>
+    </div>
+    <pre id="out-gateway"></pre>
+  </section>
+
+  <section class="card">
+    <h2><i></i>定时任务</h2>
+    <p class="hint">调度器每 3 秒执行一次计数任务；并发额度不足时丢弃并计数，不会阻塞调度协程。</p>
+    <div class="row">
+      <button id="btn-jobs">刷新统计</button>
+    </div>
+    <pre id="out-jobs"></pre>
+  </section>
+
+  <section class="card">
+    <h2><i></i>链路追踪</h2>
+    <p class="hint">内存导出器保留最近 256 条片段；刷新本页操作后再点击可看到新的链路。</p>
+    <div class="row">
+      <button id="btn-traces">最近链路</button>
+    </div>
+    <pre id="out-traces"></pre>
+  </section>
+</main>
+
+<footer>
+  leego harness · 仅用于本地开发体验；数据写入系统临时目录，可通过 <code>-data</code> 参数指定。
+</footer>
+
+<script>
+  const $ = (selector) => document.querySelector(selector);
+
+  function setOutput(target, value) {
+    const element = $(target);
+    if (typeof value === "string") {
+      element.textContent = value;
+      return;
+    }
+    element.textContent = JSON.stringify(value, null, 2);
+  }
+
+  async function call(url, options) {
+    const response = await fetch(url, options);
+    const text = await response.text();
+    let body = text;
+    try { body = JSON.parse(text); } catch (error) { /* 非 JSON 响应保持原文 */ }
+    return { status: response.status, headers: response.headers, body: body };
+  }
+
+  function postJSON(url, payload) {
+    return call(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  }
+
+  $("#btn-hello").addEventListener("click", async () => {
+    const result = await call("/api/hello");
+    setOutput("#out-hello", result.body);
+  });
+
+  $("#btn-health").addEventListener("click", async () => {
+    const result = await call("/api/healthz");
+    setOutput("#out-hello", result.body);
+  });
+
+  $("#btn-echo").addEventListener("click", async () => {
+    const result = await call("/api/echo", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: $("#echo-text").value
+    });
+    setOutput("#out-echo", result.body);
+  });
+
+  $("#btn-login").addEventListener("click", async () => {
+    const name = $("#session-name").value.trim();
+    if (!name) {
+      setOutput("#out-session", "请先填写用户名");
+      return;
+    }
+    const result = await postJSON("/api/session/login", { name: name });
+    setOutput("#out-session", result.body);
+  });
+
+  $("#btn-session").addEventListener("click", async () => {
+    const result = await call("/api/session/current");
+    setOutput("#out-session", result.body);
+  });
+
+  $("#btn-logout").addEventListener("click", async () => {
+    const result = await call("/api/session/logout", { method: "POST" });
+    setOutput("#out-session", result.body);
+  });
+
+  $("#btn-cache").addEventListener("click", async () => {
+    const lines = [];
+    for (let round = 1; round <= 2; round++) {
+      const started = performance.now();
+      const result = await call("/api/cache/timestamp");
+      const cost = Math.round(performance.now() - started);
+      lines.push(
+        `第 ${round} 次：X-Cache=${result.headers.get("X-Cache") || "-"}，` +
+        `总耗时 ${cost}ms，服务端耗时 ${result.body.cost_ms}ms，值 ${result.body.value}`
+      );
+    }
+    setOutput("#out-cache", lines.join("\n"));
+  });
+
+  $("#btn-limit").addEventListener("click", async () => {
+    const total = 20;
+    const statuses = await Promise.all(
+      Array.from({ length: total }, () => fetch("/api/limited/ping").then((response) => response.status))
+    );
+    const allowed = statuses.filter((status) => status === 200).length;
+    const limited = statuses.filter((status) => status === 429).length;
+    setOutput("#out-limit", `放行 ${allowed} 次，限流 ${limited} 次，其他 ${total - allowed - limited} 次`);
+  });
+
+  $("#btn-upload").addEventListener("click", async () => {
+    const file = $("#upload-file").files[0];
+    const progress = $("#upload-progress");
+    const link = $("#upload-link");
+
+    if (!file) {
+      setOutput("#out-upload", "请选择文件");
+      return;
+    }
+
+    link.hidden = true;
+    progress.value = 0;
+
+    const chunkSize = 256 * 1024;
+    try {
+      const init = await postJSON("/api/upload?action=init", {
+        name: file.name,
+        size: file.size,
+        part_size: chunkSize
+      });
+      if (init.status !== 200) {
+        throw new Error(`初始化失败：${JSON.stringify(init.body)}`);
+      }
+
+      const id = init.body.ID;
+      const total = Math.max(1, Math.ceil(file.size / chunkSize));
+      for (let index = 0; index < total; index++) {
+        const chunk = file.slice(index * chunkSize, Math.min((index + 1) * chunkSize, file.size));
+        const response = await fetch(`/api/upload?action=part&id=${id}&index=${index}`, {
+          method: "PUT",
+          body: chunk
+        });
+        if (!response.ok) {
+          throw new Error(`分片 ${index} 上传失败：HTTP ${response.status}`);
+        }
+        progress.value = Math.round(((index + 1) / total) * 100);
+      }
+
+      const done = await call(`/api/upload?action=complete&id=${id}`, { method: "POST" });
+      if (done.status !== 200) {
+        throw new Error(`合并失败：${JSON.stringify(done.body)}`);
+      }
+
+      setOutput("#out-upload",
+        `文件：${file.name}\n大小：${file.size} 字节\n分片：${total} 个\n` +
+        `服务端路径：${done.body.path}`);
+      link.href = "/api/upload/download/" + done.body.path;
+      link.textContent = "下载 " + done.body.path;
+      link.hidden = false;
+    } catch (error) {
+      setOutput("#out-upload", String(error));
+    }
+  });
+
+  let source = null;
+
+  function appendStream(kind, text) {
+    const log = $("#sse-log");
+    const line = document.createElement("div");
+    line.className = kind;
+    line.textContent = text;
+    log.appendChild(line);
+    while (log.childElementCount > 60) {
+      log.removeChild(log.firstElementChild);
+    }
+    log.scrollTop = log.scrollHeight;
+  }
+
+  $("#btn-sse-start").addEventListener("click", () => {
+    if (source) {
+      return;
+    }
+    const log = $("#sse-log");
+    log.textContent = "";
+    source = new EventSource("/api/events");
+    source.addEventListener("hello", (event) => appendStream("hello", "hello " + event.data));
+    source.addEventListener("tick", (event) => appendStream("tick", "tick  " + event.data));
+    source.addEventListener("error", () => appendStream("error", "连接中断"));
+    $("#sse-status").textContent = "已连接";
+    $("#sse-status").className = "badge ok";
+  });
+
+  $("#btn-sse-stop").addEventListener("click", () => {
+    if (source) {
+      source.close();
+      source = null;
+    }
+    $("#sse-status").textContent = "未连接";
+    $("#sse-status").className = "badge";
+  });
+
+  $("#btn-gateway").addEventListener("click", async () => {
+    const headers = {};
+    if ($("#gateway-canary").checked) {
+      headers["X-Leego-Canary"] = "v2";
+    }
+    const result = await call("/api/gateway/demo/echo?from=harness", { headers: headers });
+    setOutput("#out-gateway", result.body);
+  });
+
+  $("#btn-jobs").addEventListener("click", async () => {
+    const result = await call("/api/jobs");
+    setOutput("#out-jobs", result.body);
+  });
+
+  $("#btn-traces").addEventListener("click", async () => {
+    const result = await call("/api/traces");
+    if (result.status !== 200 || !result.body.items) {
+      setOutput("#out-traces", result.body);
+      return;
+    }
+    const lines = result.body.items.map((item) =>
+      `${item.name} status=${item.status} ${item.duration_ms.toFixed(2)}ms trace=${item.trace_id.slice(0, 12)}…`
+    );
+    setOutput("#out-traces", `共 ${result.body.total} 条，最近 ${lines.length} 条：\n` + lines.join("\n"));
+  });
+</script>
+</body>
+</html>

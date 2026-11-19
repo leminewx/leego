@@ -37,6 +37,8 @@ type FixedWindowLimiter struct {
 	windowStart time.Time
 	// windowSize 为窗口长度。
 	windowSize time.Duration
+	// options 为中间件等待行为配置（等待时长与轮询间隔）。
+	options Config
 }
 
 // 编译期断言：固定窗口限流器必须满足 Limiter 接口。
@@ -47,11 +49,12 @@ NewFixedWindowLimiter 创建固定窗口限流器。
 
 参数：
   - limit：每个窗口允许的最大请求数；小于等于 0 表示不限流（始终放行）；
-  - windowSize：窗口长度，小于等于 0 时使用默认值 1 秒。
+  - windowSize：窗口长度，小于等于 0 时使用默认值 1 秒；
+  - configs：可选等待配置，未传时使用 NewDefaultConfig()。
 
 限流器创建后即处于启用状态，无需再调用 Enable。
 */
-func NewFixedWindowLimiter(limit int, windowSize time.Duration) *FixedWindowLimiter {
+func NewFixedWindowLimiter(limit int, windowSize time.Duration, configs ...Config) *FixedWindowLimiter {
 	if windowSize <= 0 {
 		windowSize = _DEFAULT_FIXED_WINDOW_SIZE
 	}
@@ -59,6 +62,7 @@ func NewFixedWindowLimiter(limit int, windowSize time.Duration) *FixedWindowLimi
 	instance := &FixedWindowLimiter{
 		windowStart: time.Now(),
 		windowSize:  windowSize,
+		options:     resolveConfig(configs...),
 	}
 	instance.limit.Store(int64(limit))
 	instance.Enable()
@@ -129,11 +133,11 @@ func (own *FixedWindowLimiter) GetConfig() (limit int, windowSize time.Duration)
 //
 // 参数 waitTimeout 表示“配额不足时最多等待多久”：
 //   - 0：不等待，立即返回 429（推荐用于对外接口）；
-//   - 负数：使用默认值 3 秒；
+//   - 负数：使用 Config.WaitTimeout；
 //   - 正数：在超时内轮询等待，期间请求会被挂起。
 func (own *FixedWindowLimiter) GetMiddleware(waitTimeout time.Duration) leego.MiddlewareFunc {
 	if waitTimeout < 0 {
-		waitTimeout = _DEFAULT_WAIT_TIMEOUT
+		waitTimeout = own.options.WaitTimeout
 	}
 
 	return func(next leego.HandleFunc) leego.HandleFunc {
@@ -162,8 +166,8 @@ func (own *FixedWindowLimiter) GetMiddleware(waitTimeout time.Duration) leego.Mi
 
 // Allow 非阻塞地判断是否放行，放行时消耗一个配额。
 func (own *FixedWindowLimiter) Allow() bool {
+	// 每个请求都会走这里，显式解锁比 defer 少一次调用开销。
 	own.mu.Lock()
-	defer own.mu.Unlock()
 
 	now := time.Now()
 	if now.Sub(own.windowStart) >= own.windowSize {
@@ -173,14 +177,17 @@ func (own *FixedWindowLimiter) Allow() bool {
 
 	limit := own.limit.Load()
 	if limit <= 0 {
+		own.mu.Unlock()
 		return true
 	}
 
 	if own.count >= limit {
+		own.mu.Unlock()
 		return false
 	}
 
 	own.count++
+	own.mu.Unlock()
 
 	return true
 }
@@ -196,12 +203,13 @@ func (own *FixedWindowLimiter) AllowWithTimeout(ctx context.Context, timeout tim
 	}
 
 	waitContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	result := waitForQuotaWith(waitContext, own.Allow, own.options)
+	cancel()
 
-	return waitForQuota(waitContext, own.Allow) == nil
+	return result == nil
 }
 
 // Wait 阻塞等待配额，直到放行或上下文结束。
 func (own *FixedWindowLimiter) Wait(ctx context.Context) error {
-	return waitForQuota(ctx, own.Allow)
+	return waitForQuotaWith(ctx, own.Allow, own.options)
 }

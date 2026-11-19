@@ -47,6 +47,8 @@ type SlidingWindowLimiter struct {
 	windowSize time.Duration
 	// bucketSize 为单个桶的时间跨度。
 	bucketSize time.Duration
+	// options 为中间件等待行为配置（等待时长与轮询间隔）。
+	options Config
 }
 
 // 编译期断言：滑动窗口限流器必须满足 Limiter 接口。
@@ -58,12 +60,13 @@ NewSlidingWindowLimiter 创建滑动窗口限流器。
 参数：
   - limit：窗口内允许的最大请求数；小于等于 0 表示不限流；
   - bucketCount：桶数量，小于 1 时使用默认值 10；
-  - windowSize：窗口长度，小于 1 秒时使用默认值 1 秒。
+  - windowSize：窗口长度，小于 1 秒时使用默认值 1 秒；
+  - configs：可选等待配置，未传时使用 NewDefaultConfig()。
 
 桶数量越多，窗口边界越平滑，但单次判断的计算量也越大。
 限流器创建后即处于启用状态。
 */
-func NewSlidingWindowLimiter(limit int, bucketCount int, windowSize time.Duration) *SlidingWindowLimiter {
+func NewSlidingWindowLimiter(limit int, bucketCount int, windowSize time.Duration, configs ...Config) *SlidingWindowLimiter {
 	if bucketCount < 1 {
 		bucketCount = _DEFAULT_SLIDING_BUCKET_COUNT
 	}
@@ -77,6 +80,7 @@ func NewSlidingWindowLimiter(limit int, bucketCount int, windowSize time.Duratio
 		lastSlide:  time.Now(),
 		windowSize: windowSize,
 		bucketSize: windowSize / time.Duration(bucketCount),
+		options:    resolveConfig(configs...),
 	}
 	instance.limit.Store(int64(limit))
 	instance.Enable()
@@ -182,10 +186,10 @@ func (own *SlidingWindowLimiter) GetConfig() (limit, bucketCount int, windowSize
 // GetMiddleware 返回滑动窗口限流中间件。
 //
 // 参数 waitTimeout 语义与固定窗口限流器一致：
-// 0 表示立即失败，负数表示使用默认的 3 秒等待。
+// 0 表示立即失败，负数表示使用 Config.WaitTimeout。
 func (own *SlidingWindowLimiter) GetMiddleware(waitTimeout time.Duration) leego.MiddlewareFunc {
 	if waitTimeout < 0 {
-		waitTimeout = _DEFAULT_WAIT_TIMEOUT
+		waitTimeout = own.options.WaitTimeout
 	}
 
 	return func(next leego.HandleFunc) leego.HandleFunc {
@@ -214,22 +218,25 @@ func (own *SlidingWindowLimiter) GetMiddleware(waitTimeout time.Duration) leego.
 
 // Allow 非阻塞地判断是否放行，放行时消耗一个配额。
 func (own *SlidingWindowLimiter) Allow() bool {
+	// 每个请求都会走这里，显式解锁比 defer 少一次调用开销。
 	own.mu.Lock()
-	defer own.mu.Unlock()
 
 	own.advanceLocked(time.Now())
 
 	limit := own.limit.Load()
 	if limit <= 0 {
+		own.mu.Unlock()
 		return true
 	}
 
 	if own.total >= limit {
+		own.mu.Unlock()
 		return false
 	}
 
 	own.buckets[own.index]++
 	own.total++
+	own.mu.Unlock()
 
 	return true
 }
@@ -282,12 +289,13 @@ func (own *SlidingWindowLimiter) AllowWithTimeout(ctx context.Context, timeout t
 	}
 
 	waitContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	result := waitForQuotaWith(waitContext, own.Allow, own.options)
+	cancel()
 
-	return waitForQuota(waitContext, own.Allow) == nil
+	return result == nil
 }
 
 // Wait 阻塞等待配额，直到放行或上下文结束。
 func (own *SlidingWindowLimiter) Wait(ctx context.Context) error {
-	return waitForQuota(ctx, own.Allow)
+	return waitForQuotaWith(ctx, own.Allow, own.options)
 }

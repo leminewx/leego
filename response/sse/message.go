@@ -132,22 +132,19 @@ func (own *Message) Write(resp response.Writer) error {
 // 其余调用者直接复用已构建结果，因此高频广播时性能稳定。
 func (own *Message) format() bool {
 	own.formattedLock.Lock()
-	defer own.formattedLock.Unlock()
 
 	// 双检查：已格式化则直接返回。
 	if len(own.formatted) > 0 {
+		own.formattedLock.Unlock()
 		return true
 	}
 
 	if own.Id == "" && own.Event == "" && own.Retry <= 0 && len(own.Data) == 0 {
+		own.formattedLock.Unlock()
 		return false
 	}
 
 	buffer := bufferPool.Get().(*bytes.Buffer)
-	defer func() {
-		buffer.Reset()
-		bufferPool.Put(buffer)
-	}()
 
 	// 事件 ID
 	if own.Id != "" {
@@ -181,6 +178,11 @@ func (own *Message) format() bool {
 	buffer.WriteByte('\n')
 
 	own.formatted = append([]byte(nil), buffer.Bytes()...)
+
+	// 构建过程没有分支，显式归还缓冲比 defer 少一次闭包分配。
+	buffer.Reset()
+	bufferPool.Put(buffer)
+	own.formattedLock.Unlock()
 
 	return true
 }

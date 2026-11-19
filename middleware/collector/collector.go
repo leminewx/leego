@@ -15,7 +15,8 @@
 package collector
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -295,8 +296,8 @@ func (own *Collector) GetSnapshot() Snapshot {
 	}
 	own.mu.RUnlock()
 
-	sort.Slice(snapshot.Metrics, func(i, j int) bool {
-		return snapshot.Metrics[i].Code < snapshot.Metrics[j].Code
+	slices.SortFunc(snapshot.Metrics, func(a, b Metric) int {
+		return cmp.Compare(a.Code, b.Code)
 	})
 
 	return snapshot

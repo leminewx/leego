@@ -5,6 +5,71 @@
 
 ---
 
+## v0.15.0.0 — 工程化拓展与体验服务
+
+> 发布日期：2026-11-19
+> 要求：Go 1.27.4+
+
+本版本在 v0.14.0.0 的架构基础上完成四项工作：语言与标准库升级、热路径开销收敛、
+工程化拓展包落地、开发者工具整合。除包路径下移外，核心 API 保持兼容。
+
+### 一、语言与标准库
+
+- `go.mod` 升级到 Go 1.27.4，构建与 CI 最低版本同步提高；
+- 用 `slices`、`maps`、`strings.Cut` 等标准库能力替换手写循环（如会话密钥拷贝、
+  配置键规范化、路由段拆分），减少分配与边界错误。
+
+### 二、热路径开销
+
+- 请求分发、限流等待、熔断统计与 SSE 投递移除可避免的 `defer`：
+  只在 panic 安全、锁释放或必须保证执行的冷路径保留，并补注释说明原因；
+- 限流器默认参数收敛到 `limiter.Config`（`WaitTimeout`、`PollInterval`），
+  三个算法共享同一份配置，避免参数各自漂移；
+- `NewTokenBucketLimiter(limit, burst, config...)` 支持可选配置，旧调用方式不变。
+
+### 三、工程化拓展包
+
+新增以下零第三方依赖的包（仅标准库与 `golang.org/x/*`）：
+
+| 包 | 能力 |
+| --- | --- |
+| `config` | 多源配置合并、热更新与键级订阅 |
+| `validate` | 结构体标签校验，规则表可扩展 |
+| `problem` | RFC 7807 风格统一错误响应 |
+| `session` | 签名 Cookie 会话，存储可替换 |
+| `upload` | 分片上传、断点续传与 SHA-256 秒传 |
+| `job` | 最小堆任务调度 |
+| `gateway` | 反向代理、平滑加权轮询与标签灰度 |
+| `middleware/cache` | 响应缓存与 stale-while-revalidate |
+| `middleware/compress` | gzip 压缩中间件 |
+| `middleware/trace` | W3C 链路追踪与异步导出 |
+| `metrics` | 指标存储抽象、内存实现与 Prometheus 输出 |
+| `openapi` | OpenAPI 快照与浏览页 |
+
+根包新增 `AddShutdownHook`、`Validatable` 钩子与统一的生命周期编排，
+使拓展包可以幂等地挂入引擎关闭流程。
+
+### 四、开发者工具整合（破坏性）
+
+- `stresstest/` → `harness/stresstest/`；
+- `testutil/` → `harness/testutil/`；
+- `examples/` → `harness/examples/`；
+- 新增 `harness` 体验服务（`harness.NewService`）与入口 `harness/cmd/harness`，
+  内置单页前端、两个模拟上游、会话/缓存/限流/上传/SSE/网关/任务/链路演示；
+- 新增 `harness/stresstest/test/base` 基准服务。
+
+升级步骤：将上述三个路径的 import 前缀改为 `gitee.com/leminewx/leego/harness/`，
+并确认 Go 版本不低于 1.27.4。
+
+### 五、缺陷修复
+
+- **会话 Cookie 在真实 HTTP 下丢失**：中间件原先在处理器写响应后才设置 Cookie，
+  而 `net/http` 在 `WriteHeader` 后忽略响应头修改。现改为包装 `response.Writer`，
+  在首次写响应/刷新前同步 Cookie，新建与轮换会话均能正确下发；
+  补充基于 `httptest.Server` + `cookiejar` 的回归测试。
+
+---
+
 ## v0.14.0.0 — 全框架重构与命名收敛
 
 > 发布日期：2026-11-19

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8">
+    <title>leego 压测基准服务</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 720px; line-height: 1.7; }
+        code { background: #f2f4f7; padding: .15rem .4rem; border-radius: 4px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #dde2e8; padding: .5rem .75rem; text-align: left; }
+    </style>
+</head>
+
+<body>
+    <h1>leego 压测基准服务</h1>
+    <p>配合 <code>harness/stresstest</code> 使用，用于测量框架吞吐、指标采集开销与静态文件传输性能。</p>
+
+    <table>
+        <tr><th>端点</th><th>说明</th></tr>
+        <tr><td><code>GET /examples</code></td><td>固定 JSON 响应，测量框架自身吞吐上限</td></tr>
+        <tr><td><code>GET /metadata</code></td><td>返回全部路由指标，观察采集开销</td></tr>
+        <tr><td><code>GET /files/data.txt</code></td><td>静态文件，测量文件传输性能</td></tr>
+    </table>
+
+    <p>示例：<code>go test -bench . ./harness/stresstest</code></p>
+</body>
+
+</html>

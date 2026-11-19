@@ -101,13 +101,16 @@
 ## 三、后续规划
 
 完整的拓展方向分析（功能描述、设计方案、应用场景与可行性评估）见
-[docs/extension-roadmap.md](docs/extension-roadmap.md)。近期优先级最高的六项：
+[docs/extension-roadmap.md](docs/extension-roadmap.md)。所有拓展项遵守
+**零第三方依赖**约束：只使用标准库与 `golang.org/x/*`（当前已具备），
+外部系统能力一律以接口暴露、由使用方实现注入（见该文档第七节）。
+近期优先级最高的六项：
 
 - 配置中心与热更新（`config`：文件 / 环境变量 / 命令行 + 热加载）；
 - 参数校验与统一错误码（`validate` + RFC 9457 problem+json）；
 - OpenAPI 3.1 自动生成（复用 `GetRoutes` 与 `Handler.GetParamNames`）；
 - 指标持久化与历史趋势（`collector` 环形缓冲 + `/metrics` 文本导出）；
-- 静态资源工程化（`embed.FS`、SPA 回退、gzip/br、长缓存）；
+- 静态资源工程化（`embed.FS`、SPA 回退、gzip、长缓存）；
 - 测试工具包（`testutil` 链式 DSL + 时钟注入）。
 
 仍保留跟踪的能力（价值高但复杂度较大）：
@@ -115,9 +118,9 @@
 - WebSocket 分片与 `permessage-deflate` 扩展；
 - SSE 的 `Last-Event-ID` 回放与多副本广播；
 - JWT 的 RSA / ECDSA 与 JWKS 支持、密钥轮换；
-- 分布式限流后端（Redis 等）；
-- 分片上传、断点续传与对象存储适配；
+- 分布式限流后端（框架只定义 `Backend` 接口，Redis 等实现由使用方注入）；
+- 分片上传、断点续传与对象存储适配（`Storage` 接口 + 使用方适配器）；
 - 面向协议解析的模糊测试（fuzz target）。
 
 明确不做：ORM 内建、自研模板引擎、HTTP/2 服务端推送（已废弃）、
-核心包内引入消息队列与云厂商 SDK。
+核心包内引入消息队列与云厂商 SDK；为某个可选特性新增 `require` 条目。
