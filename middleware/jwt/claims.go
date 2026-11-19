@@ -4,11 +4,11 @@ import (
 	"time"
 )
 
-// Claims 定义验证 JWT 令牌的接口类型
+// Claims 定义 JWT 声明必须实现的能力。
 type Claims interface {
-	// Validate 验证标准声明中的所有时间字段
+	// Validate 验证标准声明中的所有时间字段。
 	Validate() error
-	// ValidateWithIssuerAndAudiences 校验令牌（包含颁发者和受众）
+	// ValidateWithIssuerAndAudiences 校验时间字段、颁发者与受众。
 	ValidateWithIssuerAndAudiences(expectedIssuer, expectedAudience string) error
 }
 
@@ -143,47 +143,73 @@ type StandardClaims struct {
 	ExpiresAt int64 `json:"exp,omitempty"`
 }
 
-// Validate 验证标准声明中的所有时间字段
+// Validate 验证标准声明中的所有时间字段。
+//
+// 该方法等价于 ValidateWithLeeway(0)，即不允许任何时钟偏差。
 func (own StandardClaims) Validate() error {
+	return own.ValidateWithLeeway(0)
+}
+
+// ValidateWithLeeway 验证标准声明中的所有时间字段，并允许指定的时钟偏差。
+//
+// 参数 leeway 表示前后各容忍的时长：
+//   - exp 在 now+leeway 之后才视为过期；
+//   - nbf 在 now-leeway 之前就视为生效；
+//   - iat 在 now+leeway 之后才视为签发时间异常。
+//
+// 负值会被修正为 0，避免调用方误传负偏差导致校验变严。
+func (own StandardClaims) ValidateWithLeeway(leeway time.Duration) error {
+	if leeway < 0 {
+		leeway = 0
+	}
+
+	seconds := int64(leeway / time.Second)
 	now := time.Now().Unix()
 
-	// 检查过期时间
-	if own.ExpiresAt > 0 && own.ExpiresAt < now {
+	// 检查过期时间。
+	if own.ExpiresAt > 0 && own.ExpiresAt+seconds < now {
 		return ErrExpiredToken
 	}
 
-	// 检查生效时间
-	if own.NotBefore > 0 && own.NotBefore > now {
+	// 检查生效时间。
+	if own.NotBefore > 0 && own.NotBefore-seconds > now {
 		return ErrNotValidYet
 	}
 
-	// 检查签发时间（如果签发时间在未来，视为无效）
-	if own.IssuedAt > 0 && own.IssuedAt > now {
+	// 检查签发时间（未来签发视为无效）。
+	if own.IssuedAt > 0 && own.IssuedAt-seconds > now {
 		return ErrInvalidIssuanceTime
 	}
 
 	return nil
 }
 
-// ValidateWithIssuerAndAudiences 验证标准声明中的所有时间字段、签发者和受众
+// ValidateWithIssuerAndAudiences 验证标准声明中的所有时间字段、签发者和受众。
 func (own StandardClaims) ValidateWithIssuerAndAudiences(expectedIssuer, expectedAudience string) error {
-	// 校验令牌
-	if err := own.Validate(); err != nil {
+	return own.ValidateWithIssuerAndAudiencesAndLeeway(expectedIssuer, expectedAudience, 0)
+}
+
+// ValidateWithIssuerAndAudiencesAndLeeway 验证时间字段、签发者和受众，并允许时钟偏差。
+//
+// 校验规则：
+//   - expectedIssuer 非空时必须与 iss 完全一致；
+//   - expectedAudience 非空时必须命中 aud 列表中的某一项；
+//   - 任一为空表示 “不限制该维度”。
+func (own StandardClaims) ValidateWithIssuerAndAudiencesAndLeeway(expectedIssuer, expectedAudience string, leeway time.Duration) error {
+	if err := own.ValidateWithLeeway(leeway); err != nil {
 		return err
 	}
 
-	// 校验颁发者
 	if expectedIssuer != "" && own.Issuer != expectedIssuer {
 		return ErrInvalidIssuer
 	}
 
-	// 校验受众
 	if expectedAudience == "" {
 		return nil
 	}
 
-	for _, aud := range own.Audiences {
-		if expectedAudience == aud {
+	for _, audience := range own.Audiences {
+		if audience == expectedAudience {
 			return nil
 		}
 	}

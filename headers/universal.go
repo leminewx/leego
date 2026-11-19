@@ -59,6 +59,17 @@ const (
 	UPGRADE = "Upgrade"
 
 	/*
+		Allow
+
+		作用：
+		  - 用于 405 Method Not Allowed 响应，告知客户端该资源支持哪些 HTTP 方法
+		  - 也可用于 204/304 等场景声明资源的可用方法集合
+		示例：
+		  - Allow: GET, HEAD, POST
+	*/
+	ALLOW = "Allow"
+
+	/*
 		Via
 
 		作用：

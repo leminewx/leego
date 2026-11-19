@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{TITLE}}</title>
+    <style>
+        :root {
+            --bg: #0b1020;
+            --panel: #141b2d;
+            --panel-2: #1b2438;
+            --line: #263149;
+            --text: #e6ecff;
+            --muted: #8d9bb8;
+            --accent: #5b8cff;
+            --ok: #35d07f;
+            --warn: #ffb02e;
+            --bad: #ff5c7a;
+            --radius: 12px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: radial-gradient(1200px 600px at 10% -10%, #182347 0%, var(--bg) 60%);
+            color: var(--text);
+            font: 14px/1.55 "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            background: rgba(11, 16, 32, .85);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .brand { display: flex; flex-direction: column; gap: 2px; }
+        .brand h1 { margin: 0; font-size: 17px; letter-spacing: .3px; }
+        .brand span { color: var(--muted); font-size: 12px; }
+
+        .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+        button, select, input[type="search"] {
+            font: inherit;
+            color: var(--text);
+            background: var(--panel-2);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 7px 11px;
+            outline: none;
+        }
+
+        button { cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+        button:hover { border-color: var(--accent); }
+        button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+        button.ghost { background: transparent; }
+        button[aria-pressed="true"] { border-color: var(--ok); color: var(--ok); }
+
+        input[type="search"] { min-width: 220px; }
+        input[type="search"]::placeholder { color: var(--muted); }
+
+        main { padding: 20px 24px 48px; max-width: 1500px; margin: 0 auto; }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .card {
+            background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            padding: 14px 16px;
+        }
+
+        .card .label { color: var(--muted); font-size: 12px; letter-spacing: .4px; text-transform: uppercase; }
+        .card .value { font-size: 26px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
+        .card .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+        .card.bad .value { color: var(--bad); }
+        .card.ok .value { color: var(--ok); }
+
+        .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
+        .filters .spacer { flex: 1; }
+        .status-text { color: var(--muted); font-size: 12px; }
+
+        .table-wrap {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            overflow: auto;
+        }
+
+        table { width: 100%; border-collapse: collapse; min-width: 980px; }
+        thead th {
+            position: sticky;
+            top: 0;
+            background: var(--panel-2);
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 600;
+            text-align: left;
+            padding: 11px 14px;
+            border-bottom: 1px solid var(--line);
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+        }
+        thead th:hover { color: var(--text); }
+        tbody td { padding: 10px 14px; border-bottom: 1px solid rgba(38, 49, 73, .6); vertical-align: middle; }
+        tbody tr:hover { background: rgba(91, 140, 255, .06); }
+        tbody tr.expanded { background: rgba(91, 140, 255, .09); }
+
+        .method {
+            display: inline-block;
+            min-width: 62px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 11px;
+            letter-spacing: .5px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: rgba(91, 140, 255, .16);
+            color: var(--accent);
+        }
+        .method.GET { background: rgba(53, 208, 127, .16); color: var(--ok); }
+        .method.POST { background: rgba(255, 176, 46, .16); color: var(--warn); }
+        .method.PUT, .method.PATCH { background: rgba(168, 120, 255, .16); color: #b79bff; }
+        .method.DELETE { background: rgba(255, 92, 122, .16); color: var(--bad); }
+
+        .pattern { font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; }
+        .name { color: var(--muted); }
+        .num { font-variant-numeric: tabular-nums; text-align: right; }
+        .muted { color: var(--muted); }
+
+        .pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .pill.ok { background: rgba(53, 208, 127, .16); color: var(--ok); }
+        .pill.bad { background: rgba(255, 92, 122, .16); color: var(--bad); }
+        .pill.off { background: rgba(141, 155, 184, .16); color: var(--muted); }
+
+        .bar { display: flex; height: 6px; width: 160px; border-radius: 999px; overflow: hidden; background: #1f2940; }
+        .bar > span { display: block; height: 100%; }
+
+        .detail-row td { background: rgba(20, 27, 45, .7); padding: 0; }
+        .detail { padding: 12px 16px 16px; }
+        .detail table { min-width: 0; }
+        .detail thead th { position: static; background: transparent; border-bottom: 1px solid var(--line); cursor: default; }
+        .detail tbody td { padding: 7px 12px; }
+
+        .empty, .error {
+            padding: 48px 24px;
+            text-align: center;
+            color: var(--muted);
+        }
+        .error { color: var(--bad); }
+
+        footer { color: var(--muted); font-size: 12px; padding: 0 24px 32px; max-width: 1500px; margin: 0 auto; }
+
+        @media (max-width: 720px) {
+            header { padding: 12px 14px; }
+            main { padding: 14px; }
+            input[type="search"] { min-width: 140px; flex: 1; }
+            .card .value { font-size: 21px; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <div class="brand">
+        <h1>{{TITLE}}</h1>
+        <span id="meta">正在加载指标…</span>
+    </div>
+    <div class="toolbar">
+        <input id="search" type="search" placeholder="搜索方法 / 路径 / 名称 / 标签" aria-label="搜索路由">
+        <select id="method" aria-label="按方法过滤">
+            <option value="">全部方法</option>
+            <option>GET</option>
+            <option>POST</option>
+            <option>PUT</option>
+            <option>PATCH</option>
+            <option>DELETE</option>
+            <option>HEAD</option>
+            <option>OPTIONS</option>
+        </select>
+        <select id="enabled" aria-label="按状态过滤">
+            <option value="">全部状态</option>
+            <option value="true">已启用</option>
+            <option value="false">已禁用</option>
+        </select>
+        <button id="auto" class="ghost" aria-pressed="false" title="每 {{REFRESH_MS}} 毫秒自动刷新">自动刷新</button>
+        <button id="refresh" class="primary">刷新</button>
+        <a id="export" href="#" hidden>导出 CSV</a>
+    </div>
+</header>
+
+<main>
+    <section class="cards" aria-label="总览">
+        <div class="card"><div class="label">路由数量</div><div class="value" id="kpi-routes">0</div><div class="hint">已注册并参与统计</div></div>
+        <div class="card"><div class="label">累计请求</div><div class="value" id="kpi-requests">0</div><div class="hint">自服务启动以来</div></div>
+        <div class="card"><div class="label">在途请求</div><div class="value" id="kpi-flights">0</div><div class="hint">当前正在处理</div></div>
+        <div class="card ok"><div class="label">失败率</div><div class="value" id="kpi-failure">0%</div><div class="hint">状态码 ≥ 500</div></div>
+        <div class="card"><div class="label">平均耗时</div><div class="value" id="kpi-latency">0 ms</div><div class="hint">全部路由加权平均</div></div>
+    </section>
+
+    <section class="filters">
+        <span class="status-text" id="summary">等待数据</span>
+        <span class="spacer"></span>
+        <span class="status-text" id="updated"></span>
+    </section>
+
+    <section class="table-wrap">
+        <table>
+            <thead>
+            <tr>
+                <th data-sort="method">方法</th>
+                <th data-sort="pattern">路径</th>
+                <th data-sort="name">名称</th>
+                <th data-sort="total" class="num">请求数</th>
+                <th data-sort="avg" class="num">平均耗时</th>
+                <th data-sort="max" class="num">最大耗时</th>
+                <th data-sort="failure" class="num">失败率</th>
+                <th data-sort="flights" class="num">在途</th>
+                <th>状态分布</th>
+            </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+        </table>
+        <div id="placeholder" class="empty">正在加载指标数据…</div>
+    </section>
+</main>
+
+<footer>
+    数据来源：采集器中聚合的四项黄金指标（请求量 / 错误 / 耗时 / 在途）。
+    页面为只读视图，不提供任何修改业务状态的入口。
+</footer>
+
+<script>
+    "use strict";
+
+    const REFRESH_INTERVAL = {{REFRESH_MS}};
+    const EXPORT_ENABLED = {{EXPORT_ENABLED}};
+
+    const base = location.pathname.replace(/\/+$/, "") || "";
+    const state = {
+        report: null,
+        keyword: "",
+        method: "",
+        enabled: "",
+        sortKey: "total",
+        sortDirection: "desc",
+        expanded: new Set(),
+        autoTimer: 0,
+        loading: false,
+    };
+
+    const elements = {
+        rows: document.getElementById("rows"),
+        placeholder: document.getElementById("placeholder"),
+        meta: document.getElementById("meta"),
+        summary: document.getElementById("summary"),
+        updated: document.getElementById("updated"),
+        search: document.getElementById("search"),
+        method: document.getElementById("method"),
+        enabled: document.getElementById("enabled"),
+        auto: document.getElementById("auto"),
+        refresh: document.getElementById("refresh"),
+        export: document.getElementById("export"),
+        kpiRoutes: document.getElementById("kpi-routes"),
+        kpiRequests: document.getElementById("kpi-requests"),
+        kpiFlights: document.getElementById("kpi-flights"),
+        kpiFailure: document.getElementById("kpi-failure"),
+        kpiLatency: document.getElementById("kpi-latency"),
+    };
+
+    if (EXPORT_ENABLED) {
+        elements.export.href = base + "/export.csv";
+        elements.export.hidden = false;
+    }
+
+    function formatNumber(value) {
+        return new Intl.NumberFormat("zh-CN").format(value || 0);
+    }
+
+    function formatDuration(microseconds) {
+        if (!microseconds) {
+            return "0 µs";
+        }
+        if (microseconds < 1000) {
+            return microseconds + " µs";
+        }
+        if (microseconds < 1000000) {
+            return (microseconds / 1000).toFixed(2) + " ms";
+        }
+        return (microseconds / 1000000).toFixed(2) + " s";
+    }
+
+    function formatPercent(ratio) {
+        if (!ratio) {
+            return "0%";
+        }
+        return (ratio * 100).toFixed(ratio < 0.01 ? 2 : 1) + "%";
+    }
+
+    function averageCost(route) {
+        if (!route.total) {
+            return 0;
+        }
+        return Math.round(route.total_cost_micro / route.total);
+    }
+
+    function maxCost(route) {
+        return (route.metrics || []).reduce((max, item) => Math.max(max, item.max_cost_micro || 0), 0);
+    }
+
+    function failureRate(route) {
+        if (!route.total) {
+            return 0;
+        }
+        return route.failed / route.total;
+    }
+
+    function statusColor(code) {
+        if (code >= 500) return "var(--bad)";
+        if (code >= 400) return "var(--warn)";
+        if (code >= 300) return "#8fb4ff";
+        return "var(--ok)";
+    }
+
+    function renderStatusBar(route) {
+        const total = route.total || 0;
+        if (!total) {
+            return '<span class="muted">—</span>';
+        }
+
+        const metrics = route.metrics || [];
+        const segments = metrics.map((item) => {
+            const width = Math.max((item.total / total) * 100, 1.5);
+            return '<span style="width:' + width.toFixed(2) + '%;background:' + statusColor(item.code) + '" title="' + item.code + ' · ' + item.total + '"></span>';
+        }).join("");
+
+        return '<div class="bar" role="img" aria-label="状态码分布">' + segments + "</div>";
+    }
+
+    function renderMetrics(route) {
+        const metrics = route.metrics || [];
+        if (!metrics.length) {
+            return '<div class="muted">暂无响应指标</div>';
+        }
+
+        const rows = metrics.map((item) => {
+            return "<tr>" +
+                "<td>" + item.code + "</td>" +
+                '<td class="num">' + formatNumber(item.total) + "</td>" +
+                '<td class="num">' + formatDuration(item.avg_cost_micro || (item.total ? Math.round(item.total_cost_micro / item.total) : 0)) + "</td>" +
+                '<td class="num">' + formatDuration(item.max_cost_micro) + "</td>" +
+                '<td class="num">' + formatDuration(item.min_cost_micro) + "</td>" +
+                "</tr>";
+        }).join("");
+
+        return '<div class="detail"><table><thead><tr>' +
+            "<th>状态码</th><th class=\"num\">次数</th><th class=\"num\">平均</th><th class=\"num\">最大</th><th class=\"num\">最小</th>" +
+            "</tr></thead><tbody>" + rows + "</tbody></table></div>";
+    }
+
+    function routeKey(route) {
+        return route.method + " " + route.pattern;
+    }
+
+    function compare(left, right) {
+        switch (state.sortKey) {
+            case "method":
+                return left.method.localeCompare(right.method);
+            case "pattern":
+                return left.pattern.localeCompare(right.pattern);
+            case "name":
+                return (left.name || "").localeCompare(right.name || "");
+            case "avg":
+                return averageCost(left) - averageCost(right);
+            case "max":
+                return maxCost(left) - maxCost(right);
+            case "failure":
+                return failureRate(left) - failureRate(right);
+            case "flights":
+                return (left.flights || 0) - (right.flights || 0);
+            default:
+                return (left.total || 0) - (right.total || 0);
+        }
+    }
+
+    function visibleRoutes() {
+        if (!state.report) {
+            return [];
+        }
+
+        const keyword = state.keyword.toLowerCase();
+        let routes = state.report.routes.filter((route) => {
+            if (state.method && route.method !== state.method) {
+                return false;
+            }
+            if (state.enabled !== "") {
+                const expected = state.enabled === "true";
+                if (Boolean(route.enabled) !== expected) {
+                    return false;
+                }
+            }
+            if (!keyword) {
+                return true;
+            }
+            const haystack = [route.method, route.pattern, route.name || ""].concat(route.tags || []).join(" ").toLowerCase();
+            return haystack.indexOf(keyword) >= 0;
+        });
+
+        routes.sort((left, right) => {
+            const result = compare(left, right);
+            return state.sortDirection === "asc" ? result : -result;
+        });
+
+        return routes;
+    }
+
+    function summarize(routes) {
+        const totals = routes.reduce((acc, route) => {
+            acc.requests += route.total || 0;
+            acc.failed += route.failed || 0;
+            acc.flights += route.flights || 0;
+            acc.cost += route.total_cost_micro || 0;
+            return acc;
+        }, { requests: 0, failed: 0, flights: 0, cost: 0 });
+
+        return {
+            routes: routes.length,
+            requests: totals.requests,
+            failed: totals.failed,
+            flights: totals.flights,
+            average: totals.requests ? Math.round(totals.cost / totals.requests) : 0,
+            failureRate: totals.requests ? totals.failed / totals.requests : 0,
+        };
+    }
+
+    function render() {
+        const routes = visibleRoutes();
+        const summary = summarize(routes);
+
+        elements.kpiRoutes.textContent = formatNumber(summary.routes);
+        elements.kpiRequests.textContent = formatNumber(summary.requests);
+        elements.kpiFlights.textContent = formatNumber(summary.flights);
+        elements.kpiFailure.textContent = formatPercent(summary.failureRate);
+        elements.kpiLatency.textContent = formatDuration(summary.average);
+        elements.kpiFailure.parentElement.classList.toggle("bad", summary.failureRate >= 0.05);
+        elements.kpiFailure.parentElement.classList.toggle("ok", summary.failureRate < 0.05);
+
+        elements.summary.textContent = "显示 " + summary.routes + " / " + (state.report ? state.report.routes.length : 0) + " 条路由";
+
+        if (!routes.length) {
+            elements.rows.innerHTML = "";
+            elements.placeholder.hidden = false;
+            elements.placeholder.className = "empty";
+            elements.placeholder.textContent = state.report && state.report.routes.length
+                ? "没有符合过滤条件的路由"
+                : "尚未注册任何路由，访问一次接口后即可看到指标";
+            return;
+        }
+
+        elements.placeholder.hidden = true;
+
+        elements.rows.innerHTML = routes.map((route) => {
+            const key = routeKey(route);
+            const expanded = state.expanded.has(key);
+            const status = route.enabled
+                ? '<span class="pill ok">启用</span>'
+                : '<span class="pill off">禁用</span>';
+            const failure = failureRate(route);
+
+            let html = "<tr class=\"" + (expanded ? "expanded" : "") + "\" data-key=\"" + encodeURIComponent(key) + "\">" +
+                '<td><span class="method ' + route.method + '">' + route.method + "</span></td>" +
+                '<td class="pattern">' + escapeHTML(route.pattern) + "</td>" +
+                '<td class="name">' + escapeHTML(route.name || "—") + "</td>" +
+                '<td class="num">' + formatNumber(route.total) + "</td>" +
+                '<td class="num">' + formatDuration(averageCost(route)) + "</td>" +
+                '<td class="num">' + formatDuration(maxCost(route)) + "</td>" +
+                '<td class="num">' + (failure > 0 ? '<span class="pill ' + (failure >= 0.05 ? "bad" : "ok") + '">' + formatPercent(failure) + "</span>" : '<span class="muted">0%</span>') + "</td>" +
+                '<td class="num">' + formatNumber(route.flights) + "</td>" +
+                "<td>" + renderStatusBar(route) + "</td>" +
+                "</tr>";
+
+            if (expanded) {
+                html += '<tr class="detail-row"><td colspan="9">' + renderMetrics(route) + "</td></tr>";
+            }
+
+            return html;
+        }).join("");
+
+        elements.rows.querySelectorAll("tr[data-key]").forEach((row) => {
+            row.addEventListener("click", () => {
+                const key = decodeURIComponent(row.getAttribute("data-key"));
+                if (state.expanded.has(key)) {
+                    state.expanded.delete(key);
+                } else {
+                    state.expanded.add(key);
+                }
+                render();
+            });
+        });
+    }
+
+    function escapeHTML(value) {
+        return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
+    async function load() {
+        if (state.loading) {
+            return;
+        }
+
+        state.loading = true;
+        elements.refresh.disabled = true;
+
+        try {
+            const response = await fetch(base + "/api/report", { headers: { "Accept": "application/json" } });
+            if (!response.ok) {
+                throw new Error("HTTP " + response.status);
+            }
+
+            state.report = await response.json();
+            elements.meta.textContent = "生成时间：" + new Date(state.report.generated_at).toLocaleString() +
+                " · 服务端路由 " + state.report.totals.routes + " 条";
+            elements.updated.textContent = "最后更新 " + new Date().toLocaleTimeString();
+            render();
+        } catch (error) {
+            elements.placeholder.hidden = false;
+            elements.placeholder.className = "error";
+            elements.placeholder.textContent = "加载指标失败：" + error.message + "（后台可能未启用或鉴权失败）";
+        } finally {
+            state.loading = false;
+            elements.refresh.disabled = false;
+        }
+    }
+
+    function toggleAuto() {
+        const enabled = state.autoTimer === 0;
+        if (enabled) {
+            state.autoTimer = window.setInterval(load, REFRESH_INTERVAL);
+        } else {
+            window.clearInterval(state.autoTimer);
+            state.autoTimer = 0;
+        }
+        elements.auto.setAttribute("aria-pressed", String(enabled));
+        elements.auto.textContent = enabled ? "自动刷新：开" : "自动刷新";
+    }
+
+    elements.search.addEventListener("input", (event) => {
+        state.keyword = event.target.value.trim();
+        render();
+    });
+
+    elements.method.addEventListener("change", (event) => {
+        state.method = event.target.value;
+        render();
+    });
+
+    elements.enabled.addEventListener("change", (event) => {
+        state.enabled = event.target.value;
+        render();
+    });
+
+    elements.refresh.addEventListener("click", load);
+    elements.auto.addEventListener("click", toggleAuto);
+
+    document.querySelectorAll("th[data-sort]").forEach((header) => {
+        header.addEventListener("click", () => {
+            const key = header.getAttribute("data-sort");
+            if (state.sortKey === key) {
+                state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
+            } else {
+                state.sortKey = key;
+                state.sortDirection = key === "method" || key === "pattern" || key === "name" ? "asc" : "desc";
+            }
+            render();
+        });
+    });
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden && state.autoTimer !== 0) {
+            window.clearInterval(state.autoTimer);
+            state.autoTimer = 0;
+            elements.auto.setAttribute("aria-pressed", "false");
+            elements.auto.textContent = "自动刷新";
+        }
+    });
+
+    load();
+</script>
+</body>
+</html>

@@ -1,85 +1,148 @@
+// Package main 演示 leego 的 WebSocket 能力。
+//
+// 该示例使用 websocket.Manager 托管所有连接，并演示：
+//   - 自定义升级配置（超时、消息上限、来源校验、子协议协商）；
+//   - 连接建立后的欢迎消息与心跳保活；
+//   - 客户端消息协议（identify / ping / broadcast / private）；
+//   - 服务端定时广播与在线连接统计；
+//   - 优雅关闭。
+//
+// 客户端可发送的 JSON 消息示例：
+//
+//	{"type": "identify", "data": {"user_id": "u1001", "name": "张三"}}
+//	{"type": "ping"}
+//	{"type": "broadcast", "data": "hello everyone"}
+//	{"type": "private", "to": "<client_id>", "data": "hi"}
+//
+// 服务端下发的消息示例：
+//
+//	{"type": "connected", "timestamp": 1700000000, "data": {"client_id": "..."}}
+//	{"type": "broadcast", "timestamp": 1700000000, "data": "..."}
+//	{"type": "tick", "timestamp": 1700000000, "data": {"online": 3}}
 package main
 
-// func main() {
-// 	engine := leego.NewEngine("examples").
-// 		WithURLBlacklist("/.well-known/appspecific/com.chrome.devtools.json")
+import (
+	"context"
+	"log"
+	"net/http"
+	"net/url"
+	"time"
 
-// 	engine.WithMiddlewares(
-// 		middlewares.Recover(),
-// 		middlewares.Log(),
-// 		middlewares.Cors(cors.New()),
-// 		func(handle leego.HandleFunc) leego.HandleFunc {
-// 			return func(ctx *leego.Context) {
-// 				handle(ctx)
-// 				if ctx.GetStatusCode() == http.StatusNotFound {
-// 					fmt.Println("Oh my god, not found")
-// 				}
-// 			}
-// 		},
-// 	)
+	"gitee.com/leminewx/leego"
+	"gitee.com/leminewx/leego/middleware"
+	"gitee.com/leminewx/leego/response/websocket"
+	"gitee.com/leminewx/leego/response/websocket/upgrader"
+)
 
-// 	// 创建 WebSocket 配置
-// 	config := &upgrader.Config{
-// 		ReadTimeout:  60 * time.Second,
-// 		WriteTimeout: 10 * time.Second,
-// 		OriginCheckFunc: func(req *http.Request) bool {
-// 			// 在生产环境中应该验证来源
-// 			return true
-// 		},
-// 	}
+// msgTypeTick 为服务端定时广播使用的自定义消息类型。
+const msgTypeTick websocket.MessageType = "tick"
 
-// 	// 创建 WebSocket 管理器
-// 	wsManager := websocket.NewManager(config)
+func main() {
+	engine := leego.NewEngine(leego.UseEngineName("leego-websocket-example"))
+	engine.UseMiddlewares(
+		middleware.Log(),
+		middleware.Recover(),
+	)
 
-// 	// 启动管理器
-// 	ctx, cancel := context.WithCancel(context.Background())
-// 	defer cancel()
+	manager, err := newManager()
+	if err != nil {
+		log.Fatalf("创建 WebSocket 管理器失败: %v", err)
+	}
 
-// 	go wsManager.Start(ctx)
+	// 心跳间隔：服务端每 30 秒发送一次 PING 控制帧。
+	manager.SetPingInterval(30 * time.Second)
 
-// 	// 设置路由
-// 	http.HandleFunc("/ws", wsManager.HandleWebSocket)
-// 	http.HandleFunc("/ws/stats", func(w http.ResponseWriter, r *http.Request) {
-// 		// 返回连接统计信息
-// 		stats := map[string]interface{}{
-// 			"connection_count": wsManager.ConnectionCount(),
-// 			"connections":      wsManager.GetClients(),
-// 		}
-// 		w.Header().Set("Content-Type", "application/json")
-// 		json.NewEncoder(w).Encode(stats)
-// 	})
+	// WebSocket 升级路由：Serve 会阻塞到连接结束，必须直接作为处理函数调用。
+	engine.GET("/ws", func(ctx *leego.Context) {
+		if err := manager.Serve(ctx.Response, ctx.Request); err != nil {
+			log.Printf("WebSocket 连接结束: %v", err)
+		}
+	}, "WebSocket 连接入口", "WebSocket", "长连接")
 
-// 	// 启动 HTTP 服务器
-// 	server := &http.Server{
-// 		Addr:         ":8080",
-// 		ReadTimeout:  15 * time.Second,
-// 		WriteTimeout: 15 * time.Second,
-// 	}
+	// 连接统计：返回在线数量与每个连接的快照（客户端 ID、用户 ID、连接时间等）。
+	engine.GET("/ws/stats", func(ctx *leego.Context) {
+		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{
+			"code":             "00000",
+			"desc":             "ok",
+			"connection_count": manager.CountConnections(),
+			"connections":      manager.GetClients(),
+		})
+	}, "WebSocket 连接统计", "WebSocket", "运维")
 
-// 	// 优雅关闭
-// 	go func() {
-// 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-// 			log.Fatalf("Server error: %v", err)
-// 		}
-// 	}()
+	// 后台定时广播：把在线连接数推送给所有客户端。
+	var broadcastCtx, stopBroadcast = context.WithCancel(context.Background())
+	defer stopBroadcast()
 
-// 	log.Println("WebSocket server started on :8080")
+	go broadcastLoop(broadcastCtx, manager)
 
-// 	// 等待中断信号
-// 	quit := make(chan os.Signal, 1)
-// 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-// 	<-quit
+	go func() {
+		if err := engine.Run(":8080"); err != nil {
+			log.Printf("HTTP 服务退出: %v", err)
+		}
+	}()
 
-// 	log.Println("Shutting down server...")
+	// 关闭顺序：先停止广播，再关闭管理器（通知客户端并关闭连接），最后关闭 HTTP 服务。
+	if err := engine.WaitSignalAndShutdown(5*time.Second, func() error {
+		stopBroadcast()
+		return manager.Close()
+	}); err != nil {
+		log.Printf("优雅关闭失败: %v", err)
+	}
+}
 
-// 	// 优雅关闭
-// 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-// 	defer shutdownCancel()
+// newManager 创建带自定义配置的 WebSocket 管理器。
+func newManager() (*websocket.Manager, error) {
+	config := upgrader.NewDefaultConfig()
+	config.ReadTimeout = 60 * time.Second
+	config.WriteTimeout = 10 * time.Second
+	config.MaxReadLimit = 1 << 20 // 单条消息上限 1 MiB
+	config.Subprotocols = []string{"leego.v1"}
 
-// 	if err := server.Shutdown(shutdownCtx); err != nil {
-// 		log.Fatalf("Server shutdown error: %v", err)
-// 	}
+	// 来源校验：生产环境务必改为校验真实域名白名单，否则存在跨站 WebSocket 劫持风险。
+	config.OriginCheckFunc = func(req *http.Request) bool {
+		origin := req.Header.Get("Origin")
+		if origin == "" {
+			// 非浏览器客户端通常不带 Origin，这里直接放行。
+			return true
+		}
 
-// 	cancel() // 停止 WebSocket 管理器
-// 	log.Println("Server stopped")
-// }
+		parsed, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+
+		// 示例允许本机任意端口访问。
+		switch parsed.Hostname() {
+		case "127.0.0.1", "localhost", "::1":
+			return true
+		default:
+			return false
+		}
+	}
+
+	return websocket.NewManager(config), nil
+}
+
+// broadcastLoop 定时向全部客户端广播在线连接数。
+func broadcastLoop(ctx context.Context, manager *websocket.Manager) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-manager.Done():
+			return
+		case <-ticker.C:
+			payload := map[string]any{
+				"online": manager.CountConnections(),
+				"time":   time.Now().Format(time.DateTime),
+			}
+
+			if err := manager.Broadcast(msgTypeTick, payload); err != nil {
+				log.Printf("WebSocket 广播失败: %v", err)
+			}
+		}
+	}
+}

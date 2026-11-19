@@ -4,28 +4,44 @@ import (
 	"time"
 )
 
-// MessageType 定义消息类型的数据类型
+// MessageType 定义业务消息类型。
+//
+// 消息类型由应用层自定义，本包内置的类型仅覆盖连接管理所需的最小集合。
 type MessageType string
 
 const (
-	MSG_TYPE_PING      MessageType = "ping"
-	MSG_TYPE_PONG      MessageType = "pong"
+	// MSG_TYPE_PING 为心跳请求消息类型。
+	MSG_TYPE_PING MessageType = "ping"
+	// MSG_TYPE_PONG 为心跳响应消息类型。
+	MSG_TYPE_PONG MessageType = "pong"
+	// MSG_TYPE_BROADCAST 为广播消息类型。
 	MSG_TYPE_BROADCAST MessageType = "broadcast"
-	MSG_TYPE_PRIVATE   MessageType = "private"
-	MSG_TYPE_IDENTIFY  MessageType = "identify"
+	// MSG_TYPE_PRIVATE 为私聊消息类型。
+	MSG_TYPE_PRIVATE MessageType = "private"
+	// MSG_TYPE_IDENTIFY 为身份识别消息类型。
+	MSG_TYPE_IDENTIFY MessageType = "identify"
+	// MSG_TYPE_CONNECTED 为连接成功消息类型。
 	MSG_TYPE_CONNECTED MessageType = "connected"
 )
 
-// Message 定义 WebSocket 消息的数据结构
+// Message 定义客户端与服务端之间传输的业务消息。
+//
+// 消息体固定为 JSON 文本帧：字段名使用小写下划线风格，
+// 与常见前端约定一致，同时便于日志与抓包排查。
 type Message struct {
-	Type      MessageType `json:"type"`           // 消息类型
-	Timestamp int64       `json:"timestamp"`      // 消息时间戳
-	From      string      `json:"from,omitempty"` // 发送方Id
-	To        string      `json:"to,omitempty"`   // 接收方Id
-	Data      any         `json:"data"`           // 消息数据
+	// Type 为消息类型。
+	Type MessageType `json:"type"`
+	// Timestamp 为消息产生时间（Unix 秒）。
+	Timestamp int64 `json:"timestamp"`
+	// From 为发送方客户端 ID，仅服务端下发时填充。
+	From string `json:"from,omitempty"`
+	// To 为接收方客户端 ID，仅私聊消息使用。
+	To string `json:"to,omitempty"`
+	// Data 为消息载荷，可以是任意可 JSON 序列化的值。
+	Data any `json:"data"`
 }
 
-// NewWelcomeMessage 创建一条欢迎消息
+// NewWelcomeMessage 创建连接成功消息。
 func NewWelcomeMessage(clientId string) *Message {
 	return &Message{
 		Type:      MSG_TYPE_CONNECTED,
@@ -37,7 +53,7 @@ func NewWelcomeMessage(clientId string) *Message {
 	}
 }
 
-// NewPingMessage 创建一条心跳消息
+// NewPingMessage 创建心跳请求消息。
 func NewPingMessage() *Message {
 	return &Message{
 		Type:      MSG_TYPE_PING,
@@ -46,7 +62,7 @@ func NewPingMessage() *Message {
 	}
 }
 
-// NewPongMessage 创建一条心跳响应消息
+// NewPongMessage 创建心跳响应消息。
 func NewPongMessage() *Message {
 	return &Message{
 		Type:      MSG_TYPE_PONG,
@@ -55,11 +71,11 @@ func NewPongMessage() *Message {
 	}
 }
 
-// NewSimpleMessage 创建一条简单的消息
-func NewSimpleMessage(messageType MessageType, message any) *Message {
+// NewSimpleMessage 创建携带任意载荷的简单消息。
+func NewSimpleMessage(messageType MessageType, data any) *Message {
 	return &Message{
 		Type:      messageType,
 		Timestamp: time.Now().Unix(),
-		Data:      message,
+		Data:      data,
 	}
 }

@@ -2,192 +2,206 @@ package limiter
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"gitee.com/leminewx/leego"
-	"gitee.com/leminewx/leego/response"
 )
 
-// FixedWindowLimiter 定义固定窗口限流器的数据结构
+// _DEFAULT_FIXED_WINDOW_SIZE 为固定窗口的默认窗口长度。
+const _DEFAULT_FIXED_WINDOW_SIZE = time.Second
+
+/*
+FixedWindowLimiter 实现固定窗口限流。
+
+原理：为每个窗口维护一个计数器，窗口到期后整体清零。
+优点是实现简单、单次判断只有一次加锁；缺点是窗口边界存在“双倍突发”：
+若限额为 N，则在相邻窗口交界处的极短时间内可能通过最多 2N 个请求。
+
+计数与窗口起点必须由同一把锁保护：
+一旦拆成 atomic 快路径 + 锁慢路径，二者互不互斥，就会出现计数丢失，
+实际放行量可能超过限额。
+*/
 type FixedWindowLimiter struct {
-	limit      int32
-	count      int32
-	isEnabled  int32
+	// isEnabled 表示限流是否启用（atomic，避免与计数锁竞争）。
+	isEnabled atomic.Bool
+	// limit 为窗口内允许的最大请求数（atomic，支持热更新）。
+	limit atomic.Int64
+
+	// mu 保护以下全部字段。
+	mu sync.Mutex
+	// count 为当前窗口内已放行的请求数。
+	count int64
+	// windowStart 为当前窗口的起始时间。
+	windowStart time.Time
+	// windowSize 为窗口长度。
 	windowSize time.Duration
-	lastTime   time.Time
-	lock       sync.RWMutex
 }
 
+// 编译期断言：固定窗口限流器必须满足 Limiter 接口。
 var _ Limiter = (*FixedWindowLimiter)(nil)
 
 /*
-NewFixedWindowLimiter 新建一个固定窗口限流器
-  - limit: 限制数量
-  - windowSize: 窗口大小
+NewFixedWindowLimiter 创建固定窗口限流器。
+
+参数：
+  - limit：每个窗口允许的最大请求数；小于等于 0 表示不限流（始终放行）；
+  - windowSize：窗口长度，小于等于 0 时使用默认值 1 秒。
+
+限流器创建后即处于启用状态，无需再调用 Enable。
 */
 func NewFixedWindowLimiter(limit int, windowSize time.Duration) *FixedWindowLimiter {
-	return &FixedWindowLimiter{
-		limit:      int32(limit),
-		windowSize: windowSize,
-		lastTime:   time.Now(),
+	if windowSize <= 0 {
+		windowSize = _DEFAULT_FIXED_WINDOW_SIZE
 	}
+
+	instance := &FixedWindowLimiter{
+		windowStart: time.Now(),
+		windowSize:  windowSize,
+	}
+	instance.limit.Store(int64(limit))
+	instance.Enable()
+
+	return instance
 }
 
-// Enable 启用中间件
+// Enable 启用限流。
 func (own *FixedWindowLimiter) Enable() {
-	atomic.StoreInt32(&own.isEnabled, 1)
+	own.isEnabled.Store(true)
 }
 
-// Disable 禁用中间件
+// Disable 临时禁用限流，中间件将直接放行。
 func (own *FixedWindowLimiter) Disable() {
-	atomic.StoreInt32(&own.isEnabled, 0)
+	own.isEnabled.Store(false)
 }
 
-// IsEnabled 检查是否启用
+// IsEnabled 返回限流是否启用。
 func (own *FixedWindowLimiter) IsEnabled() bool {
-	return atomic.LoadInt32(&own.isEnabled) == 1
+	return own.isEnabled.Load()
 }
 
-// SetLimit 设置限流阈值
+// SetLimit 更新窗口内允许的最大请求数，非正数表示不限流。
 func (own *FixedWindowLimiter) SetLimit(limit int) {
-	atomic.StoreInt32(&own.limit, int32(limit))
+	own.limit.Store(int64(limit))
 }
 
-// SetWindowSize 设置窗口大小
-func (own *FixedWindowLimiter) SetWindowSize(size time.Duration) {
-	if size <= 0 {
-		size = time.Second // 默认1秒
+// SetWindowSize 设置窗口长度并重置当前窗口。
+//
+// 重置而不是按比例折算历史计数：折算会让“限额”与“实际放行量”的对应关系
+// 变得不可预测，而重置后的语义清晰——调用方改完配置，立即从新窗口重新计数。
+func (own *FixedWindowLimiter) SetWindowSize(windowSize time.Duration) {
+	if windowSize <= 0 {
+		windowSize = _DEFAULT_FIXED_WINDOW_SIZE
 	}
 
-	own.lock.Lock()
-	defer own.lock.Unlock()
-
-	// 计算新窗口的起始时间
-	now := time.Now()
-	elapsed := now.Sub(own.lastTime)
-
-	// 如果当前窗口已经过期，重置
-	if elapsed >= own.windowSize {
-		own.count = 0
-		own.lastTime = now
-	} else if own.windowSize != 0 {
-		// 调整计数以匹配新的窗口大小
-		ratio := float64(size) / float64(own.windowSize)
-		adjustedCount := float64(own.count) * ratio
-		own.count = int32(adjustedCount)
-		if own.count < 0 {
-			own.count = 0
-		}
-	}
-
-	own.windowSize = size
+	own.mu.Lock()
+	own.windowSize = windowSize
+	own.windowStart = time.Now()
+	own.count = 0
+	own.mu.Unlock()
 }
 
-// GetConfig 获取配置
+// GetLimit 返回窗口内允许的最大请求数。
+func (own *FixedWindowLimiter) GetLimit() int {
+	return int(own.limit.Load())
+}
+
+// GetWindowSize 返回窗口长度。
+func (own *FixedWindowLimiter) GetWindowSize() time.Duration {
+	own.mu.Lock()
+	windowSize := own.windowSize
+	own.mu.Unlock()
+	return windowSize
+}
+
+/*
+GetConfig 返回当前配置。
+
+返回的 limit 与 windowSize 各自属于不同的同步域（原子变量、互斥锁），
+因此二者不保证是“同一瞬间”的快照；对于限流配置这类低频变更项，该差异可以忽略。
+*/
 func (own *FixedWindowLimiter) GetConfig() (limit int, windowSize time.Duration) {
-	// limit 由 atomic 保护（见 SetLimit），需用 atomic 读取
-	limit = int(atomic.LoadInt32(&own.limit))
-
-	own.lock.RLock()
-	windowSize = own.windowSize
-	own.lock.RUnlock()
-	return
+	return int(own.limit.Load()), own.GetWindowSize()
 }
 
-// GetMiddleware 获取中间件函数
-func (own *FixedWindowLimiter) GetMiddleware(timeout time.Duration) leego.MiddlewareFunc {
-	if timeout < 0 {
-		timeout = 3 * time.Second
+// GetMiddleware 返回固定窗口限流中间件。
+//
+// 参数 waitTimeout 表示“配额不足时最多等待多久”：
+//   - 0：不等待，立即返回 429（推荐用于对外接口）；
+//   - 负数：使用默认值 3 秒；
+//   - 正数：在超时内轮询等待，期间请求会被挂起。
+func (own *FixedWindowLimiter) GetMiddleware(waitTimeout time.Duration) leego.MiddlewareFunc {
+	if waitTimeout < 0 {
+		waitTimeout = _DEFAULT_WAIT_TIMEOUT
 	}
 
 	return func(next leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
-			// 未启用，直接跳过
-			if atomic.LoadInt32(&own.isEnabled) == 0 {
+			if !own.IsEnabled() {
 				next(ctx)
 				return
 			}
 
-			// 限流检查
-			if !own.AllowWithTimeout(ctx.Request.Context(), timeout) {
-				ctx.ResponseError(http.StatusTooManyRequests, response.GetStatusLowerText(http.StatusTooManyRequests))
+			var allowed bool
+			if waitTimeout == 0 {
+				allowed = own.Allow()
+			} else {
+				allowed = own.AllowWithTimeout(ctx.Request.Context(), waitTimeout)
+			}
+
+			if !allowed {
+				writeTooManyRequests(ctx)
 				return
 			}
 
-			// 调用下一个处理器
 			next(ctx)
 		}
 	}
 }
 
-// Allow 非阻塞的允许检查，立即返回是否允许
+// Allow 非阻塞地判断是否放行，放行时消耗一个配额。
 func (own *FixedWindowLimiter) Allow() bool {
-	return own.allow()
-}
+	own.mu.Lock()
+	defer own.mu.Unlock()
 
-// AllowWithTimeout 带超时的允许检查
-func (own *FixedWindowLimiter) AllowWithTimeout(ctx context.Context, timeout time.Duration) bool {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	return own.Wait(timeoutCtx) == nil
-}
-
-// Wait 带上下文的允许检查，直到允许或取消上下文
-func (own *FixedWindowLimiter) Wait(ctx context.Context) error {
-	// 先尝试一次
-	if own.allow() {
-		return nil
-	}
-
-	// 如果没有设置超时，直接返回错误
-	if _, ok := ctx.Deadline(); !ok {
-		return fmt.Errorf("limiter: context has no deadline")
-	}
-
-	// 阻塞等待允许或超时
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(300 * time.Millisecond):
-			if own.allow() {
-				return nil
-			}
-		}
-	}
-}
-
-func (own *FixedWindowLimiter) allow() bool {
-	// 注意：此处不能再走「原子 CAS 快速路径」。
-	// 原快速路径在未检查窗口是否过期的情况下就自增 count，会导致：
-	// 1. 窗口已过期时本应重置计数，却因为 count 已达上限而误拒；
-	// 2. count 的读改写同时被 atomic 与 lock 两种方式保护，二者不互斥，
-	//    与慢路径并发时会丢失更新，实际放行量可能超过 limit。
-	// 计数与窗口时间必须在同一把锁内保持一致。
-	own.lock.Lock()
-	defer own.lock.Unlock()
-
-	// 检查是否需要重置窗口
 	now := time.Now()
-	if now.Sub(own.lastTime) >= own.windowSize {
+	if now.Sub(own.windowStart) >= own.windowSize {
+		own.windowStart = now
 		own.count = 0
-		own.lastTime = now
 	}
 
-	// 检查是否超过限制
-	if own.count >= atomic.LoadInt32(&own.limit) {
+	limit := own.limit.Load()
+	if limit <= 0 {
+		return true
+	}
+
+	if own.count >= limit {
 		return false
 	}
 
 	own.count++
+
 	return true
+}
+
+// AllowWithTimeout 在给定超时内等待配额。
+func (own *FixedWindowLimiter) AllowWithTimeout(ctx context.Context, timeout time.Duration) bool {
+	if timeout <= 0 {
+		return own.Allow()
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	waitContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	return waitForQuota(waitContext, own.Allow) == nil
+}
+
+// Wait 阻塞等待配额，直到放行或上下文结束。
+func (own *FixedWindowLimiter) Wait(ctx context.Context) error {
+	return waitForQuota(ctx, own.Allow)
 }

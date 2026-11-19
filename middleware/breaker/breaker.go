@@ -1,3 +1,16 @@
+// Package breaker 提供基于失败率的滑动窗口熔断器。
+//
+// 与“连续失败次数”模型相比，失败率模型更贴近真实故障：
+// 高流量接口偶发失败不会误触发，低流量接口也不会因为一次失败就长期熔断。
+//
+// 状态机：
+//
+//	Closed  --(窗口内失败率 >= 阈值且样本数达标)-->  Open
+//	Open    --(等待 OpenTimeout)-->                 HalfOpen
+//	HalfOpen --(连续成功达到阈值)-->                 Closed
+//	HalfOpen --(任意失败)-->                         Open
+//
+// 并发约定：所有状态字段由 mu 保护；指标使用 atomic，避免与状态锁竞争。
 package breaker
 
 import (
@@ -10,185 +23,314 @@ import (
 	"gitee.com/leminewx/leego"
 )
 
+// ErrCircuitBreakerIsOpen 表示熔断器处于打开状态，拒绝执行请求。
 var ErrCircuitBreakerIsOpen = errors.New("breaker: circuit breaker is open, refuse to execute the request")
 
-// CircuitBreaker 定义熔断器的数据结构
+// _BUCKET_COUNT 定义滑动窗口的桶数量。
+//
+// 桶越多，失败率对时间越敏感，但统计开销也越大；10 个桶在精度与开销之间较为均衡。
+const _BUCKET_COUNT = 10
+
+// CircuitBreaker 定义熔断器。
+//
+// 熔断器可被多协程并发调用；GetMiddleware 返回的中间件同样并发安全。
 type CircuitBreaker struct {
-	isEnabled        int32                            // 是否启用
-	state            State                            // 当前状态
-	failureCount     int                              // 失败计数
-	successCount     int                              // 成功计数
-	failureThreshold int                              // 失败阈值：超过此值触发熔断
-	successThreshold int                              // 成功阈值：半开状态下超过此值恢复闭合
-	breakTimeout     time.Duration                    // 熔断超时时间：打开状态持续时间
-	lastFailure      time.Time                        // 最后一次失败时间
-	isSuccessFunc    func(status int, err error) bool // 判断请求是否成功的函数
-	metrics          *metrics                         // 指标统计
-	lock             sync.RWMutex                     // 互斥锁保证并发安全
+	// isEnabled 表示熔断器是否启用（atomic，避免与状态锁竞争）。
+	isEnabled atomic.Bool
+	// metrics 为运行指标（atomic）。
+	metrics metrics
+
+	// mu 保护以下全部字段。
+	mu sync.Mutex
+	// config 为不可变配置。
+	config Config
+	// state 为当前状态。
+	state State
+	// deadline 为打开状态的结束时间。
+	deadline time.Time
+	// probes 为半开状态下已放行但未完成的探测请求数。
+	probes int64
+	// successes 为半开状态下连续成功次数。
+	successes int64
+	// buckets 为滑动窗口桶。
+	buckets []windowBucket
+	// bucketSize 为单个桶的时间跨度。
+	bucketSize time.Duration
+	// currentBucket 为当前桶下标。
+	currentBucket int
+	// lastAdvance 为上次推进窗口的时间。
+	lastAdvance time.Time
+	// isSuccessFunc 判断一次调用是否成功。
+	isSuccessFunc func(status int, err error) bool
 }
 
-// NewCircuitBreaker 新建一个熔断器
-func NewCircuitBreaker(failureThreshold, successThreshold int, breakTimeout time.Duration) *CircuitBreaker {
-	return &CircuitBreaker{
-		state:            STATE_CLOSED,
-		failureThreshold: failureThreshold,
-		successThreshold: successThreshold,
-		breakTimeout:     breakTimeout,
-		metrics:          &metrics{},
+// windowBucket 保存一个时间桶内的成功与失败计数。
+type windowBucket struct {
+	// successes 为成功次数。
+	successes int64
+	// failures 为失败次数。
+	failures int64
+}
 
-		// 默认判断逻辑：状态码 >= 500 或 err != nil 视为失败
+// NewCircuitBreaker 创建熔断器。
+//
+// 参数 config 中非法的数值会被修正为安全默认值（见 Config.Normalize），
+// 因此调用方即使传入零值配置也能获得可用的熔断器。
+func NewCircuitBreaker(config Config) *CircuitBreaker {
+	config = config.Normalize()
+
+	instance := &CircuitBreaker{
+		config:      config,
+		state:       STATE_CLOSED,
+		buckets:     make([]windowBucket, _BUCKET_COUNT),
+		bucketSize:  config.WindowSize / _BUCKET_COUNT,
+		lastAdvance: time.Now(),
 		isSuccessFunc: func(status int, err error) bool {
 			return err == nil && status < http.StatusInternalServerError
 		},
 	}
+	instance.isEnabled.Store(config.IsEnabled)
+	return instance
 }
 
-// GetMiddleware 获取中间件函数（若请求被熔断，则响应503）
+// GetMiddleware 返回熔断中间件。
+//
+// 行为：
+//   - 熔断器未启用时直接放行；
+//   - 打开状态返回 503，不执行后续处理链；
+//   - 其余状态正常执行，并按响应状态码记录成功/失败。
 func (own *CircuitBreaker) GetMiddleware() leego.MiddlewareFunc {
-	const content = "service is temporarily unavailable and please try again later"
+	const message = "service is temporarily unavailable and please try again later"
+
 	return func(next leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
-			// 未启用，直接跳过
-			if atomic.LoadInt32(&own.isEnabled) == 0 {
+			if !own.IsEnabled() {
 				next(ctx)
 				return
 			}
 
-			// 执行前检查熔断器状态
-			// 注意：totalRequests 与 blockedRequests 均由 callBeforeExecute 内部统一累加，
-			// 此处不可重复累加，否则中间件路径下的指标会被计成两倍
-			if err := own.callBeforeExecute(); err != nil {
-				ctx.ResponseError(http.StatusServiceUnavailable, content)
+			if err := own.beforeExecute(); err != nil {
+				ctx.ResponseError(http.StatusServiceUnavailable, message)
 				return
 			}
 
-			// 调用下一个处理器
 			next(ctx)
-
-			// 执行后检查熔断器状态
-			own.callAfterExecute(ctx.GetStatusCode(), nil)
+			own.afterExecute(ctx.GetStatusCode(), nil)
 		}
 	}
 }
 
-// Execute 执行函数并进行熔断控制
-func (own *CircuitBreaker) Execute(call func() error) (err error) {
-	// 执行前调用
-	if err = own.callBeforeExecute(); err != nil {
+// Execute 在熔断保护下执行给定函数。
+//
+// 返回 ErrCircuitBreakerIsOpen 表示请求被拒绝，未执行 call。
+func (own *CircuitBreaker) Execute(call func() error) error {
+	if call == nil {
+		return errors.New("breaker: nil call")
+	}
+
+	if err := own.beforeExecute(); err != nil {
 		return err
 	}
 
-	// 执行函数
-	err = call()
-
-	// 执行后调用
-	if err == nil {
-		own.callAfterExecute(http.StatusOK, nil)
-	} else {
-		own.callAfterExecute(http.StatusInternalServerError, err)
+	err := call()
+	status := http.StatusOK
+	if err != nil {
+		status = http.StatusInternalServerError
 	}
 
+	own.afterExecute(status, err)
 	return err
 }
 
-// ExecuteWithContext 执行带上下文的函数，并进行熔断控制
-func (own *CircuitBreaker) ExecuteWithContext(ctx *leego.Context, call func(ctx *leego.Context) error) (err error) {
-	// 执行前调用
-	if err = own.callBeforeExecute(); err != nil {
+// ExecuteWithContext 在熔断保护下执行带上下文的函数。
+func (own *CircuitBreaker) ExecuteWithContext(ctx *leego.Context, call func(ctx *leego.Context) error) error {
+	if call == nil {
+		return errors.New("breaker: nil call")
+	}
+
+	if err := own.beforeExecute(); err != nil {
 		return err
 	}
 
-	// 执行函数
-	err = call(ctx)
-
-	// 执行后调用
-	own.callAfterExecute(ctx.GetStatusCode(), err)
-
-	return
-}
-
-// callBeforeExecute 执行前调用，决定是否允许执行
-func (own *CircuitBreaker) callBeforeExecute() (err error) {
-	own.metrics.totalRequests.Add(1)
-
-	own.lock.Lock()
-
-	// 打开状态，需要检查，其他状态可以正常执行
-	if own.state == STATE_OPEN {
-		if time.Since(own.lastFailure) >= own.breakTimeout {
-			// 检查打开状态是否超时，若打开超时，则进入半开状态
-			own.state = STATE_HALF_OPEN
-			own.successCount = 0
-			own.metrics.stateChanges.Add(1)
-		} else {
-			// 断开未超时，拒绝执行
-			err = ErrCircuitBreakerIsOpen
-			own.metrics.blockedRequests.Add(1)
-		}
+	err := call(ctx)
+	status := http.StatusOK
+	if ctx != nil && ctx.GetStatusCode() != 0 {
+		status = ctx.GetStatusCode()
+	} else if err != nil {
+		status = http.StatusInternalServerError
 	}
 
-	own.lock.Unlock()
-	return
+	own.afterExecute(status, err)
+	return err
 }
 
-// callAfterExecute 执行后调用，更新熔断器状态
-func (own *CircuitBreaker) callAfterExecute(status int, err error) {
-	own.lock.Lock()
+// beforeExecute 判断是否允许本次调用。
+func (own *CircuitBreaker) beforeExecute() error {
+	own.metrics.totalRequests.Add(1)
 
-	// 保存旧状态用于比较
-	oldState := own.state
+	own.mu.Lock()
+	defer own.mu.Unlock()
 
-	// 判断是否成功
+	now := time.Now()
+	switch own.state {
+	case STATE_OPEN:
+		if now.Before(own.deadline) {
+			own.metrics.blockedRequests.Add(1)
+			return ErrCircuitBreakerIsOpen
+		}
+
+		own.transitionToHalfOpenLocked(now)
+		fallthrough
+	case STATE_HALF_OPEN:
+		if own.probes >= own.config.HalfOpenMaxRequests {
+			own.metrics.blockedRequests.Add(1)
+			return ErrCircuitBreakerIsOpen
+		}
+
+		own.probes++
+	}
+
+	return nil
+}
+
+// afterExecute 记录本次调用结果并推进状态机。
+func (own *CircuitBreaker) afterExecute(status int, err error) {
+	own.mu.Lock()
+	defer own.mu.Unlock()
+
 	isSuccess := own.isSuccessFunc(status, err)
 	if !isSuccess {
 		own.metrics.failedRequests.Add(1)
 	}
 
+	now := time.Now()
+
 	switch own.state {
-	// 闭合状态
 	case STATE_CLOSED:
-		if !isSuccess {
-			// 执行失败，增加失败计数
-			own.failureCount++
-			own.lastFailure = time.Now()
+		own.recordLocked(now, isSuccess)
+		own.evaluateLocked(now)
 
-			// 检查是否达到失败阈值，若超过失败阈值，则触发熔断机制
-			if own.failureCount >= own.failureThreshold {
-				own.state = STATE_OPEN
-			}
-		} else {
-			// 执行成功，重置失败计数
-			own.failureCount = 0
-		}
-
-	// 半开状态
 	case STATE_HALF_OPEN:
-		if !isSuccess {
-			// 执行失败，回到打开状态
-			own.state = STATE_OPEN
-			own.lastFailure = time.Now()
-			own.failureCount = 1
-			own.successCount = 0
-		} else {
-			// 执行成功，增加成功计数
-			own.successCount++
-			// 检查是否达到成功阈值，若达到成功阈值，则关闭熔断机制
-			if own.successCount >= own.successThreshold {
-				own.state = STATE_CLOSED
-				own.failureCount = 0
-				own.successCount = 0
-			}
+		if own.probes > 0 {
+			own.probes--
 		}
 
-	// 打开状态
-	// 理论上不会进入这里，因为打开状态下 callBeforeExecute 会阻止执行
+		if !isSuccess {
+			own.transitionToOpenLocked(now)
+			return
+		}
+
+		own.successes++
+		if own.successes >= own.config.HalfOpenSuccessThreshold {
+			own.transitionToClosedLocked(now)
+		}
+
 	case STATE_OPEN:
+		// 打开状态下正常不会执行到此处；保留分支以覆盖“执行中途被其他协程打开”的竞态。
+	}
+}
+
+// recordLocked 将一次调用结果写入当前时间桶。
+func (own *CircuitBreaker) recordLocked(now time.Time, success bool) {
+	own.advanceLocked(now)
+
+	if success {
+		own.buckets[own.currentBucket].successes++
+	} else {
+		own.buckets[own.currentBucket].failures++
+	}
+}
+
+// advanceLocked 按流逝时间推进窗口，并清空过期桶。
+func (own *CircuitBreaker) advanceLocked(now time.Time) {
+	if own.bucketSize <= 0 {
+		return
 	}
 
-	// 如果状态发生变化，记录状态变化次数
-	if oldState != own.state {
+	steps := int(now.Sub(own.lastAdvance) / own.bucketSize)
+	if steps <= 0 {
+		return
+	}
+
+	if steps >= len(own.buckets) {
+		for index := range own.buckets {
+			own.buckets[index] = windowBucket{}
+		}
+		own.currentBucket = 0
+		own.lastAdvance = now
+		return
+	}
+
+	for step := 0; step < steps; step++ {
+		own.currentBucket = (own.currentBucket + 1) % len(own.buckets)
+		own.buckets[own.currentBucket] = windowBucket{}
+	}
+
+	own.lastAdvance = now
+}
+
+// evaluateLocked 根据窗口统计判断是否需要打开熔断器。
+func (own *CircuitBreaker) evaluateLocked(now time.Time) {
+	successes, failures := own.countLocked()
+	total := successes + failures
+	if total < own.config.MinimumRequests {
+		return
+	}
+
+	if float64(failures)/float64(total) >= own.config.FailureRate {
+		own.transitionToOpenLocked(now)
+	}
+}
+
+// countLocked 汇总窗口内的成功与失败次数。
+func (own *CircuitBreaker) countLocked() (successes, failures int64) {
+	for _, bucket := range own.buckets {
+		successes += bucket.successes
+		failures += bucket.failures
+	}
+
+	return
+}
+
+// transitionToOpenLocked 切换到打开状态。
+func (own *CircuitBreaker) transitionToOpenLocked(now time.Time) {
+	if own.state != STATE_OPEN {
 		own.metrics.stateChanges.Add(1)
 	}
 
-	own.lock.Unlock()
+	own.state = STATE_OPEN
+	own.deadline = now.Add(own.config.OpenTimeout)
+	own.probes = 0
+	own.successes = 0
+}
+
+// transitionToHalfOpenLocked 切换到半开状态。
+func (own *CircuitBreaker) transitionToHalfOpenLocked(now time.Time) {
+	own.state = STATE_HALF_OPEN
+	own.probes = 0
+	own.successes = 0
+	own.deadline = time.Time{}
+	own.metrics.stateChanges.Add(1)
+
+	// 重置窗口，使半开阶段的统计不受历史失败影响。
+	for index := range own.buckets {
+		own.buckets[index] = windowBucket{}
+	}
+	own.currentBucket = 0
+	own.lastAdvance = now
+}
+
+// transitionToClosedLocked 切换到闭合状态。
+func (own *CircuitBreaker) transitionToClosedLocked(now time.Time) {
+	own.state = STATE_CLOSED
+	own.probes = 0
+	own.successes = 0
+	own.deadline = time.Time{}
+	own.metrics.stateChanges.Add(1)
+
+	for index := range own.buckets {
+		own.buckets[index] = windowBucket{}
+	}
+	own.currentBucket = 0
+	own.lastAdvance = now
 }

@@ -2,6 +2,7 @@ package sse
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -10,58 +11,78 @@ import (
 	"gitee.com/leminewx/leego/response"
 )
 
-// Message 定义 SSE 消息的数据结构（消息发送之后更新就无效了，但可以复用）
+/*
+Message 表示一条 SSE 消息。
+
+字段可读可改，但“格式化”只发生一次：
+一旦消息被写入过（或被 WriteMessage 投递过），后续修改字段不会再影响已生成的报文。
+因此请把 Message 视为“一次发送的不可变快照”；如需复用同一对象，
+请先调用 Reset 清空缓存，且确保此时没有任何协程正在读它。
+*/
 type Message struct {
-	// Id 表示事件的 ID，用于重连时指定 Last-Event-ID 头
+	// Id 为事件 ID，客户端重连时会在 Last-Event-ID 请求头中回传。
 	Id string
-	/*
-		Event 表示事件类型，可自定义
-		  - 如果指定，客户端会触发该事件
-		  - 如果不指定，默认为 message 事件
-	*/
+	// Event 为事件类型；为空时客户端按默认的 message 事件处理。
 	Event string
-	// Retry 表示客户端在连接断开后重连之前等待的毫秒数
+	// Retry 为客户端重连前的等待毫秒数；小于等于 0 表示不下发该字段。
 	Retry int64
-	// Data 表示消息的数据，可以有多行，且每行都会作为一个数据片段，最终将所有数据用换行符连接起来作为完整数据
+	// Data 为消息载荷，支持多行：每行都会被编码成一条 data: 记录。
 	Data []byte
 
-	formatted     []byte // 格式化数据，提高复用性
+	// formatted 为格式化后的报文缓存，非空后不再改变。
+	formatted []byte
+	// formattedLock 保护 formatted 的构建过程。
 	formattedLock sync.Mutex
 }
 
-// 使用 sync.Pool 复用 buffer
+// bufferPool 复用格式化过程中的临时缓冲区，降低高频广播时的分配压力。
 var bufferPool = &sync.Pool{
 	New: func() any { return bytes.NewBuffer(make([]byte, 0, 1024)) },
 }
 
+// 内置消息模板。
+//
+// 统一使用 %q 生成带引号的字符串，避免客户端 ID 中的引号破坏 JSON 结构。
 const (
-	_MSG_CONNECTED       = `{"time": "%s", "message": "Welcome to connect SSE server", "client_id": "%s"}`
-	_MSG_HEARTBEAT       = `{"time": "%s", "message": "Ping"}`
-	_MSG_DISCONNECTED    = `{"time": "%s", "message": "SSE connection is closed"}`
-	_MSG_SERVER_SHUTDOWN = `{"time": "%s", "message": "SSE server is shutting down"}`
+	_MSG_CONNECTED       = `{"time": %q, "message": "Welcome to connect SSE server", "client_id": %q}`
+	_MSG_HEARTBEAT       = `{"time": %q, "message": "Ping"}`
+	_MSG_DISCONNECTED    = `{"time": %q, "message": "SSE connection is closed"}`
+	_MSG_SERVER_SHUTDOWN = `{"time": %q, "message": "SSE server is shutting down"}`
 )
 
-// NewConnectedMessage 创建一个连接消息
+// NewConnectedMessage 创建“连接成功”提示消息。
 func NewConnectedMessage(clientId string) *Message {
-	return NewMessageWithEvent("connect", []byte(fmt.Sprintf(_MSG_CONNECTED, time.Now().Format(time.DateTime), clientId)))
+	return &Message{
+		Event: "connect",
+		Data:  []byte(fmt.Sprintf(_MSG_CONNECTED, time.Now().Format(time.DateTime), clientId)),
+	}
 }
 
-// NewHeartbeatMessage 创建一个心跳消息
+// NewHeartbeatMessage 创建心跳消息。
 func NewHeartbeatMessage() *Message {
-	return NewMessageWithEvent("heartbeat", []byte(fmt.Sprintf(_MSG_HEARTBEAT, time.Now().Format(time.DateTime))))
+	return &Message{
+		Event: "heartbeat",
+		Data:  []byte(fmt.Sprintf(_MSG_HEARTBEAT, time.Now().Format(time.DateTime))),
+	}
 }
 
-// NewClosedMessage 创建一个连接关闭消息
+// NewClosedMessage 创建“连接已关闭”消息。
 func NewClosedMessage() *Message {
-	return NewMessageWithEvent("close", []byte(fmt.Sprintf(_MSG_DISCONNECTED, time.Now().Format(time.DateTime))))
+	return &Message{
+		Event: "close",
+		Data:  []byte(fmt.Sprintf(_MSG_DISCONNECTED, time.Now().Format(time.DateTime))),
+	}
 }
 
-// NewShutdownMessage 创建一个服务器关闭消息
+// NewShutdownMessage 创建“服务器即将关闭”消息。
 func NewShutdownMessage() *Message {
-	return NewMessageWithEvent("close", []byte(fmt.Sprintf(_MSG_SERVER_SHUTDOWN, time.Now().Format(time.DateTime))))
+	return &Message{
+		Event: "close",
+		Data:  []byte(fmt.Sprintf(_MSG_SERVER_SHUTDOWN, time.Now().Format(time.DateTime))),
+	}
 }
 
-// NewMessageWithEvent 创建一个指定事件类型的消息
+// NewMessageWithEvent 创建指定事件类型的消息。
 func NewMessageWithEvent(event string, data []byte) *Message {
 	return &Message{
 		Event: event,
@@ -69,28 +90,51 @@ func NewMessageWithEvent(event string, data []byte) *Message {
 	}
 }
 
-// Send 写入格式化的 SSE 消息到响应
+// Reset 清空格式化缓存，使消息可以重新构建报文。
+//
+// 调用方必须保证此刻没有其它协程正在读取或写入该消息。
+func (own *Message) Reset() {
+	own.formattedLock.Lock()
+	own.formatted = nil
+	own.formattedLock.Unlock()
+}
+
+// Write 将消息写入响应并立即刷新。
+//
+// 无效消息（所有字段均为空）会被静默忽略并返回 nil。
+// 写入失败时返回包装后的错误，便于上层区分“客户端断开”和“业务错误”。
 func (own *Message) Write(resp response.Writer) error {
-	// 若格式化数据无效，则直接返回
+	if resp == nil {
+		return errors.New("sse: nil response writer")
+	}
+
 	if !own.format() {
 		return nil
 	}
 
-	// 发送格式化后的数据
-	if _, err := resp.Write(own.formatted); err != nil {
+	// 格式化完成后的切片内容不再改变，持锁取一次引用即可安全地在锁外写入。
+	own.formattedLock.Lock()
+	payload := own.formatted
+	own.formattedLock.Unlock()
+
+	if _, err := resp.Write(payload); err != nil {
 		return fmt.Errorf("sse: write message to response error: %w", err)
 	}
+
 	resp.Flush()
 
 	return nil
 }
 
-// format 格式化数据
+// format 构建 SSE 报文，返回是否存在可写入内容。
+//
+// 采用双检查锁定：只有第一个调用者会真正构建报文，
+// 其余调用者直接复用已构建结果，因此高频广播时性能稳定。
 func (own *Message) format() bool {
 	own.formattedLock.Lock()
 	defer own.formattedLock.Unlock()
 
-	// 双检查锁定模式
+	// 双检查：已格式化则直接返回。
 	if len(own.formatted) > 0 {
 		return true
 	}
@@ -100,8 +144,12 @@ func (own *Message) format() bool {
 	}
 
 	buffer := bufferPool.Get().(*bytes.Buffer)
+	defer func() {
+		buffer.Reset()
+		bufferPool.Put(buffer)
+	}()
 
-	// 事件ID
+	// 事件 ID
 	if own.Id != "" {
 		buffer.WriteString("id: ")
 		buffer.WriteString(own.Id)
@@ -122,22 +170,17 @@ func (own *Message) format() bool {
 		buffer.WriteByte('\n')
 	}
 
-	// 数据（支持多行）
-	lines := bytes.Split(own.Data, []byte{'\n'})
-	for _, line := range lines {
+	// 数据（多行会被拆成多条 data: 记录）
+	for _, line := range bytes.Split(own.Data, []byte{'\n'}) {
 		buffer.WriteString("data: ")
 		buffer.Write(line)
 		buffer.WriteByte('\n')
 	}
 
-	// 消息结束换行
+	// 报文结束：空行
 	buffer.WriteByte('\n')
 
-	// 更新格式化数据
-	own.formatted = append(own.formatted[:0], buffer.Bytes()...) // 复用已有内存
-
-	buffer.Reset()
-	bufferPool.Put(buffer)
+	own.formatted = append([]byte(nil), buffer.Bytes()...)
 
 	return true
 }

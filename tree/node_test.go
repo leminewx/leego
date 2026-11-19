@@ -4,221 +4,95 @@ import (
 	"testing"
 )
 
-// TestNewNode 测试节点创建
-func TestNewNode(t *testing.T) {
-	tests := []struct {
-		name     string
-		segment  string
-		expected struct {
-			segment    string
-			isWildcard bool
-			paramName  string
-		}
+// TestNewNodePriority 验证不同段类型的优先级与参数名。
+func TestNewNodePriority(t *testing.T) {
+	cases := []struct {
+		name        string
+		segment     string
+		wantParam   string
+		wantPrior   int
+		wantStatic  bool
+		wantWildcar bool
 	}{
-		{
-			name:    "静态路径节点",
-			segment: "users",
-			expected: struct {
-				segment    string
-				isWildcard bool
-				paramName  string
-			}{
-				segment:    "users",
-				isWildcard: false,
-				paramName:  "",
-			},
-		},
-		{
-			name:    "参数节点",
-			segment: ":id",
-			expected: struct {
-				segment    string
-				isWildcard bool
-				paramName  string
-			}{
-				segment:    ":id",
-				isWildcard: true,
-				paramName:  "id",
-			},
-		},
-		{
-			name:    "通配符节点",
-			segment: "*",
-			expected: struct {
-				segment    string
-				isWildcard bool
-				paramName  string
-			}{
-				segment:    "*",
-				isWildcard: true,
-				paramName:  WILDCARD_DEFAULT_NAME,
-			},
-		},
-		{
-			name:    "命名通配符节点",
-			segment: "*path",
-			expected: struct {
-				segment    string
-				isWildcard bool
-				paramName  string
-			}{
-				segment:    "*path",
-				isWildcard: true,
-				paramName:  "path",
-			},
-		},
+		{name: "静态段", segment: "users", wantParam: "", wantPrior: 3, wantStatic: true, wantWildcar: false},
+		{name: "参数段", segment: ":id", wantParam: "id", wantPrior: 2, wantStatic: false, wantWildcar: true},
+		{name: "无名通配段", segment: "*", wantParam: WILDCARD_DEFAULT_NAME, wantPrior: 1, wantStatic: false, wantWildcar: true},
+		{name: "命名通配段", segment: "*filepath", wantParam: "filepath", wantPrior: 1, wantStatic: false, wantWildcar: true},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			node := NewNode[string](tt.segment)
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			node := NewNode[int](testCase.segment)
 
-			if node.segment != tt.expected.segment {
-				t.Errorf("segment = %v, want %v", node.segment, tt.expected.segment)
+			if node.segment != testCase.segment {
+				t.Fatalf("segment = %q, want %q", node.segment, testCase.segment)
 			}
 
-			if node.isWildcard != tt.expected.isWildcard {
-				t.Errorf("isWildcard = %v, want %v", node.isWildcard, tt.expected.isWildcard)
+			if node.paramName != testCase.wantParam {
+				t.Fatalf("paramName = %q, want %q", node.paramName, testCase.wantParam)
 			}
 
-			if node.paramName != tt.expected.paramName {
-				t.Errorf("paramName = %v, want %v", node.paramName, tt.expected.paramName)
+			if node.GetPriority() != testCase.wantPrior {
+				t.Fatalf("priority = %d, want %d", node.GetPriority(), testCase.wantPrior)
+			}
+
+			if node.IsStatic() != testCase.wantStatic {
+				t.Fatalf("IsStatic() = %v, want %v", node.IsStatic(), testCase.wantStatic)
+			}
+
+			if node.isWildcard != testCase.wantWildcar {
+				t.Fatalf("isWildcard = %v, want %v", node.isWildcard, testCase.wantWildcar)
+			}
+
+			if node.children == nil {
+				t.Fatal("children 必须被初始化，避免插入时 nil 判断")
 			}
 		})
 	}
 }
 
-// TestGetPriority 测试优先级计算
-func TestGetPriority(t *testing.T) {
-	tests := []struct {
-		name     string
-		segment  string
-		expected int
-	}{
-		{"静态路径", "users", 3},
-		{"参数路径", ":id", 2},
-		{"通配符", "*", 1},
-		{"命名通配符", "*path", 1},
+// TestAddChildAndFind 验证子节点挂载与查找。
+func TestAddChildAndFind(t *testing.T) {
+	root := NewNode[int]("root")
+	staticChild := NewNode[int]("users")
+	paramChild := NewNode[int](":id")
+	wildcardChild := NewNode[int]("*filepath")
+
+	root.addChild(staticChild)
+	root.addChild(paramChild)
+	root.addChild(wildcardChild)
+
+	if got := root.findChild("users"); got != staticChild {
+		t.Fatalf("findChild(users) 未命中静态子节点")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			node := NewNode[string](tt.segment)
-			priority := node.GetPriority()
-
-			if priority != tt.expected {
-				t.Errorf("GetPriority() = %v, want %v", priority, tt.expected)
-			}
-
-			// 测试缓存功能
-			cachedPriority := node.GetPriority()
-			if cachedPriority != priority {
-				t.Errorf("Cached priority = %v, want %v", cachedPriority, priority)
-			}
-		})
+	if got := root.findChild("missing"); got != nil {
+		t.Fatalf("findChild(missing) = %v, want nil", got)
 	}
-}
 
-// TestNodeChildren 测试子节点管理
-func TestNodeChildren(t *testing.T) {
-	root := NewNode[string]("/")
+	if got := root.findWildcardChild(2); got != paramChild {
+		t.Fatalf("findWildcardChild(2) 未命中参数子节点")
+	}
 
-	// 添加子节点
-	child1 := NewNode[string]("users")
-	child2 := NewNode[string](":id")
-	child3 := NewNode[string]("*")
-
-	root.children = append(root.children, child1, child2, child3)
+	if got := root.findWildcardChild(1); got != wildcardChild {
+		t.Fatalf("findWildcardChild(1) 未命中通配子节点")
+	}
 
 	if len(root.children) != 3 {
-		t.Errorf("Expected 3 children, got %d", len(root.children))
-	}
-
-	// 验证子节点属性
-	if root.children[0].segment != "users" {
-		t.Errorf("First child segment = %v, want 'users'", root.children[0].segment)
+		t.Fatalf("children 数量 = %d, want 3", len(root.children))
 	}
 }
 
-// TestNodeRouteStorage 测试路由存储
-func TestNodeRouteStorage(t *testing.T) {
-	type RouteInfo struct {
-		Method  string
-		Handler string
-	}
+// TestAddChildAfterFreezePanics 验证冻结后禁止插入。
+func TestAddChildAfterFreezePanics(t *testing.T) {
+	root := NewNode[int]("root")
+	root.freeze()
 
-	node := NewNode[RouteInfo]("users")
-	testRoute := RouteInfo{
-		Method:  "GET",
-		Handler: "getUsersHandler",
-	}
-
-	node.route = testRoute
-
-	if node.route.Method != "GET" {
-		t.Errorf("Route method = %v, want 'GET'", node.route.Method)
-	}
-
-	if node.route.Handler != "getUsersHandler" {
-		t.Errorf("Route handler = %v, want 'getUsersHandler'", node.route.Handler)
-	}
-}
-
-// TestComplexScenarios 测试复杂场景
-func TestComplexScenarios(t *testing.T) {
-	t.Run("参数名称提取边界情况", func(t *testing.T) {
-		testCases := []struct {
-			segment    string
-			expectName string
-		}{
-			{":", ""},                    // 只有冒号
-			{"*", WILDCARD_DEFAULT_NAME}, // 只有星号
-			{":id", "id"},                // 正常参数
-			{"*path", "path"},            // 命名通配符
-			{"user", ""},                 // 静态路径
-			{"", ""},                     // 空字符串
+	defer func() {
+		if recover() == nil {
+			t.Fatal("冻结后 addChild 必须 panic")
 		}
+	}()
 
-		for _, tc := range testCases {
-			node := NewNode[string](tc.segment)
-			if node.paramName != tc.expectName {
-				t.Errorf("segment %s: paramName = %s, want %s",
-					tc.segment, node.paramName, tc.expectName)
-			}
-		}
-	})
-
-	t.Run("通配符标识测试", func(t *testing.T) {
-		wildcardCases := []struct {
-			segment    string
-			isWildcard bool
-		}{
-			{":id", true},
-			{"*", true},
-			{"*path", true},
-			{"users", false},
-			{"api", false},
-		}
-
-		for _, tc := range wildcardCases {
-			node := NewNode[string](tc.segment)
-			if node.isWildcard != tc.isWildcard {
-				t.Errorf("segment %s: isWildcard = %v, want %v",
-					tc.segment, node.isWildcard, tc.isWildcard)
-			}
-		}
-	})
-}
-
-// BenchmarkNodeCreation 测试节点创建性能
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		10991818	       101.7 ns/op	     480 B/op	       5 allocs/op
-func BenchmarkNodeCreation(b *testing.B) {
-	segments := []string{"users", ":id", "posts", ":postId", "*path"}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		for _, seg := range segments {
-			_ = NewNode[string](seg)
-		}
-	}
+	root.addChild(NewNode[int]("users"))
 }

@@ -1,3 +1,7 @@
+// Package middleware 提供与框架无关的通用 HTTP 中间件。
+//
+// Recover 捕获业务处理链中的 panic，输出堆栈并返回 500；
+// Log 输出结构化访问日志；Collect 采集路由指标。
 package middleware
 
 import (
@@ -15,7 +19,10 @@ import (
 	"gitee.com/leminewx/leego/response"
 )
 
-// Recover 当请求触发 panic 时的处理
+// Recover 使用默认配置捕获 panic。
+//
+// 默认为：输出到标准输出、转储请求行与请求头、不转储请求体。
+// 生产环境建议使用 RecoverWithConfig 指定统一的日志出口。
 func Recover() leego.MiddlewareFunc {
 	return RecoverWithConfig(&RecoveryConfig{
 		Output:          os.Stdout,
@@ -24,7 +31,12 @@ func Recover() leego.MiddlewareFunc {
 	})
 }
 
-// RecoverWithConfig 当请求触发 panic 时，通过指定配置进行处理
+// RecoverWithConfig 使用指定配置捕获 panic。
+//
+// 恢复流程：
+//  1. 输出 panic 值与调用栈；
+//  2. 调用自定义 HandleFunc（若配置）；
+//  3. 若响应尚未写入，返回 500，避免连接悬挂。
 func RecoverWithConfig(config *RecoveryConfig) leego.MiddlewareFunc {
 	// 允许传入 nil 配置，使用默认值兜底
 	if config == nil {
@@ -58,9 +70,9 @@ func RecoverWithConfig(config *RecoveryConfig) leego.MiddlewareFunc {
 						req, _ = httputil.DumpRequest(ctx.Request, false)
 					}
 
-					logger.Printf("[Recovery] panic recovered:\n%s\n%s\n%s\033[0m", req, err, trace(skip))
+					logger.Printf("[Recovery] panic recovered:\n%s\n%s\n%s\033[0m", req, err, captureTrace(skip))
 				} else {
-					logger.Printf("[Recovery] panic recovered:\n%s\n%s\033[0m", err, trace(skip))
+					logger.Printf("[Recovery] panic recovered:\n%s\n%s\033[0m", err, captureTrace(skip))
 				}
 
 				// 自定义处理
@@ -79,15 +91,20 @@ func RecoverWithConfig(config *RecoveryConfig) leego.MiddlewareFunc {
 	}
 }
 
+// RecoveryConfig 定义 panic 恢复中间件的配置。
 type RecoveryConfig struct {
-	Output          io.Writer                         // 输出接口，若未指定，则输出到 os.Stdout
-	DumpRequest     bool                              // 转储请求信息（不包含请求体）
-	DumpRequestBody bool                              // 转储请求体
-	HandleFunc      func(ctx *leego.Context, err any) // 自定义处理函数
+	// Output 为日志输出目标；nil 时使用 os.Stdout。
+	Output io.Writer
+	// DumpRequest 表示是否转储请求行与请求头。
+	DumpRequest bool
+	// DumpRequestBody 表示是否转储请求体；会消耗请求体，慎用。
+	DumpRequestBody bool
+	// HandleFunc 为自定义善后函数，可为 nil。
+	HandleFunc func(ctx *leego.Context, err any)
 }
 
-// trace 追踪调用信息
-func trace(skip int) []byte {
+// captureTrace 追踪调用信息
+func captureTrace(skip int) []byte {
 	var lines [][]byte
 	var lastFile string
 	buf := new(bytes.Buffer)
@@ -114,7 +131,7 @@ func trace(skip int) []byte {
 	return buf.Bytes()
 }
 
-// getFunction 获取调用函数信息
+// getFunction 获取调用函数信息。
 func getFunction(pc uintptr) string {
 	fn := runtime.FuncForPC(pc)
 	if fn == nil {
@@ -134,7 +151,7 @@ func getFunction(pc uintptr) string {
 	return name
 }
 
-// getSourceLine 获取源代码所在行信息
+// getSourceLine 获取源代码所在行信息。
 func getSource(lines [][]byte, n int) []byte {
 	n--
 	if n < 0 || n >= len(lines) {

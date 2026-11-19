@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,201 +12,294 @@ import (
 	"gitee.com/leminewx/leego/response"
 )
 
-// Manager 定义 SSE 客户端连接管理器的数据结构
+// 管理器默认参数。
+const (
+	// _DEFAULT_ERROR_BUFFER_SIZE 为错误通道的缓冲长度。
+	_DEFAULT_ERROR_BUFFER_SIZE = 16
+	// _DEFAULT_FLUSH_WAIT 为关闭前等待关闭消息刷出连接的时间。
+	_DEFAULT_FLUSH_WAIT = 50 * time.Millisecond
+)
+
+// 管理器错误定义。
+var (
+	// ErrManagerIsClosed 表示管理器已关闭，无法再接受新连接或消息。
+	ErrManagerIsClosed = errors.New("sse: manager is closed")
+	// ErrClientAlreadyExists 表示同一标识的客户端已存在。
+	ErrClientAlreadyExists = errors.New("sse: client already exists")
+)
+
+/*
+Manager 管理一组 SSE 客户端连接。
+
+并发模型：
+
+  - Register 使用 sync.Map.LoadOrStore 保证同一 ID 的原子注册；
+  - 每个连接的响应写入都由独立的 serve 协程独占（单写者），
+    其它协程通过 SendTo / Broadcast 投递到各客户端自己的队列；
+  - Close 是可重入的：由 closeOnce 保证只执行一次真正的清理逻辑。
+*/
 type Manager struct {
-	messageChanNum  int
-	isClosed        int32
-	clients         sync.Map // map[string]*Client
-	errorChan       chan error
-	errorChanLock   sync.RWMutex // 保护 errorChan 的关闭状态
-	errorChanClosed bool
-	writeTimeout    time.Duration
+	// configMu 保护下面三个可热更新的参数。
+	configMu sync.RWMutex
+	// messageChanNum 为新建客户端的消息队列长度。
+	messageChanNum int
+	// writeTimeout 为新建客户端的投递超时。
+	writeTimeout time.Duration
+	// heartbeatPeriod 为新建客户端的心跳周期。
 	heartbeatPeriod time.Duration
-	lock            sync.RWMutex
+
+	// clients 保存全部在线客户端，键为客户端 ID。
+	clients sync.Map
+
+	// errorChan 汇总连接异常，供监控协程消费。
+	errorChan chan error
+	// errorMu 保证“检查关闭标志 + 发送”是原子的，避免向已关闭通道发送。
+	errorMu sync.Mutex
+	// isErrorChanClosed 表示 errorChan 已关闭。
+	isErrorChanClosed bool
+
+	// closeChan 在管理器关闭时被关闭，用于唤醒等待者。
+	closeChan chan struct{}
+	// closeOnce 保证清理逻辑只执行一次。
+	closeOnce sync.Once
+	// isClosed 表示管理器是否已关闭。
+	isClosed atomic.Bool
 }
 
-// NewManager 创建 SSE 连接管理器（默认写超时300ms、心跳周期30s）
+// NewManager 创建 SSE 连接管理器。
+//
+// 默认消息队列长度 16、投递超时 300 毫秒、心跳周期 30 秒、错误通道缓冲 16。
 func NewManager() *Manager {
 	return &Manager{
 		messageChanNum:  16,
-		clients:         sync.Map{},
-		errorChan:       make(chan error, 16),
-		writeTimeout:    300 * time.Millisecond,
-		heartbeatPeriod: 30 * time.Second,
+		writeTimeout:    _DEFAULT_WRITE_TIMEOUT,
+		heartbeatPeriod: _DEFAULT_HEARTBEAT_PERIOD,
+		errorChan:       make(chan error, _DEFAULT_ERROR_BUFFER_SIZE),
+		closeChan:       make(chan struct{}),
 	}
 }
 
-// SetMessageCacheNumber 设置消息缓存大小
+// SetMessageCacheNumber 设置新建客户端的消息队列长度，非正数将被忽略。
 func (own *Manager) SetMessageCacheNumber(number int) {
-	if number > 0 {
-		own.lock.Lock()
-		own.messageChanNum = number
-		own.lock.Unlock()
+	if number <= 0 {
+		return
 	}
+
+	own.configMu.Lock()
+	own.messageChanNum = number
+	own.configMu.Unlock()
 }
 
-// SetWriteTimeout 设置写超时时间
+// SetWriteTimeout 设置新建客户端的投递超时，非正数将被忽略。
 func (own *Manager) SetWriteTimeout(timeout time.Duration) {
-	if timeout > 0 {
-		own.lock.Lock()
-		own.writeTimeout = timeout
-		own.lock.Unlock()
+	if timeout <= 0 {
+		return
 	}
+
+	own.configMu.Lock()
+	own.writeTimeout = timeout
+	own.configMu.Unlock()
 }
 
-// SetHeartbeatPeriod 设置连接发送心跳的周期（默认30s）
+// SetHeartbeatPeriod 设置新建客户端的心跳周期，非正数将被忽略。
 func (own *Manager) SetHeartbeatPeriod(period time.Duration) {
-	if period > 0 {
-		own.lock.Lock()
-		own.heartbeatPeriod = period
-		own.lock.Unlock()
+	if period <= 0 {
+		return
 	}
+
+	own.configMu.Lock()
+	own.heartbeatPeriod = period
+	own.configMu.Unlock()
 }
 
-// Register 注册新的SSE客户端
-func (own *Manager) Register(resp response.Writer, req *http.Request, clientId string) (*Client, error) {
-	// 创建客户端
-	client := NewClient(clientId, own.messageChanNum)
-	client.SetWriteTimeout(own.writeTimeout)
-	client.SetHeartbeatPeriod(own.heartbeatPeriod)
+// getMessageCacheNumber 返回当前的消息队列长度配置。
+func (own *Manager) getMessageCacheNumber() int {
+	own.configMu.RLock()
+	number := own.messageChanNum
+	own.configMu.RUnlock()
 
-	own.lock.RLock()
-	defer own.lock.RUnlock()
+	if number <= 0 {
+		return _DEFAULT_MESSAGE_CACHE_NUMBER
+	}
 
-	// 管理器已关闭
+	return number
+}
+
+// getWriteTimeout 返回当前的投递超时配置。
+func (own *Manager) getWriteTimeout() time.Duration {
+	own.configMu.RLock()
+	timeout := own.writeTimeout
+	own.configMu.RUnlock()
+
+	if timeout <= 0 {
+		return _DEFAULT_WRITE_TIMEOUT
+	}
+
+	return timeout
+}
+
+// getHeartbeatPeriod 返回当前的心跳周期配置。
+func (own *Manager) getHeartbeatPeriod() time.Duration {
+	own.configMu.RLock()
+	period := own.heartbeatPeriod
+	own.configMu.RUnlock()
+
+	if period <= 0 {
+		return _DEFAULT_HEARTBEAT_PERIOD
+	}
+
+	return period
+}
+
+/*
+Serve 注册并阻塞服务一个新连接，直到连接结束。
+
+该方法必须在 HTTP 处理函数中同步调用：
+它会在内部创建客户端、登记到管理器、持续推送消息，
+并在客户端断开或管理器关闭后自动注销。
+
+返回 nil 表示连接正常结束；返回错误表示请求上下文被取消、写入失败或注册失败。
+*/
+func (own *Manager) Serve(resp response.Writer, req *http.Request, clientId string) error {
+	if resp == nil || req == nil {
+		return errors.New("sse: nil response writer or request")
+	}
+
 	if own.IsClosed() {
-		return nil, errors.New("sse: manager is closed")
+		return ErrManagerIsClosed
 	}
 
-	// 检查客户端是否已存在
-	if _, ok := own.clients.Load(clientId); !ok {
-		own.clients.Store(clientId, client)
-		go func() {
-			defer func() {
-				// 确保在发生 panic 时也能注销客户端
-				if err := recover(); err != nil {
-					own.sendError(fmt.Errorf("sse: failed to serve client: %v", err))
-				}
+	client := NewClient(clientId, own.getMessageCacheNumber())
+	client.SetWriteTimeout(own.getWriteTimeout())
+	client.SetHeartbeatPeriod(own.getHeartbeatPeriod())
 
-				// 注销客户端
-				if err := own.Unregister(clientId); err != nil {
-					own.sendError(err)
-				}
-			}()
-
-			// 异步处理
-			if err := client.serve(resp, req, nil); err != nil {
-				own.sendError(err)
-			}
-		}()
-
-		return client, nil
+	if _, loaded := own.clients.LoadOrStore(clientId, client); loaded {
+		return fmt.Errorf("%w: %s", ErrClientAlreadyExists, clientId)
 	}
 
-	return nil, fmt.Errorf("sse: client already exists: %s", clientId)
+	// 注册成功后立即复核关闭状态，避免与 Close 竞争导致连接泄漏。
+	if own.IsClosed() {
+		own.clients.Delete(clientId)
+		return ErrManagerIsClosed
+	}
+
+	defer own.Unregister(clientId)
+
+	return client.serve(resp, req, nil)
 }
 
-// Unregister 注销 SSE 客户端
+// Unregister 注销并关闭指定客户端。
+//
+// 客户端不存在时返回 nil，因此可以被安全地重复调用。
 func (own *Manager) Unregister(clientId string) error {
-	if client, ok := own.clients.LoadAndDelete(clientId); ok {
-		return client.(*Client).Close()
+	value, isLoaded := own.clients.LoadAndDelete(clientId)
+	if !isLoaded {
+		return nil
 	}
 
-	return nil
+	client, isClient := value.(*Client)
+	if !isClient || client == nil {
+		return nil
+	}
+
+	return client.Close()
 }
 
-// SendTo 向指定客户端发送消息
+// SendTo 向指定客户端发送消息。
 func (own *Manager) SendTo(clientId string, msg *Message) error {
 	if own.IsClosed() {
-		return errors.New("sse: server is closed")
+		return ErrManagerIsClosed
 	}
 
-	if client, ok := own.clients.Load(clientId); ok {
-		return client.(*Client).WriteMessage(msg)
+	value, isLoaded := own.clients.Load(clientId)
+	if !isLoaded {
+		return fmt.Errorf("sse: not found client: %s", clientId)
 	}
 
-	return fmt.Errorf("sse: not found client: %s", clientId)
+	client, isClient := value.(*Client)
+	if !isClient || client == nil {
+		return fmt.Errorf("sse: not found client: %s", clientId)
+	}
+
+	return client.WriteMessage(msg)
 }
 
-// Broadcast 向所有客户端广播消息
+// Broadcast 向所有在线客户端广播消息。
+//
+// 广播是并发投递的：单个客户端阻塞不会拖慢其它客户端；
+// 投递失败的客户端会被自动注销，失败原因可通过 GetErrorChan 获取。
 func (own *Manager) Broadcast(msg *Message) error {
-	// 若消息无效，则直接返回
 	if msg == nil || !msg.format() {
 		return nil
 	}
 
 	if own.IsClosed() {
-		return errors.New("sse: server is closed")
+		return ErrManagerIsClosed
 	}
 
-	var wg sync.WaitGroup
+	var waitGroup sync.WaitGroup
 	own.clients.Range(func(key, value any) bool {
-		// 异步广播
-		wg.Go(func() {
-			client := value.(*Client)
+		client, isClient := value.(*Client)
+		if !isClient || client == nil {
+			return true
+		}
 
-			// 如果广播失败，可能是客户端已断开
-			if err := client.WriteMessage(msg); err != nil {
-				own.sendError(err)
-
-				// 尝试注销该客户端
-				if err = own.Unregister(client.Id); err != nil {
-					own.sendError(err)
-				}
-			}
+		waitGroup.Go(func() {
+			own.deliver(client, msg)
 		})
 
 		return true
 	})
-	wg.Wait()
+	waitGroup.Wait()
 
 	return nil
 }
 
-// BroadcastTo 向指定客户端组广播消息
+// BroadcastTo 向指定客户端集合广播消息，不存在的客户端会被跳过。
 func (own *Manager) BroadcastTo(clientIds []string, msg *Message) error {
-	// 若消息无效，则直接返回
 	if msg == nil || !msg.format() {
 		return nil
 	}
 
 	if own.IsClosed() {
-		return errors.New("sse: server is closed")
+		return ErrManagerIsClosed
 	}
 
-	var wg sync.WaitGroup
+	var waitGroup sync.WaitGroup
 	for _, clientId := range clientIds {
-		client, ok := own.clients.Load(clientId)
-		if !ok {
+		value, isLoaded := own.clients.Load(clientId)
+		if !isLoaded {
 			continue
 		}
 
-		// 异步广播
-		wg.Go(func() {
-			c := client.(*Client)
+		client, isClient := value.(*Client)
+		if !isClient || client == nil {
+			continue
+		}
 
-			// 如果广播失败，可能是客户端已断开
-			if err := c.WriteMessage(msg); err != nil {
-				own.sendError(err)
-
-				// 尝试注销该客户端
-				if err = own.Unregister(c.Id); err != nil {
-					own.sendError(err)
-				}
-			}
+		waitGroup.Go(func() {
+			own.deliver(client, msg)
 		})
 	}
-	wg.Wait()
+	waitGroup.Wait()
 
 	return nil
 }
 
-// CountClients 获取当前连接的客户端数量
-func (own *Manager) CountClients() (count int) {
-	if own.IsClosed() {
-		return
-	}
+// deliver 向单个客户端投递消息，失败时记录错误并注销该客户端。
+func (own *Manager) deliver(client *Client, msg *Message) {
+	if err := client.WriteMessage(msg); err != nil {
+		own.sendError(err)
 
+		if unregisterErr := own.Unregister(client.Id); unregisterErr != nil {
+			own.sendError(unregisterErr)
+		}
+	}
+}
+
+// CountClients 返回当前在线客户端数量。
+func (own *Manager) CountClients() int {
+	count := 0
 	own.clients.Range(func(key, value any) bool {
 		count++
 		return true
@@ -214,108 +308,133 @@ func (own *Manager) CountClients() (count int) {
 	return count
 }
 
-// IsClientConnected 检查客户端是否连接
+// IsClientConnected 判断指定客户端是否在线。
 func (own *Manager) IsClientConnected(clientId string) bool {
-	if own.IsClosed() {
-		return false
-	}
-
-	_, ok := own.clients.Load(clientId)
-	return ok
+	_, isLoaded := own.clients.Load(clientId)
+	return isLoaded
 }
 
-// GetAllClientIds 获取所有连接的客户端Id
+// GetAllClientIds 返回全部在线客户端标识，结果按字典序升序排列。
 func (own *Manager) GetAllClientIds() []string {
-	if own.IsClosed() {
-		return nil
-	}
-
-	var clients []string
+	clientIds := make([]string, 0, own.CountClients())
 	own.clients.Range(func(key, value any) bool {
-		clients = append(clients, key.(string))
+		if clientId, isString := key.(string); isString {
+			clientIds = append(clientIds, clientId)
+		}
+
 		return true
 	})
 
-	return clients
+	sort.Strings(clientIds)
+
+	return clientIds
 }
 
-// sendError 发送错误消息给管理器（errorChan 关闭后安全跳过，避免向已关闭通道发送引发 panic）
+// sendError 向错误通道投递错误，通道已满或已关闭时静默丢弃。
+//
+// 采用“检查 + 发送”同锁的方式，确保不会向已关闭的通道发送而 panic。
 func (own *Manager) sendError(err error) {
-	own.errorChanLock.RLock()
-	if !own.errorChanClosed {
-		select {
-		case own.errorChan <- err:
-		default:
-		}
+	if err == nil {
+		return
 	}
-	own.errorChanLock.RUnlock()
+
+	own.errorMu.Lock()
+	defer own.errorMu.Unlock()
+
+	if own.isErrorChanClosed {
+		return
+	}
+
+	select {
+	case own.errorChan <- err:
+	default:
+	}
 }
 
-// GetErrorChan 获取错误通道
+// GetErrorChan 返回只读错误通道。
+//
+// 消费方应在收到关闭信号（通道关闭或 Done 被关闭）后退出循环。
 func (own *Manager) GetErrorChan() <-chan error {
 	return own.errorChan
 }
 
-// IsClosed 判断连接是否已关闭
-func (own *Manager) IsClosed() bool {
-	return atomic.LoadInt32(&own.isClosed) == 1
+// Done 返回在管理器关闭时被关闭的只读通道，便于与 select 组合使用。
+func (own *Manager) Done() <-chan struct{} {
+	return own.closeChan
 }
 
-// Close 关闭 SSE 管理器
+// IsClosed 判断管理器是否已关闭。
+func (own *Manager) IsClosed() bool {
+	return own.isClosed.Load()
+}
+
+/*
+Close 关闭管理器并释放全部连接。
+
+关闭顺序：
+ 1. 置位关闭标志并关闭 Done 通道，阻止新的接入与广播；
+ 2. 向所有客户端投递“服务器关闭”消息，并等待它们把消息写出去（最多 1 秒）；
+ 3. 关闭每个客户端；
+ 4. 关闭错误通道。
+
+该方法幂等，重复调用只会执行一次清理。
+*/
 func (own *Manager) Close() error {
-	own.lock.Lock()
-	if atomic.LoadInt32(&own.isClosed) == 1 {
-		own.lock.Unlock()
-		return nil // 防止重复关闭
-	}
+	var closeErr error
 
-	// 关闭标志位置为1
-	atomic.StoreInt32(&own.isClosed, 1)
-	own.lock.Unlock()
+	own.closeOnce.Do(func() {
+		own.isClosed.Store(true)
+		close(own.closeChan)
 
-	// 广播服务器关闭消息
-	shutdownMessage := NewShutdownMessage()
-
-	// 并发关闭所有客户端
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
-	var errs []error
-	own.clients.Range(func(key, value any) bool {
-		wg.Go(func() {
-			// 发送关闭消息
-			client := value.(*Client)
-			if err := client.WriteMessage(shutdownMessage); err != nil {
-				own.sendError(err)
+		// 1. 通知所有客户端服务器即将关闭。
+		shutdownMessage := NewShutdownMessage()
+		var notifyWaitGroup sync.WaitGroup
+		own.clients.Range(func(key, value any) bool {
+			client, isClient := value.(*Client)
+			if !isClient || client == nil {
+				return true
 			}
 
-			// 关闭客户端
-			if err := client.Close(); err != nil {
-				own.sendError(fmt.Errorf("sse: failed to close client %s: %v", key.(string), err))
-				mutex.Lock()
-				errs = append(errs, err)
-				mutex.Unlock()
+			notifyWaitGroup.Go(func() {
+				_ = client.WriteMessage(shutdownMessage)
+			})
+
+			return true
+		})
+		notifyWaitGroup.Wait()
+
+		// 2. 给写协程一点时间把关闭消息真正刷到连接上。
+		time.Sleep(_DEFAULT_FLUSH_WAIT)
+
+		// 3. 关闭并摘除所有客户端。
+		var (
+			errorMu     sync.Mutex
+			closeErrors []error
+		)
+		own.clients.Range(func(key, value any) bool {
+			client, isClient := value.(*Client)
+			if isClient && client != nil {
+				if err := client.Close(); err != nil {
+					errorMu.Lock()
+					closeErrors = append(closeErrors, err)
+					errorMu.Unlock()
+				}
 			}
 
-			// 注销客户端
 			own.clients.Delete(key)
+			return true
 		})
 
-		return true
+		// 4. 关闭错误通道。
+		own.errorMu.Lock()
+		own.isErrorChanClosed = true
+		close(own.errorChan)
+		own.errorMu.Unlock()
+
+		if len(closeErrors) > 0 {
+			closeErr = fmt.Errorf("sse: errors occurred during close: %v", closeErrors)
+		}
 	})
 
-	// 等待所有客户端关闭完成
-	wg.Wait()
-	// 给一点时间让消息发送完成
-	time.Sleep(300 * time.Millisecond)
-	// 关闭错误通道（先标记已关闭，避免并发 sendError 向已关闭通道发送而 panic）
-	own.errorChanLock.Lock()
-	own.errorChanClosed = true
-	close(own.errorChan)
-	own.errorChanLock.Unlock()
-
-	if len(errs) > 0 {
-		return fmt.Errorf("sse: errors occurred during close: %v", errs)
-	}
-
-	return nil
+	return closeErr
 }

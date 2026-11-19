@@ -113,7 +113,7 @@ func LogWithConfig(config *LoggerConfig) leego.MiddlewareFunc {
 			}
 
 			// 是否启用颜色：显式配置优先；未显式设置时按终端能力自动判定
-			withColor := config.WithColor || colorAllowed(out, config.WithColor)
+			withColor := config.WithColor || isColorAllowed(out, config.WithColor)
 
 			renderLog(out, withColor, status, latency, request.Method, path, ctx.GetClientIP())
 		}
@@ -130,8 +130,8 @@ func renderLog(out io.Writer, withColor bool, status int, latency time.Duration,
 
 	line := "[LEEGO] " +
 		colorize(time.Now().Format(_FORMAT_DATETIME), _DIM, withColor) + " " +
-		bar + badge(method, getMethodColor(method), _WIDTH_METHOD, withColor) +
-		bar + badge(strconv.Itoa(status), getStatusColor(status), _WIDTH_STATUS, withColor) +
+		bar + createBadge(method, getMethodColor(method), _WIDTH_METHOD, withColor) +
+		bar + createBadge(strconv.Itoa(status), getStatusColor(status), _WIDTH_STATUS, withColor) +
 		bar + " " + colorize(formatLatency(latency), getLatencyColor(latency), withColor) + " " +
 		bar + " " + colorize(ip, _DIM, withColor) + " " +
 		bar + " " + colorize(path, _BOLD, withColor) + "\n"
@@ -139,9 +139,9 @@ func renderLog(out io.Writer, withColor bool, status int, latency time.Duration,
 	_, _ = fmt.Fprint(out, line)
 }
 
-// badge 生成固定可见宽度的彩色徽标：左侧留一空格内边距，右侧补足至 width-1（至少再留一空格），
+// createBadge 生成固定可见宽度的彩色徽标：左侧留一空格内边距，右侧补足至 width-1（至少再留一空格），
 // 内边距与文字一并着色，保证 | 与 | 之间被底色完整填充（色码不影响对齐）
-func badge(text, color string, width int, withColor bool) string {
+func createBadge(text, color string, width int, withColor bool) string {
 	padded := pad(" "+truncate(text, width-2), width-1) + " "
 	if !withColor {
 		return padded
@@ -216,11 +216,11 @@ func padLeft(s string, w int) string {
 	return s
 }
 
-// colorAllowed 在配置未显式开启颜色时，依据终端与环境变量决定是否可以着色：
+// isColorAllowed 在配置未显式开启颜色时，依据终端与环境变量决定是否可以着色：
 //   - 尊重 NO_COLOR（https://no-color.org）约定；
 //   - 当 TERM=dumb 时不着色；
 //   - 仅当输出目标是标准输出/标准错误等字符设备时着色。
-func colorAllowed(out io.Writer, explicit bool) bool {
+func isColorAllowed(out io.Writer, explicit bool) bool {
 	if explicit {
 		return true
 	}

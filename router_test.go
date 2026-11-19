@@ -2,450 +2,255 @@ package leego
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 
-	"gitee.com/leminewx/leego/middleware/collector"
 	"gitee.com/leminewx/leego/tree"
 )
 
-func TestRouter(t *testing.T) {
+// TestRouterInsertAndSearch 验证路由插入与参数提取。
+func TestRouterInsertAndSearch(t *testing.T) {
 	router := newRouter(nil)
 
-	// 测试路由插入和搜索
 	handler := &handler{}
-	router.Insert("GET", "/users/:id", handler)
+	router.Insert(http.MethodGet, "/users/:id", handler)
 
-	// 测试搜索
-	route, params, found := router.Search("GET", "/users/123")
-	if !found {
-		t.Error("Expected to find route")
+	found, params, ok := router.Search(http.MethodGet, "/users/123")
+	if !ok || found == nil {
+		t.Fatal("已注册路由必须能匹配")
 	}
-	if route == nil {
-		t.Error("Expected non-nil route")
-	}
+
 	if params["id"] != "123" {
-		t.Errorf("Expected param 'id' to be '123', got '%s'", params["id"])
+		t.Fatalf("路径参数 = %q, want 123", params["id"])
 	}
 
-	// 测试未找到的情况
-	_, _, found = router.Search("POST", "/users/123")
-	if found {
-		t.Error("Expected not to find route for POST method")
-	}
-}
-
-func TestRouterServeHTTP(t *testing.T) {
-	router := newRouter(NewEngine())
-
-	// 创建测试处理器
-	called := false
-	testHandler := &handler{
-		handle: func(ctx *Context) {
-			called = true
-			_ = ctx.ResponsePlain(200, "OK")
-		},
-		collector: collector.New("get user info", http.MethodGet, "users/:id"),
+	if _, _, ok = router.Search(http.MethodPost, "/users/123"); ok {
+		t.Fatal("未注册的方法不应匹配")
 	}
 
-	router.Insert("GET", "/examples", testHandler)
-
-	// 创建测试请求
-	req := httptest.NewRequest("GET", "/examples", nil)
-	recorder := httptest.NewRecorder()
-
-	// 执行
-	router.ServeHTTP(recorder, req)
-
-	if !called {
-		t.Error("Handler was not called")
-	}
-	if recorder.Code != 200 {
-		t.Errorf("Expected status 200, got %d", recorder.Code)
+	if _, _, ok = router.Search(http.MethodGet, "/missing"); ok {
+		t.Fatal("未注册的路径不应匹配")
 	}
 }
 
+// TestRouterHeadFallsBackToGet 验证 HEAD 回退到 GET。
+func TestRouterHeadFallsBackToGet(t *testing.T) {
+	router := newRouter(nil)
+	router.Insert(http.MethodGet, "/resource", &handler{})
+
+	if _, _, ok := router.Search(http.MethodHead, "/resource"); !ok {
+		t.Fatal("HEAD 未注册时必须回退到 GET")
+	}
+
+	// HEAD 已注册时优先使用自身路由。
+	headHandler := &handler{}
+	router.Insert(http.MethodHead, "/resource", headHandler)
+
+	found, _, ok := router.Search(http.MethodHead, "/resource")
+	if !ok || found != headHandler {
+		t.Fatal("HEAD 已注册时必须返回 HEAD 处理器")
+	}
+}
+
+// TestRouterCollectAllowedMethods 验证 Allow 方法收集。
+func TestRouterCollectAllowedMethods(t *testing.T) {
+	router := newRouter(nil)
+	router.Insert(http.MethodPost, "/resource", &handler{})
+	router.Insert(http.MethodGet, "/resource", &handler{})
+
+	methods := router.CollectAllowedMethods("/resource")
+	want := []string{http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPost}
+	if len(methods) != len(want) {
+		t.Fatalf("Allow 方法 = %v, want %v", methods, want)
+	}
+
+	for index := range want {
+		if methods[index] != want[index] {
+			t.Fatalf("Allow 方法 = %v, want %v（必须按字母序）", methods, want)
+		}
+	}
+
+	if unknown := router.CollectAllowedMethods("/missing"); len(unknown) != 0 {
+		t.Fatalf("未知路径的 Allow 方法 = %v, want 空", unknown)
+	}
+}
+
+// TestRouterBlacklist 验证黑名单路径规范化与查询。
+func TestRouterBlacklist(t *testing.T) {
+	router := newRouter(nil)
+	router.AddBlacklist(" /secret ", "", "/admin")
+
+	if !router.IsBlacklisted("/secret") {
+		t.Fatal("黑名单路径必须去除首尾空白")
+	}
+
+	if !router.IsBlacklisted("/admin") {
+		t.Fatal("黑名单必须支持多个路径")
+	}
+
+	if router.IsBlacklisted("") || router.IsBlacklisted("/public") {
+		t.Fatal("空路径与未加入的路径不应被拉黑")
+	}
+}
+
+// TestRouterFreeze 验证冻结的幂等性与写入保护。
+func TestRouterFreeze(t *testing.T) {
+	router := newRouter(nil)
+	router.Insert(http.MethodGet, "/ready", &handler{})
+
+	router.Freeze()
+	router.Freeze()
+
+	if _, _, ok := router.Search(http.MethodGet, "/ready"); !ok {
+		t.Fatal("冻结后仍必须能查询已有路由")
+	}
+
+	assertPanics(t, "冻结后插入路由", func() {
+		router.Insert(http.MethodGet, "/late", &handler{})
+	})
+}
+
+// TestExtractSegmentNames 验证参数名提取。
 func TestExtractSegmentNames(t *testing.T) {
 	tests := []struct {
 		segments []string
-		expected []string
+		want     []string
 	}{
-		{
-			[]string{"users", ":id", "posts"},
-			[]string{"id"},
-		},
-		{
-			[]string{"files", "*"},
-			[]string{tree.WILDCARD_DEFAULT_NAME},
-		},
-		{
-			[]string{"api", "*path"},
-			[]string{"path"},
-		},
-		{
-			[]string{"static", "images"},
-			[]string{},
-		},
+		{[]string{"users", ":id", "posts"}, []string{"id"}},
+		{[]string{"files", "*"}, []string{tree.WILDCARD_DEFAULT_NAME}},
+		{[]string{"api", "*path"}, []string{"path"}},
+		{[]string{"static", "images"}, []string{}},
+		{nil, []string{}},
 	}
 
-	for _, tt := range tests {
-		result := extractSegmentNames(tt.segments)
-		if len(result) != len(tt.expected) {
-			t.Errorf("Expected %v, got %v", tt.expected, result)
+	for _, test := range tests {
+		got := extractSegmentNames(test.segments)
+		if len(got) != len(test.want) {
+			t.Fatalf("extractSegmentNames(%v) = %v, want %v", test.segments, got, test.want)
 		}
-		for i := range result {
-			if result[i] != tt.expected[i] {
-				t.Errorf("At index %d: expected %s, got %s", i, tt.expected[i], result[i])
+
+		for index := range test.want {
+			if got[index] != test.want[index] {
+				t.Fatalf("extractSegmentNames(%v)[%d] = %q, want %q", test.segments, index, got[index], test.want[index])
 			}
 		}
 	}
 }
 
-// BenchmarkRouterSearchStatic 测试静态路由搜索性能
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		100 routes		8		4293456	       279.7 ns/op	     144 B/op	       3 allocs/op
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		1000 routes		8		 572289	        2138 ns/op	     144 B/op	       3 allocs/op
+// TestRouterConcurrentSearch 验证冻结后的并发查询安全。
+func TestRouterConcurrentSearch(t *testing.T) {
+	const workers = 32
+	const attemptsPerWorker = 500
+
+	router := newRouter(nil)
+	for index := 0; index < 100; index++ {
+		router.Insert(http.MethodGet, "/items/"+strconv.Itoa(index), &handler{})
+	}
+
+	router.Freeze()
+
+	var waitGroup sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		waitGroup.Add(1)
+
+		go func(id int) {
+			defer waitGroup.Done()
+
+			for attempt := 0; attempt < attemptsPerWorker; attempt++ {
+				path := "/items/" + strconv.Itoa((id+attempt)%100)
+				if _, _, ok := router.Search(http.MethodGet, path); !ok {
+					t.Errorf("并发查询未命中 %s", path)
+					return
+				}
+			}
+		}(worker)
+	}
+
+	waitGroup.Wait()
+}
+
+// BenchmarkRouterSearchStatic 测量静态路由查询开销。
 func BenchmarkRouterSearchStatic(b *testing.B) {
 	router := newRouter(nil)
+	shared := &handler{}
 
-	// 预插入测试路由
-	for i := 0; i < 1000; i++ {
-		pattern := "/static/path/" + strconv.Itoa(i)
-		handler := &handler{}
-		router.Insert("GET", pattern, handler)
+	for index := 0; index < 1000; index++ {
+		router.Insert(http.MethodGet, "/static/path/"+strconv.Itoa(index), shared)
 	}
 
-	// 插入要搜索的路径
-	searchPath := "/static/path/500"
-	handler := &handler{}
-	router.Insert("GET", searchPath, handler)
+	router.Freeze()
+	path := "/static/path/500"
 
-	b.ResetTimer()
 	b.ReportAllocs()
+	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		if _, _, ok := router.Search("GET", searchPath); !ok {
-			b.Errorf("Expected to find route for path %s", searchPath)
+	for index := 0; index < b.N; index++ {
+		if _, _, ok := router.Search(http.MethodGet, path); !ok {
+			b.Fatalf("未命中 %s", path)
 		}
 	}
 }
 
-// BenchmarkRouterSearchParam 测试参数路由搜索性能
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		100 routes		8		 3828267	       314.6 ns/op	     480 B/op	       5 allocs/op
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		1000 routes		8		 3899445	       310.2 ns/op	     480 B/op	       5 allocs/op
+// BenchmarkRouterSearchParam 测量参数路由查询开销。
 func BenchmarkRouterSearchParam(b *testing.B) {
 	router := newRouter(nil)
+	shared := &handler{}
 
-	// 预插入测试路由
-	for i := 0; i < 100; i++ {
-		pattern := "/api/:version/users/:id"
-		handler := &handler{}
-		router.Insert("GET", pattern, handler)
-	}
+	router.Insert(http.MethodGet, "/api/:version/users/:id", shared)
+	router.Freeze()
 
-	b.ResetTimer()
 	b.ReportAllocs()
+	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		path := "/api/v1/users/" + strconv.Itoa(i%100)
-		if _, _, ok := router.Search("GET", path); !ok {
-			b.Errorf("Expected to find route for path %s", path)
+	for index := 0; index < b.N; index++ {
+		path := "/api/v1/users/" + strconv.Itoa(index%100)
+		if _, _, ok := router.Search(http.MethodGet, path); !ok {
+			b.Fatalf("未命中 %s", path)
 		}
 	}
 }
 
-// BenchmarkRouterSearchWildcard 测试通配符路由搜索性能
-// cpu: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz		8		 2888583	       394.7 ns/op	     551 B/op	       6 allocs/op
+// BenchmarkRouterSearchWildcard 测量通配符路由查询开销。
 func BenchmarkRouterSearchWildcard(b *testing.B) {
 	router := newRouter(nil)
+	router.Insert(http.MethodGet, "/files/*", &handler{})
+	router.Freeze()
 
-	// 插入通配符路由
-	handler := &handler{}
-	router.Insert("GET", "/files/*", handler)
-
-	b.ResetTimer()
 	b.ReportAllocs()
+	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		path := "/files/documents/reports/" + strconv.Itoa(i) + ".pdf"
-		if _, _, ok := router.Search("GET", path); !ok {
-			b.Errorf("Expected to find route for path %s", path)
+	for index := 0; index < b.N; index++ {
+		path := "/files/documents/reports/" + strconv.Itoa(index) + ".pdf"
+		if _, _, ok := router.Search(http.MethodGet, path); !ok {
+			b.Fatalf("未命中 %s", path)
 		}
 	}
 }
 
-// BenchmarkRouterMixedSearch 测试混合路由搜索性能
-func BenchmarkRouterMixedSearch(b *testing.B) {
+// BenchmarkRouterParallelSearch 测量并发查询吞吐。
+func BenchmarkRouterParallelSearch(b *testing.B) {
 	router := newRouter(nil)
+	shared := &handler{}
 
-	// 插入各种类型的路由
-	handler := &handler{}
-
-	// 静态路由
-	for i := 0; i < 300; i++ {
-		router.Insert("GET", "/static"+strconv.Itoa(i), handler)
+	for index := 0; index < 1000; index++ {
+		router.Insert(http.MethodGet, "/concurrent/path/"+strconv.Itoa(index), shared)
 	}
 
-	// 参数路由
-	for i := 0; i < 300; i++ {
-		router.Insert("GET", "/api/:version/resource"+strconv.Itoa(i), handler)
+	router.Freeze()
+	paths := make([]string, 100)
+	for index := range paths {
+		paths[index] = "/concurrent/path/" + strconv.Itoa(index*10)
 	}
 
-	// 通配符路由
-	for i := 0; i < 100; i++ {
-		router.Insert("GET", "/wildcard"+strconv.Itoa(i)+"/*", handler)
-	}
-
-	// 深度嵌套路由
-	router.Insert("GET", "/a/b/c/d/e/f/g/h/i/j/k", handler)
-
-	searchPaths := []string{
-		"/static150",
-		"/api/v1/resource200",
-		"/wildcard50/files/image.jpg",
-		"/a/b/c/d/e/f/g/h/i/j/k",
-		"/notfound",
-	}
-
-	b.ResetTimer()
 	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		path := searchPaths[i%len(searchPaths)]
-		_, _, _ = router.Search("GET", path)
-	}
-}
-
-// BenchmarkRouterConcurrentInsert 测试并发插入性能
-func BenchmarkRouterConcurrentInsert(b *testing.B) {
-	router := newRouter(nil)
-
 	b.ResetTimer()
-	b.ReportAllocs()
 
 	b.RunParallel(func(pb *testing.PB) {
-		i := 0
+		index := 0
 		for pb.Next() {
-			pattern := "/concurrent/" + strconv.Itoa(i)
-			handler := &handler{}
-			router.Insert("GET", pattern, handler)
-			i++
+			_, _, _ = router.Search(http.MethodGet, paths[index%len(paths)])
+			index++
 		}
 	})
-}
-
-// BenchmarkRouterConcurrentSearch 测试并发搜索性能
-func BenchmarkRouterConcurrentSearch(b *testing.B) {
-	router := newRouter(nil)
-
-	// 预填充路由
-	handler := &handler{}
-	for i := 0; i < 1000; i++ {
-		pattern := "/concurrent/path/" + strconv.Itoa(i)
-		router.Insert("GET", pattern, handler)
-	}
-
-	searchPaths := make([]string, 100)
-	for i := 0; i < 100; i++ {
-		searchPaths[i] = "/concurrent/path/" + strconv.Itoa(i*10)
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	b.RunParallel(func(pb *testing.PB) {
-		i := 0
-		for pb.Next() {
-			path := searchPaths[i%len(searchPaths)]
-			_, _, _ = router.Search("GET", path)
-			i++
-		}
-	})
-}
-
-// BenchmarkRouterServeHTTP 测试完整的HTTP服务性能
-func BenchmarkRouterServeHTTP(b *testing.B) {
-	router := newRouter(nil)
-
-	// 注册测试处理器
-	testHandler := &handler{
-		handle: func(ctx *Context) {
-			_ = ctx.ResponsePlain(200, "OK")
-		},
-	}
-
-	// 插入各种路由
-	for i := 0; i < 500; i++ {
-		router.Insert("GET", "/api/v1/resource/"+strconv.Itoa(i), testHandler)
-		router.Insert("POST", "/api/v1/resource/"+strconv.Itoa(i), testHandler)
-	}
-
-	// 创建测试请求
-	req := httptest.NewRequest("GET", "/api/v1/resource/123", nil)
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		recorder := httptest.NewRecorder()
-		router.ServeHTTP(recorder, req)
-
-		if recorder.Code != 200 {
-			b.Errorf("Expected status 200, got %d", recorder.Code)
-		}
-	}
-}
-
-// BenchmarkRouterDifferentMethods 测试不同HTTP方法的性能
-func BenchmarkRouterDifferentMethods(b *testing.B) {
-	router := newRouter(nil)
-
-	handler := &handler{}
-	methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
-
-	// 为每个方法插入路由
-	for _, method := range methods {
-		for i := 0; i < 200; i++ {
-			router.Insert(method, "/"+method+"/resource/"+strconv.Itoa(i), handler)
-		}
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		method := methods[i%len(methods)]
-		path := "/" + strings.ToLower(method) + "/resource/" + strconv.Itoa(i%200)
-		_, _, _ = router.Search(method, path)
-	}
-}
-
-// TestRouterConcurrentSafety 测试路由器的并发安全性
-func TestRouterConcurrentSafety(t *testing.T) {
-	router := newRouter(nil)
-
-	var wg sync.WaitGroup
-	concurrency := 100
-	operations := 1000
-
-	// 并发插入
-	wg.Add(concurrency)
-	for i := 0; i < concurrency; i++ {
-		go func(id int) {
-			defer wg.Done()
-			for j := 0; j < operations; j++ {
-				pattern := "/goroutine/" + strconv.Itoa(id) + "/item/" + strconv.Itoa(j)
-				handler := &handler{}
-				router.Insert("GET", pattern, handler)
-			}
-		}(i)
-	}
-
-	// 并发搜索
-	wg.Add(concurrency)
-	for i := 0; i < concurrency; i++ {
-		go func(id int) {
-			defer wg.Done()
-			for j := 0; j < operations; j++ {
-				path := "/goroutine/" + strconv.Itoa(id%10) + "/item/" + strconv.Itoa(j%100)
-				_, _, _ = router.Search("GET", path)
-			}
-		}(i)
-	}
-
-	wg.Wait()
-
-	// 验证插入结果
-	for i := 0; i < 10; i++ {
-		for j := 0; j < 10; j++ {
-			path := "/goroutine/" + strconv.Itoa(i) + "/item/" + strconv.Itoa(j)
-			_, _, found := router.Search("GET", path)
-			if !found {
-				t.Errorf("Expected to find route: %s", path)
-			}
-		}
-	}
-}
-
-// BenchmarkRouterMemoryUsage 测试内存使用情况
-func BenchmarkRouterMemoryUsage(b *testing.B) {
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		router := newRouter(nil)
-
-		// 插入大量路由
-		handler := &handler{}
-		for j := 0; j < 1000; j++ {
-			pattern := "/memory/examples/" + strconv.Itoa(j) + "/:param"
-			router.Insert("GET", pattern, handler)
-		}
-	}
-}
-
-// BenchmarkRouterPathExtraction 测试路径分割性能
-func BenchmarkRouterPathExtraction(b *testing.B) {
-	paths := []string{
-		"/",
-		"/users/123/posts/456/comments/789",
-		"/api/v1/resource/subresource/deep/nested/path",
-		"/static/images/photos/2024/january/01/photo.jpg",
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		for _, path := range paths {
-			_ = tree.SplitPattern(path)
-		}
-	}
-}
-
-// BenchmarkLargeScaleRouter 测试大规模路由场景
-func BenchmarkLargeScaleRouter(b *testing.B) {
-	router := newRouter(nil)
-
-	// 模拟真实场景的大规模路由
-	handler := &handler{}
-
-	// 预填充大量路由
-	routesCount := 10000
-	for i := 0; i < routesCount; i++ {
-		// 多种模式混合
-		switch i % 4 {
-		case 0:
-			// 静态路由
-			router.Insert("GET", "/static"+strconv.Itoa(i), handler)
-		case 1:
-			// 参数路由
-			router.Insert("GET", "/api/:version/resource"+strconv.Itoa(i), handler)
-		case 2:
-			// 嵌套路由
-			router.Insert("GET", "/a/b/c/"+strconv.Itoa(i), handler)
-		case 3:
-			// 通配符路由
-			router.Insert("GET", "/files"+strconv.Itoa(i)+"/*", handler)
-		}
-	}
-
-	// 测试搜索性能
-	searchPaths := []string{
-		"/static5000",
-		"/api/v1/resource7500",
-		"/a/b/c/2500",
-		"/files9999/documents/report.pdf",
-		"/not/existing",
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		path := searchPaths[i%len(searchPaths)]
-		_, _, _ = router.Search("GET", path)
-	}
 }

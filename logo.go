@@ -34,7 +34,7 @@ func show() {
 	// 解析模板
 	tmpl, err := template.New("logo").Parse(logoTemplate)
 	if err != nil {
-		logging.WARN("Failed to load logo template: %v", err)
+		logging.LogWarn("Failed to load logo template: %v", err)
 		return
 	}
 
@@ -48,6 +48,6 @@ func show() {
 		Version: version,
 		Release: release,
 	}); err != nil {
-		logging.WARN("Failed to write logo data to template: %v", err)
+		logging.LogWarn("Failed to write logo data to template: %v", err)
 	}
 }

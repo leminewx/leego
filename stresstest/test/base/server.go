@@ -1,39 +1,47 @@
+// Package main 是一个用于压力测试的基准服务。
+//
+// 它提供三个端点，配合 stresstest 包使用：
+//   - GET /examples：返回固定 JSON，用于测量框架自身的吞吐上限；
+//   - GET /metadata：返回全部路由指标，用于观察压测期间的采集开销；
+//   - GET /files/*：静态文件服务，用于测量文件传输性能。
 package main
 
 import (
 	"log"
 	"net/http"
-	_ "net/http/pprof"
 	"time"
 
 	"gitee.com/leminewx/leego"
+	"gitee.com/leminewx/leego/middleware"
 )
 
 func main() {
-	engine := leego.NewEngine()
+	engine := leego.NewEngine(
+		leego.UseEngineName("leego-stress-base"),
+		leego.DisableStartupLog(),
+	)
+	engine.UseMiddlewares(
+		middleware.Log(),
+		middleware.Recover(),
+	)
+
 	engine.GET("/examples", func(ctx *leego.Context) {
 		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok"})
-	}, "验证基本接口", "v1", "JSON")
+	}, "验证基本接口", "压测", "JSON")
 
 	engine.GET("/metadata", func(ctx *leego.Context) {
-		collectors := engine.GetAllHandlerCollectors()
-		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok", "data": collectors})
-	}, "获取所有路由监控数据", "v1", "监控数据")
+		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"code": "00000", "desc": "ok", "data": engine.CollectReport()})
+	}, "获取所有路由监控数据", "压测", "监控数据")
 
-	engine.SetStatic("/files", ".", "静态文件服务接口", "文件", "下载")
+	engine.SetStatic("/files", ".", "静态文件服务接口", "压测", "静态文件")
 
-	// 启动服务
 	go func() {
-		server := &http.Server{
-			Addr: ":8080",
-
-			Handler: engine.GetHTTPHandler(),
+		if err := engine.Run(":8080"); err != nil {
+			log.Printf("HTTP 服务退出: %v", err)
 		}
-
-		_ = server.ListenAndServe()
 	}()
 
 	if err := engine.WaitSignalAndShutdown(5*time.Second, nil); err != nil {
-		log.Printf("Faild to shutdown service: %v", err)
+		log.Printf("优雅关闭失败: %v", err)
 	}
 }
