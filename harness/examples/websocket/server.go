@@ -40,7 +40,7 @@ import (
 const msgTypeTick websocket.MessageType = "tick"
 
 func main() {
-	engine := leego.NewEngine(leego.UseEngineName("leego-websocket-example"))
+	engine := leego.NewEngine(leego.WithEngineName("leego-websocket-example"))
 	engine.UseMiddlewares(
 		middlewares.NewLogger().AdaptToMiddleware(),
 		middlewares.NewRecovery().AdaptToMiddleware(),

@@ -80,8 +80,8 @@ func main() {
 	// 选项在构造期一次性写入配置：服务名进入日志与指标，四个超时进入内置的
 	// http.Server；任一超时 <= 0 时保留默认值，不会退化成无限等待。
 	engine := leego.NewEngine(
-		leego.UseEngineName("demo"),
-		leego.UseServerTimeouts(5*time.Second, 10*time.Second, 10*time.Second, 60*time.Second),
+		leego.WithEngineName("demo"),
+		leego.WithServerTimeouts(5*time.Second, 10*time.Second, 10*time.Second, 60*time.Second),
 	)
 
 	// 全局链按追加顺序执行：日志在外层（覆盖全部响应），恢复在内层（兜住后续 panic）。
@@ -160,17 +160,17 @@ leego.ShowLogo()
 
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `UseEngineName(name)` | `"leego"` | 服务名称，出现在日志、指标后台与错误响应中 |
-| `UseMultipartMemory(bytes)` | 32 MiB | multipart 表单解析可用的最大内存 |
-| `UseMaxBodyBytes(bytes)` | 8 MiB | 单个请求体上限；`<= 0` 表示不限制 |
-| `UseStrictJSON(strict)` | `false` | 为 `true` 时 JSON 绑定拒绝未知字段 |
-| `UseH2C()` | 关闭 | 同端口接受明文 HTTP/2（h2c），与 HTTP/1.1 并存 |
-| `UseServerTimeouts(readHeader, read, write, idle)` | 10s / 60s / 60s / 120s | 任一参数 `<= 0` 时保留默认值，避免退化为无限等待 |
-| `UseWriteTimeout(timeout)` | 60s | 单独设置写入超时；传入 `0` 关闭，SSE / WebSocket 长连接必需 |
-| `UseTrustedProxies(cidrs...)` | 空 | 仅信任这些网段传来的 `X-Forwarded-For` / `X-Real-IP` |
+| `WithEngineName(name)` | `"leego"` | 服务名称，出现在日志、指标后台与错误响应中 |
+| `WithMultipartMemory(bytes)` | 32 MiB | multipart 表单解析可用的最大内存 |
+| `WithMaxBodyBytes(bytes)` | 8 MiB | 单个请求体上限；`<= 0` 表示不限制 |
+| `WithStrictJSON(strict)` | `false` | 为 `true` 时 JSON 绑定拒绝未知字段 |
+| `WithH2C()` | 关闭 | 同端口接受明文 HTTP/2（h2c），与 HTTP/1.1 并存 |
+| `WithServerTimeouts(readHeader, read, write, idle)` | 10s / 60s / 60s / 120s | 任一参数 `<= 0` 时保留默认值，避免退化为无限等待 |
+| `WithWriteTimeout(timeout)` | 60s | 单独设置写入超时；传入 `0` 关闭，SSE / WebSocket 长连接必需 |
+| `WithTrustedProxies(cidrs...)` | 空 | 仅信任这些网段传来的 `X-Forwarded-For` / `X-Real-IP` |
 | `DisableStartupLog()` | 关闭 | 不打印启动期的路由注册信息 |
 
-> `UseH2C()` 基于标准库 `http.Server.Protocols`（Go 1.24+），通过 `Run` / `RunTLS` /
+> `WithH2C()` 基于标准库 `http.Server.Protocols`（Go 1.24+），通过 `Run` / `RunTLS` /
 > `RunUnix` / `RunFd` / `RunListener` 启动时自动生效。自行创建 `http.Server` 时，把
 > `Protocols` 字段设为 `engine.GetHTTPProtocols()`；`GetHTTPHandler()` 只返回引擎本身，
 > 不再包装处理器。标准库只实现前导知识方式：客户端需直接发送 HTTP/2 连接序言，
@@ -340,7 +340,7 @@ _ = ctx.BindXML(&payload)
 _ = ctx.BindForm(&payload)
 ```
 
-绑定目标必须是非 nil 指针，否则返回错误；`UseStrictJSON(true)` 时未知字段报错。
+绑定目标必须是非 nil 指针，否则返回错误；`WithStrictJSON(true)` 时未知字段报错。
 
 ### 文件上传
 
@@ -473,14 +473,14 @@ engine.UseMiddlewares(authMiddleware)
 | `middlewares.WrapFromHTTPHandler(h)` | 把 `http.Handler` 包装成中间件 |
 | `middlewares.WrapFromHTTPHandlerFunc(f)` | 把 `http.HandlerFunc` 包装成中间件 |
 | `middlewares.UnwrapFromMiddlewareFuncToHTTPHandler(m)` | 把中间件解包为 `http.Handler` |
-| `cors.NewDefaultCORS()` | CORS：源、方法、头、凭据、`Max-Age` 与预检处理 |
+| `cors.New()` | CORS：源、方法、头、凭据、`Max-Age` 与预检处理 |
 | `jwt.NewHMACSigner(alg, key)` / `jwt.NewParser()` | JWT 签发与解析（HS256/384/512） |
 | `limiter.NewFixedWindowLimiter(limit, window)` | 固定窗口限流 |
 | `limiter.NewSlidingWindowLimiter(limit, buckets, window)` | 滑动窗口限流 |
 | `limiter.NewTokenBucketLimiter(limit, burst)` | 令牌桶限流 |
 | `breaker.NewCircuitBreaker(config)` | 熔断器：失败率窗口 + 半开探测 |
-| `cache.NewCache(cache.Config{...})` | 响应缓存：LRU 容量控制、`X-Cache` 标记与 stale-while-revalidate，默认跳过带 Cookie 的请求 |
-| `compress.NewCompress(compress.Config{...})` | gzip 压缩：按内容类型与最小长度阈值决定是否压缩 |
+| `cache.New(cache.Config{...})` | 响应缓存：LRU 容量控制、`X-Cache` 标记与 stale-while-revalidate，默认跳过带 Cookie 的请求 |
+| `compress.New(compress.Config{...})` | gzip 压缩：按内容类型与最小长度阈值决定是否压缩 |
 | `trace.NewTracer(exporter, ...)` | 链路追踪：解析/生成 W3C `traceparent`，批量异步导出 |
 
 除包装/解包工具函数外，上表中的构造器只负责创建实例；要用作中间件需再调用
@@ -496,7 +496,7 @@ import (
 	"gitee.com/leminewx/leego/middlewares/limiter"
 )
 
-corsInstance := cors.NewDefaultCORS()
+corsInstance := cors.New()
 corsInstance.SetAllowOrigins("https://example.com") // 白名单来源；凭证需另行开启
 corsInstance.SetMaxAge(3600) // 预检结果缓存 3600 秒
 
@@ -547,11 +547,11 @@ engine.GET("/risky", func(ctx *leego.Context) {
 | `upload` | 分片上传：断点续传、乱序/重复分片、SHA-256 秒传（JSONL 追加索引，重启可恢复） | `NewLocalStorage`、`NewHandler` |
 | `job` | 最小堆调度：周期/延迟任务、并发槽位与运行统计，单任务 panic 隔离 | `NewScheduler`、`ScheduleEvery`、`ScheduleAfter` |
 | `gateway` | 反向代理与平滑加权轮询，支持标签灰度与超时预算 | `NewBalancer`、`NewProxy` |
-| `middlewares/cache` | 响应缓存：LRU 容量、`X-Cache` 标记、stale-while-revalidate，默认跳过带 Cookie 的请求 | `cache.NewCache` |
-| `middlewares/compress` | 按内容类型与最小长度阈值决定是否 gzip | `compress.NewCompress` |
+| `middlewares/cache` | 响应缓存：LRU 容量、`X-Cache` 标记、stale-while-revalidate，默认跳过带 Cookie 的请求 | `cache.New` |
+| `middlewares/compress` | 按内容类型与最小长度阈值决定是否 gzip | `compress.New` |
 | `middlewares/trace` | W3C `traceparent` 解析/生成与异步批量导出，未采样且不传播时零分配 | `trace.NewTracer` |
 | `metrics` | 指标存储抽象、内存实现与 Prometheus 文本输出 | `NewMemoryStore`、`RegisterMetrics` |
-| `openapi` | 从已注册路由快照生成 OpenAPI 3.1 文档与浏览页，支持分组、安全方案、命名模式、请求体与多响应 | `NewSpec`、`UseOperation`、`RegisterOpenAPI` |
+| `openapi` | 从已注册路由快照生成 OpenAPI 3.1 文档与浏览页，支持分组、安全方案、命名模式、请求体与多响应 | `NewSpec`、`WithOperation`、`RegisterOpenAPI` |
 
 ### 会话与分片上传
 
@@ -566,11 +566,11 @@ store := session.NewMemoryStore()
 defer store.Close() // 停掉后台清理协程
 
 // 中间件负责读取 Cookie、恢复会话，并在请求结束时写回。
-// UseSecure(true) 给 Cookie 打上 Secure 标记（仅 HTTPS 下发送），本地 http 调试传 false。
+// WithSecure(true) 给 Cookie 打上 Secure 标记（仅 HTTPS 下发送），本地 http 调试传 false。
 engine.UseMiddlewares(session.New(
 	store,
-	session.UseTTL(30*time.Minute),
-	session.UseSecure(true),
+	session.WithTTL(30*time.Minute),
+	session.WithSecure(true),
 ))
 
 engine.POST("/login", func(ctx *leego.Context) {
@@ -605,9 +605,9 @@ if err != nil {
 
 // 上限 1 GiB、默认分片 4 MiB、最多 1024 片；分片体直接读原始字节。
 handler := upload.NewHandler(storage,
-	upload.UseMaxSize(1<<30),
-	upload.UseDefaultPartSize(4<<20),
-	upload.UseMaxParts(1024),
+	upload.WithMaxSize(1<<30),
+	upload.WithDefaultPartSize(4<<20),
+	upload.WithMaxParts(1024),
 )
 
 // 同一个处理器按 action 分发，下面四个方法都指向它：
@@ -624,7 +624,7 @@ engine.DELETE("/upload", handler)
 ```go
 // Workers 是并发槽位上限；Start 之后才接受任务，Stop 只停止取任务，
 // 不会主动取消下面这些任务收到的 ctx。
-scheduler := job.NewScheduler(job.UseWorkers(4))
+scheduler := job.NewScheduler(job.WithWorkers(4))
 scheduler.Start(context.Background())
 defer scheduler.Stop(context.Background())
 
@@ -659,8 +659,8 @@ if err != nil {
 // 超时是单次转发的上游预算；失败回调返回后若响应仍未写出，
 // 框架会补一个 502 JSON（不回显上游地址，避免泄露内网拓扑）。
 proxy := gateway.NewProxy(balancer,
-	gateway.UseTimeout(3*time.Second),
-	gateway.UseErrorHandler(func(ctx *leego.Context, target *url.URL, err error) {
+	gateway.WithTimeout(3*time.Second),
+	gateway.WithErrorHandler(func(ctx *leego.Context, target *url.URL, err error) {
 		ctx.ResponseError(http.StatusBadGateway, "upstream unavailable")
 	}),
 )
@@ -687,7 +687,7 @@ tracer.Shutdown(context.Background())
 // 来源按顺序合并，后者覆盖前者：JSON 提供默认值，环境变量做部署期覆盖。
 // 嵌套对象被展平为点号分隔的键，因此下面的 http.addr 才能取到。
 settings, err := config.Load(
-	config.NewJSONSource("config.json", config.UseWatchInterval(time.Second)),
+	config.NewJSONSource("config.json", config.WithWatchInterval(time.Second)),
 	config.NewEnvSource("APP_"),
 )
 if err != nil {
@@ -744,17 +744,17 @@ import "gitee.com/leminewx/leego/openapi"
 
 // 必须在 Prepare() 之前调用：文档在注册期从路由快照一次性构建，运行期只读。
 _ = engine.RegisterOpenAPI("/openapi",
-	openapi.UseTitle("订单服务"),
-	openapi.UseVersion("1.4.0"),
-	openapi.UseDescription("订单与支付相关接口"),
-	openapi.UseServer("https://api.example.com", "生产环境"), // 影响浏览页 cURL 的基地址
-	openapi.UseTag("订单", "下单、查询与取消"), // 分组名 + 描述
-	openapi.UseSchema("Order", Order{}), // 写入 components.schemas
-	openapi.UseOperation("GET /orders/:id", openapi.Operation{
+	openapi.WithTitle("订单服务"),
+	openapi.WithVersion("1.4.0"),
+	openapi.WithDescription("订单与支付相关接口"),
+	openapi.WithServer("https://api.example.com", "生产环境"), // 影响浏览页 cURL 的基地址
+	openapi.WithTag("订单", "下单、查询与取消"), // 分组名 + 描述
+	openapi.WithSchema("Order", Order{}), // 写入 components.schemas
+	openapi.WithOperation("GET /orders/:id", openapi.Operation{
 		Summary: "查询订单",
 		Tags:    []string{"订单"},
 		Responses: map[string]openapi.Response{
-			"200": openapi.NewJSONRefResponse("订单详情", "Order"), // 引用上面的 UseSchema
+			"200": openapi.NewJSONRefResponse("订单详情", "Order"), // 引用上面的 WithSchema
 			"404": openapi.NewJSONRefResponse("订单不存在", "Error"),
 		},
 	}),
@@ -770,9 +770,9 @@ _ = engine.RegisterOpenAPI("/openapi",
 路径参数统一声明为 `string`；前缀为空时默认 `/openapi`。
 
 - 路由的第二个标签（`engine.GET(pattern, handle, name, tag)`）会写入 `operation.tags`；
-- `UseOperation` 的键兼容 `GET /a/:id`、`get /a/{id}` 与省略方法的 `/a/:id`，
+- `WithOperation` 的键兼容 `GET /a/:id`、`get /a/{id}` 与省略方法的 `/a/:id`，
   未匹配到路由的声明会被忽略，避免文档里出现不存在的接口；
-- 大对象用 `UseSchema` + `NewJSONRefResponse` 生成 `$ref` 复用；
+- 大对象用 `WithSchema` + `NewJSONRefResponse` 生成 `$ref` 复用；
 - 浏览页左侧按分组列出接口（支持方法筛选与搜索），右侧展示参数表、请求体、
   可展开的响应体、cURL 与原始 JSON。
 
@@ -809,11 +809,11 @@ for _, snapshot := range engine.GetAllHandlerSnapshots() {
 import "gitee.com/leminewx/leego/dashboard"
 
 _ = engine.RegisterDashboard("/metrics",
-	dashboard.UseTitle("指标分析"),
-	dashboard.UseRefreshInterval(5*time.Second), // 前端自动刷新间隔
-	dashboard.UseMaxRoutes(200), // 单次返回的最大路由数
+	dashboard.WithTitle("指标分析"),
+	dashboard.WithRefreshInterval(5*time.Second), // 前端自动刷新间隔
+	dashboard.WithMaxRoutes(200), // 单次返回的最大路由数
 	dashboard.EnableExport(true), // 开放 export.csv
-	dashboard.UseAuthorizer(func(req *http.Request) bool {
+	dashboard.WithAuthorizer(func(req *http.Request) bool {
 		// 返回 false 时统一回 401；不配置 Authorizer 则端点完全开放，
 		// 生产环境必须补上，或把端点限制在内网。
 		return req.Header.Get("Authorization") == "Bearer admin"
@@ -849,9 +849,9 @@ defer store.Close()
 
 // 每 5 秒采集一次引擎快照写入存储；同样必须在 Prepare() 之前注册。
 _ = engine.RegisterMetrics("/observe", store,
-	leego.UseMetricsInterval(5*time.Second),
-	leego.UseMetricsStep(time.Minute),
-	leego.UseMetricsAuthorizer(func(ctx *leego.Context) bool {
+	leego.WithMetricsInterval(5*time.Second),
+	leego.WithMetricsStep(time.Minute),
+	leego.WithMetricsAuthorizer(func(ctx *leego.Context) bool {
 		return ctx.GetRequestHeader("Authorization") == "Bearer "+os.Getenv("METRICS_TOKEN")
 	}),
 )
@@ -862,7 +862,7 @@ _ = engine.RegisterMetrics("/observe", store,
 | `GET <prefix>` | 历史趋势 JSON（按 `Step` 聚合） |
 | `GET <prefix>/prometheus` | Prometheus 文本格式（可关闭） |
 
-`UseMetricsAuthorizer` 为 `nil` 时不做校验；生产环境必须配置，或将端点限制在内网。
+`WithMetricsAuthorizer` 为 `nil` 时不做校验；生产环境必须配置，或将端点限制在内网。
 `DisableMetricsPrometheus()` 可关闭抓取路由；`RegisterMetrics` 与 `RegisterDashboard`
 的前缀不要相同，否则会因重复注册而失败。
 
@@ -936,7 +936,7 @@ engine.GET("/ws", func(ctx *leego.Context) {
 })
 ```
 
-自行升级连接时使用 `upgrader.NewUpgrader(config).Upgrade(req, writer, header)`；
+自行升级连接时使用 `upgrader.New(config).Upgrade(req, writer, header)`；
 `Config` 支持读/写超时、最大读字节、来源校验与子协议协商。
 
 ---
@@ -1004,9 +1004,9 @@ go run ./harness/cmd/harness -addr :9000 -data ./tmp
 ```go
 // 端口传 0 由内核分配，数据目录用临时目录：适合写集成测试。
 service, err := harness.NewService(
-	harness.UseAddr("127.0.0.1:0"),
-	harness.UseDataDir(t.TempDir()),
-	harness.UseLogging(false),
+	harness.WithAddr("127.0.0.1:0"),
+	harness.WithDataDir(t.TempDir()),
+	harness.WithLogging(false),
 )
 if err != nil {
 	t.Fatal(err)

@@ -31,12 +31,12 @@ type Upgrader struct {
 }
 
 /*
-NewUpgrader 创建升级器。
+New 创建升级器。
 
 config 为 nil 时使用 NewDefaultConfig 的默认配置；
 传入的配置会被复制一份，后续修改原对象不会影响升级器。
 */
-func NewUpgrader(config *Config) *Upgrader {
+func New(config *Config) *Upgrader {
 	if config == nil {
 		config = NewDefaultConfig()
 	}

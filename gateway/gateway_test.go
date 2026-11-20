@@ -245,7 +245,7 @@ func TestProxyUpstreamFailure(t *testing.T) {
 	}
 
 	var reported atomic.Int64
-	engine := newProxyEngine(balancer, UseErrorHandler(func(*leego.Context, *url.URL, error) {
+	engine := newProxyEngine(balancer, WithErrorHandler(func(*leego.Context, *url.URL, error) {
 		reported.Add(1)
 	}))
 
@@ -310,7 +310,7 @@ func TestProxyTimeoutBudget(t *testing.T) {
 		t.Fatalf("NewBalancer() error = %v", err)
 	}
 
-	engine := newProxyEngine(balancer, UseTimeout(2*time.Second))
+	engine := newProxyEngine(balancer, WithTimeout(2*time.Second))
 	recorder := perform(engine, http.MethodGet, "/api/slow", nil, nil)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("状态码 = %d: %s", recorder.Code, recorder.Body.String())
@@ -336,7 +336,7 @@ func TestProxyStreamsWithFlushInterval(t *testing.T) {
 		t.Fatalf("NewBalancer() error = %v", err)
 	}
 
-	engine := newProxyEngine(balancer, UseFlushInterval(-1))
+	engine := newProxyEngine(balancer, WithFlushInterval(-1))
 	recorder := perform(engine, http.MethodGet, "/api/stream", nil, nil)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("状态码 = %d", recorder.Code)

@@ -30,11 +30,11 @@ type ssePayload struct {
 }
 
 func main() {
-	engine := leego.NewEngine(leego.UseEngineName("leego-sse-example"))
+	engine := leego.NewEngine(leego.WithEngineName("leego-sse-example"))
 	engine.UseMiddlewares(
 		middlewares.NewLogger().AdaptToMiddleware(),
 		middlewares.NewRecovery().AdaptToMiddleware(),
-		cors.NewDefaultCORS().AdaptToMiddleware(),
+		cors.New().AdaptToMiddleware(),
 	)
 
 	manager := sse.NewManager()

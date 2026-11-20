@@ -43,7 +43,7 @@ ctx.GetURL()          // 缓存的 *url.URL
 3. 全部地址都可信或解析失败时，回退到对端地址。
 
 > 可信代理默认为空，因此默认**不会**信任任何转发头。部署在 Nginx / 网关之后时
-> 必须显式配置 `UseTrustedProxies` 或 `SetTrustedProxies`，否则基于 IP 的审计与
+> 必须显式配置 `WithTrustedProxies` 或 `SetTrustedProxies`，否则基于 IP 的审计与
 > 限流可以被伪造头绕过。
 
 ---
@@ -122,7 +122,7 @@ ctx.BindForm(&payload)  // urlencoded 与 multipart
 约束：
 
 - 目标必须是**非 nil 指针**，否则返回错误（不会 panic）；
-- `UseStrictJSON(true)` 时 JSON 解码使用 `DisallowUnknownFields`；
+- `WithStrictJSON(true)` 时 JSON 解码使用 `DisallowUnknownFields`；
 - `BindForm` 支持 `string`、`bool`、整数、浮点数及其切片，字段通过 `form`
   标签匹配，未声明标签时使用字段名；
 - 绑定失败不会写入响应，错误处理由调用方决定。
@@ -302,7 +302,7 @@ err := ctx.ResponseSSE(func(requestCtx context.Context) <-chan *sse.Message {
 否则响应写入器会被归还池中，连接被意外关闭。
 
 引擎默认 `WriteTimeout` 为 60 秒，到时 `net/http` 会切断长连接；启用 SSE /
-WebSocket 的服务应使用 `leego.UseWriteTimeout(0)` 关闭写入超时。详见
+WebSocket 的服务应使用 `leego.WithWriteTimeout(0)` 关闭写入超时。详见
 [docs/sse-websocket.md](sse-websocket.md)。
 
 ---

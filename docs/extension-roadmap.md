@@ -44,7 +44,7 @@ YAML/TOML 不做内建解析（标准库不提供），通过 `Source` 接口由
 **方案**
 - 新增 `config` 包：`Source` 接口（`Load() (map[string]any, error)`、`Watch(func(map[string]any))`），
   内置 `FileSource`、`EnvSource`、`FlagSource`；`Loader` 负责合并与类型转换。
-- 与 `Engine` 的衔接点：`UseEngineName`、`UseServerTimeouts` 等 `EngineOption` 已是纯函数，
+- 与 `Engine` 的衔接点：`WithEngineName`、`WithServerTimeouts` 等 `EngineOption` 已是纯函数，
   热更新时只需重新求值并写入 `EngineConfig` 的可变副本；服务端超时属于启动期参数，
   明确标记为「只读配置」，避免运行期改超时引发的连接状态不一致。
 - 结构体标签 `config:"server.read_timeout"`，复用 `Context.BindForm` 已有的反射工具链。
@@ -165,7 +165,7 @@ TTL、限流窗口与 JWT 过期断言（限流/熔断/JWT 仍用各自内部时
 
 **方案**
 - 新增 `harness/testutil` 包（不进入 `go test` 主链路，仅作为库）：基于
-  `httptest.ResponseRecorder` 进程内调用，`UseHeader` / `UseCookie` 固定头，
+  `httptest.ResponseRecorder` 进程内调用，`WithHeader` / `WithCookie` 固定头，
   `WithHeader` / `WithCookie` / `WithQuery` / `WithRawQuery` 为单请求选项。
 - 时钟注入：目前只提供 `FrozenClock`（`Advance` / `Set`）供业务测试使用；
   `limiter`、`breaker`、`jwt.Parser` 仍各自读系统时间，未收敛到 `Clock`（规划中）。

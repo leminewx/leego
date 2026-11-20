@@ -40,7 +40,7 @@ func BenchmarkResponseWriterPool(b *testing.B) {
 // BenchmarkCollector 测量路由采集器的计数与快照开销。
 func BenchmarkCollector(b *testing.B) {
 	b.Run("IncreaseDecrease", func(b *testing.B) {
-		monitor := collector.NewCollector(http.MethodGet, "/users/:id", "get-user")
+		monitor := collector.New(http.MethodGet, "/users/:id", "get-user")
 		cost := 120 * time.Microsecond
 
 		b.ReportAllocs()
@@ -53,7 +53,7 @@ func BenchmarkCollector(b *testing.B) {
 	})
 
 	b.Run("Snapshot", func(b *testing.B) {
-		monitor := collector.NewCollector(http.MethodGet, "/users/:id", "get-user")
+		monitor := collector.New(http.MethodGet, "/users/:id", "get-user")
 		for index := 0; index < 8; index++ {
 			monitor.Increase()
 			monitor.Decrease(200+index*10, time.Duration(index)*time.Microsecond)
@@ -158,7 +158,7 @@ func BenchmarkDashboard(b *testing.B) {
 	// 产生一条指标，避免报告为空。
 	engine.ServeHTTP(newDiscardWriter(), newRequest("/users/42"))
 
-	board, err := dashboard.NewDashboard(dashboard.UseProvider(func() collector.Report {
+	board, err := dashboard.New(dashboard.WithProvider(func() collector.Report {
 		return engine.CollectReport()
 	}))
 	if err != nil {

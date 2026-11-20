@@ -28,10 +28,10 @@ func TestMetricsConfigNormalize(t *testing.T) {
 // TestMetricsOptions 验证选项只接受合法值。
 func TestMetricsOptions(t *testing.T) {
 	config := MetricsConfig{}
-	UseMetricsInterval(3 * time.Second)(&config)
-	UseMetricsInterval(-time.Second)(&config)
-	UseMetricsStep(2 * time.Second)(&config)
-	UseMetricsStep(0)(&config)
+	WithMetricsInterval(3 * time.Second)(&config)
+	WithMetricsInterval(-time.Second)(&config)
+	WithMetricsStep(2 * time.Second)(&config)
+	WithMetricsStep(0)(&config)
 	DisableMetricsPrometheus()(&config)
 
 	if config.Interval != 3*time.Second {

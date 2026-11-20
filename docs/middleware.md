@@ -111,12 +111,12 @@ stdHandlerFunc := middlewares.UnwrapFromMiddlewareFuncToHTTPHandleFunc(myMiddlew
 | `middlewares` | `NewLogger()` / `NewLoggerWithConfig(cfg)` | 访问日志 |
 | `middlewares` | `NewRecovery()` / `NewRecoveryWithConfig(cfg)` | panic 恢复 |
 | `middlewares` | `NewMonitor(collector)` | 为手工挂载的处理器补充指标 |
-| `middlewares/cors` | `NewDefaultCORS()` | 跨域 |
+| `middlewares/cors` | `New()` | 跨域 |
 | `middlewares/jwt` | `NewHMACSigner` / `NewParser` | JWT（见 [jwt.md](jwt.md)） |
 | `middlewares/limiter` | 三种限流构造器 | 限流（见 [limiter-breaker.md](limiter-breaker.md)） |
 | `middlewares/breaker` | `NewCircuitBreaker(config)` | 熔断（同上） |
-| `middlewares/cache` | `NewCache(cache.Config{...})` | 响应缓存，默认旁路 Cookie 请求（见 README「拓展能力」） |
-| `middlewares/compress` | `NewCompress(compress.Config{...})` | gzip 压缩，按内容类型与阈值判定（同上） |
+| `middlewares/cache` | `New(cache.Config{...})` | 响应缓存，默认旁路 Cookie 请求（见 README「拓展能力」） |
+| `middlewares/compress` | `New(compress.Config{...})` | gzip 压缩，按内容类型与阈值判定（同上） |
 | `middlewares/trace` | `NewTracer(exporter, ...)` | W3C `traceparent` 传播与异步导出（同上） |
 
 所有构造器都只创建实例（结构体或接口），实例通过 `AdaptToMiddleware()` 适配为
@@ -186,7 +186,7 @@ engine.UseMiddlewares(middlewares.NewRecoveryWithConfig(&middlewares.RecoveryCon
 ### 指标采集补充
 
 ```go
-thirdParty := collector.NewCollector(http.MethodGet, "/debug/vars")
+thirdParty := collector.New(http.MethodGet, "/debug/vars")
 engine.UseMiddlewares(middlewares.NewMonitor(thirdParty).AdaptToMiddleware())
 ```
 
@@ -196,7 +196,7 @@ engine.UseMiddlewares(middlewares.NewMonitor(thirdParty).AdaptToMiddleware())
 ### CORS
 
 ```go
-corsInstance := cors.NewDefaultCORS()
+corsInstance := cors.New()
 corsInstance.SetAllowOrigins("https://app.example.com")
 corsInstance.SetAllowMethods(http.MethodGet, http.MethodPost)
 corsInstance.SetAllowHeaders("Content-Type", "Authorization")
@@ -239,7 +239,7 @@ rateLimiter := limiter.NewTokenBucketLimiter(100, 200, limiter.Config{WaitTimeou
 engine.UseMiddlewares(
 	middlewares.NewLogger().AdaptToMiddleware(),
 	middlewares.NewRecovery().AdaptToMiddleware(),
-	cors.NewDefaultCORS().AdaptToMiddleware(),
+	cors.New().AdaptToMiddleware(),
 	rateLimiter.AdaptToMiddleware(),
 )
 ```

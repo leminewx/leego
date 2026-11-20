@@ -289,9 +289,9 @@ func TestHandlerCachesDocument(t *testing.T) {
 
 func TestUseOptions(t *testing.T) {
 	spec := openapi.NewSpec(nil,
-		openapi.UseTitle("订单服务"),
-		openapi.UseVersion("2.3.0"),
-		openapi.UseDescription("示例文档"),
+		openapi.WithTitle("订单服务"),
+		openapi.WithVersion("2.3.0"),
+		openapi.WithDescription("示例文档"),
 	)
 
 	data, err := spec.MarshalJSON()
@@ -316,20 +316,20 @@ func TestSpecStructuredDocument(t *testing.T) {
 	}}
 
 	spec := openapi.NewSpec(source,
-		openapi.UseTitle("用户服务"),
-		openapi.UseVersion("3.0.0"),
-		openapi.UseTermsOfService("https://example.com/terms"),
-		openapi.UseContact("维护者", "https://example.com", "dev@example.com"),
-		openapi.UseLicense("MIT", "https://example.com/license"),
-		openapi.UseServer("https://api.example.com", "生产环境"),
-		openapi.UseTag("用户", "用户相关接口"),
-		openapi.UseSecurityScheme("bearerAuth", openapi.SecurityScheme{
+		openapi.WithTitle("用户服务"),
+		openapi.WithVersion("3.0.0"),
+		openapi.WithTermsOfService("https://example.com/terms"),
+		openapi.WithContact("维护者", "https://example.com", "dev@example.com"),
+		openapi.WithLicense("MIT", "https://example.com/license"),
+		openapi.WithServer("https://api.example.com", "生产环境"),
+		openapi.WithTag("用户", "用户相关接口"),
+		openapi.WithSecurityScheme("bearerAuth", openapi.SecurityScheme{
 			Type:         "http",
 			Scheme:       "bearer",
 			BearerFormat: "JWT",
 		}),
-		openapi.UseSchema("UserProfile", User{}),
-		openapi.UseOperation("GET /users/:id", openapi.Operation{
+		openapi.WithSchema("UserProfile", User{}),
+		openapi.WithOperation("GET /users/:id", openapi.Operation{
 			Summary:  "查询用户",
 			Security: []map[string][]string{{"bearerAuth": nil}},
 			Parameters: []openapi.Parameter{
@@ -340,7 +340,7 @@ func TestSpecStructuredDocument(t *testing.T) {
 				"404": openapi.NewJSONRefResponse("用户不存在", "UserProfile"),
 			},
 		}),
-		openapi.UseOperation("POST /users", openapi.Operation{
+		openapi.WithOperation("POST /users", openapi.Operation{
 			Summary:     "创建用户",
 			RequestBody: openapi.NewJSONRequestBody(true, map[string]any{"name": "leego"}),
 			Responses: map[string]openapi.Response{
@@ -425,7 +425,7 @@ func TestUseOperationKeyVariants(t *testing.T) {
 	}}
 
 	for _, key := range []string{"GET /users/:id", "get /users/{id}", "/users/:id"} {
-		spec := openapi.NewSpec(source, openapi.UseOperation(key, openapi.Operation{Summary: "查询用户"}))
+		spec := openapi.NewSpec(source, openapi.WithOperation(key, openapi.Operation{Summary: "查询用户"}))
 
 		data, err := spec.MarshalJSON()
 		if err != nil {

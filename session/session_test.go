@@ -109,8 +109,8 @@ func TestSessionPersistsAcrossRequests(t *testing.T) {
 	t.Cleanup(func() { _ = store.MemoryStore.Close() })
 
 	engine := newSessionEngine(store,
-		UseSecret([]byte(_TEST_SECRET)),
-		UseTTL(time.Hour),
+		WithSecret([]byte(_TEST_SECRET)),
+		WithTTL(time.Hour),
 	)
 	engine.GET("/set", func(ctx *leego.Context) {
 		current, ok := GetFromContext(ctx.Request.Context())
@@ -184,7 +184,7 @@ func TestSessionRegenerate(t *testing.T) {
 	store := NewMemoryStore()
 	t.Cleanup(func() { _ = store.Close() })
 
-	engine := newSessionEngine(store, UseSecret([]byte(_TEST_SECRET)))
+	engine := newSessionEngine(store, WithSecret([]byte(_TEST_SECRET)))
 	engine.GET("/init", func(ctx *leego.Context) {
 		current, _ := GetFromContext(ctx.Request.Context())
 		current.Set("stage", 1)
@@ -241,7 +241,7 @@ func TestSessionDestroy(t *testing.T) {
 	store := NewMemoryStore()
 	t.Cleanup(func() { _ = store.Close() })
 
-	engine := newSessionEngine(store, UseSecret([]byte(_TEST_SECRET)))
+	engine := newSessionEngine(store, WithSecret([]byte(_TEST_SECRET)))
 	engine.GET("/logout", func(ctx *leego.Context) {
 		current, _ := GetFromContext(ctx.Request.Context())
 		current.Set("user", "leminewx")
@@ -268,7 +268,7 @@ func TestSessionRejectsTamperedCookie(t *testing.T) {
 	store := NewMemoryStore()
 	t.Cleanup(func() { _ = store.Close() })
 
-	engine := newSessionEngine(store, UseSecret([]byte(_TEST_SECRET)))
+	engine := newSessionEngine(store, WithSecret([]byte(_TEST_SECRET)))
 	engine.GET("/whoami", func(ctx *leego.Context) {
 		current, _ := GetFromContext(ctx.Request.Context())
 		if value, ok := current.Get("user"); ok {

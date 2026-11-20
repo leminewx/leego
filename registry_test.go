@@ -56,8 +56,8 @@ func TestRegisterMetricsExposesRoutes(t *testing.T) {
 
 	store := &trackingStore{Store: metrics.NewMemoryStore(time.Minute, 60)}
 	err := engine.RegisterMetrics("/metrics", store,
-		UseMetricsInterval(5*time.Millisecond),
-		UseMetricsStep(time.Second),
+		WithMetricsInterval(5*time.Millisecond),
+		WithMetricsStep(time.Second),
 	)
 	if err != nil {
 		t.Fatalf("RegisterMetrics() error = %v", err)
@@ -110,8 +110,8 @@ func TestRegisterMetricsAuthorizer(t *testing.T) {
 	allowed := false
 
 	err := engine.RegisterMetrics("/metrics", metrics.NewMemoryStore(time.Minute, 60),
-		UseMetricsInterval(time.Hour),
-		UseMetricsAuthorizer(func(*Context) bool { return allowed }),
+		WithMetricsInterval(time.Hour),
+		WithMetricsAuthorizer(func(*Context) bool { return allowed }),
 	)
 	if err != nil {
 		t.Fatalf("RegisterMetrics() error = %v", err)
@@ -149,7 +149,7 @@ func TestRegisterMetricsDisablePrometheus(t *testing.T) {
 	engine := createTestEngine()
 	store := metrics.NewMemoryStore(time.Minute, 60)
 	err := engine.RegisterMetrics("/metrics", store,
-		UseMetricsInterval(time.Hour),
+		WithMetricsInterval(time.Hour),
 		DisableMetricsPrometheus(),
 	)
 	if err != nil {
@@ -175,7 +175,7 @@ func TestRegisterOpenAPIExposesRoutes(t *testing.T) {
 		_ = ctx.ResponseJSON(http.StatusCreated, map[string]bool{"ok": true})
 	}, "post-order")
 
-	err := engine.RegisterOpenAPI("/docs", openapi.UseTitle("订单服务"), openapi.UseVersion("2.1.0"))
+	err := engine.RegisterOpenAPI("/docs", openapi.WithTitle("订单服务"), openapi.WithVersion("2.1.0"))
 	if err != nil {
 		t.Fatalf("RegisterOpenAPI() error = %v", err)
 	}

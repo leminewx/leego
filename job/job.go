@@ -71,15 +71,15 @@ func (own Options) normalize() Options {
 // Option 修改 Options。
 type Option func(*Options)
 
-// UseWorkers 设置并发执行上限。
-func UseWorkers(workers int) Option {
+// WithWorkers 设置并发执行上限。
+func WithWorkers(workers int) Option {
 	return func(options *Options) {
 		options.Workers = workers
 	}
 }
 
-// UseErrorHandler 设置任务错误处理器。
-func UseErrorHandler(handler func(job Job, err error)) Option {
+// WithErrorHandler 设置任务错误处理器。
+func WithErrorHandler(handler func(job Job, err error)) Option {
 	return func(options *Options) {
 		options.OnError = handler
 	}

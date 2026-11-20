@@ -101,14 +101,14 @@ go run ./harness/cmd/harness -addr :9000 -data ./tmp
 
 ### OpenAPI 文档
 
-`harness` 通过 `openapi.UseServer` / `UseTag` / `UseSchema` / `UseOperations`
+`harness` 通过 `openapi.WithServer` / `WithTag` / `WithSchema` / `WithOperations`
 把路由标签、中文摘要、参数说明、请求体与多状态码响应声明为元数据：
 
 | 能力 | 声明方式 |
 | --- | --- |
-| 分组 | 路由第二个标签（`engine.GET(pattern, handle, name, tag)`），与 `UseTag` 同名 |
-| 摘要与描述 | `UseOperation("GET /api/hello", openapi.Operation{Summary, Description})` |
-| 复用模式 | `UseSchema("HarnessOverview", overviewResponse{})` + `NewJSONRefResponse` |
+| 分组 | 路由第二个标签（`engine.GET(pattern, handle, name, tag)`），与 `WithTag` 同名 |
+| 摘要与描述 | `WithOperation("GET /api/hello", openapi.Operation{Summary, Description})` |
+| 复用模式 | `WithSchema("HarnessOverview", overviewResponse{})` + `NewJSONRefResponse` |
 | 请求体 | `NewJSONRequestBody(required, example)` 或显式 `RequestBody` |
 | 多状态码 | `Responses` 中的 `200` / `400` / `404` / `429` 等键 |
 | 媒体类型 | `MEDIA_JSON` / `MEDIA_TEXT` / `MEDIA_EVENT_STREAM` / `MEDIA_OCTET_STREAM` |
@@ -146,12 +146,12 @@ go run ./harness/cmd/harness -addr :9000 -data ./tmp
 
 ```go
 service, err := harness.NewService(
-	harness.UseAddr("127.0.0.1:0"),
-	harness.UseDataDir(t.TempDir()),
-	harness.UseSessionTTL(10*time.Minute),
-	harness.UseRateLimit(2, 2),
-	harness.UseChunkSize(8),
-	harness.UseLogging(false),
+	harness.WithAddr("127.0.0.1:0"),
+	harness.WithDataDir(t.TempDir()),
+	harness.WithSessionTTL(10*time.Minute),
+	harness.WithRateLimit(2, 2),
+	harness.WithChunkSize(8),
+	harness.WithLogging(false),
 )
 if err != nil {
 	t.Fatal(err)
@@ -159,8 +159,8 @@ if err != nil {
 defer service.Shutdown(context.Background())
 ```
 
-可用选项：`UseAddr`、`UseDataDir`、`UseSessionTTL`、`UseSessionSecret`、
-`UseCacheTTL`、`UseRateLimit`、`UseMetricsInterval`、`UseChunkSize`、`UseLogging`。
+可用选项：`WithAddr`、`WithDataDir`、`WithSessionTTL`、`WithSessionSecret`、
+`WithCacheTTL`、`WithRateLimit`、`WithMetricsInterval`、`WithChunkSize`、`WithLogging`。
 
 ---
 
@@ -216,7 +216,7 @@ service.GetEngine().GET("/custom", handler)
 import "gitee.com/leminewx/leego/harness/testutil"
 
 client := testutil.NewClient(service.GetHandler()).
-	UseHeader("X-Request-ID", "test-1")
+	WithHeader("X-Request-ID", "test-1")
 
 response := client.SendJSON(http.MethodPost, "/api/session/login", map[string]any{"name": "demo"})
 response.AssertStatus(t, http.StatusOK).AssertContains(t, "demo")
@@ -274,7 +274,7 @@ go run ./harness/stresstest/test/base
 
 ## 十、注意事项
 
-- 默认会话密钥只用于本地演示，生产必须通过 `UseSessionSecret` 或配置中心注入；
+- 默认会话密钥只用于本地演示，生产必须通过 `WithSessionSecret` 或配置中心注入；
 - 数据目录会在启动时自动创建，测试中请使用 `t.TempDir()` 隔离；
 - 内部上游使用 `127.0.0.1:0` 随机端口，随服务一起关闭；
 - 前端不依赖 CDN，可离线使用；修改 `statics/index.html` 后需重新编译；

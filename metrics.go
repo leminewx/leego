@@ -69,8 +69,8 @@ func (own MetricsConfig) normalize() MetricsConfig {
 // MetricsOption 修改 MetricsConfig。
 type MetricsOption func(*MetricsConfig)
 
-// UseMetricsInterval 设置采集间隔。
-func UseMetricsInterval(interval time.Duration) MetricsOption {
+// WithMetricsInterval 设置采集间隔。
+func WithMetricsInterval(interval time.Duration) MetricsOption {
 	return func(config *MetricsConfig) {
 		if interval > 0 {
 			config.Interval = interval
@@ -78,8 +78,8 @@ func UseMetricsInterval(interval time.Duration) MetricsOption {
 	}
 }
 
-// UseMetricsStep 设置查询聚合步长。
-func UseMetricsStep(step time.Duration) MetricsOption {
+// WithMetricsStep 设置查询聚合步长。
+func WithMetricsStep(step time.Duration) MetricsOption {
 	return func(config *MetricsConfig) {
 		if step > 0 {
 			config.Step = step
@@ -94,10 +94,10 @@ func DisableMetricsPrometheus() MetricsOption {
 	}
 }
 
-// UseMetricsAuthorizer 设置指标端点的访问控制函数。
+// WithMetricsAuthorizer 设置指标端点的访问控制函数。
 //
 // 传入 nil 等价于不做校验；建议在生产环境用内网限制或鉴权函数保护。
-func UseMetricsAuthorizer(authorizer func(*Context) bool) MetricsOption {
+func WithMetricsAuthorizer(authorizer func(*Context) bool) MetricsOption {
 	return func(config *MetricsConfig) {
 		config.Authorizer = authorizer
 	}

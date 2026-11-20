@@ -18,7 +18,7 @@ func TestCookieSurvivesRealHTTP(t *testing.T) {
 	store := NewMemoryStore()
 	t.Cleanup(func() { _ = store.Close() })
 
-	engine := newSessionEngine(store, UseSecret([]byte(_TEST_SECRET)))
+	engine := newSessionEngine(store, WithSecret([]byte(_TEST_SECRET)))
 	engine.GET("/login", func(ctx *leego.Context) {
 		current, ok := GetFromContext(ctx.Request.Context())
 		if !ok {

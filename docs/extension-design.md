@@ -190,7 +190,7 @@ func (own *Config) GetSnapshot() map[string]any     // 返回浅拷贝，供诊�
 5. 生命周期：`Watch` 的协程由 `stop()` 停止；`stop` 幂等（`sync.Once`）。
 
 **接线点**：`main` 中加载后手动应用启动期参数
-（`leego.UseEngineName(cfg.GetString(...))`）；运行期参数通过 `SubscribeChange`
+（`leego.WithEngineName(cfg.GetString(...))`）；运行期参数通过 `SubscribeChange`
 回调写进 `limiter`/`breaker` 的可变配置，不触碰 `EngineConfig`。
 
 **测试点**：优先级合并、类型转换失败、并发 `Get` 与替换（`-race`）、
@@ -308,7 +308,7 @@ func (own *Spec) AddOperation(method, pattern string, op Operation)
 func (own *Spec) AddSchema(name string, value any)   // reflect → Schema
 
 // 声明式构造函数
-func UseServer/UseTag/UseSecurityScheme/UseSchema/UseOperation(...)
+func WithServer/WithTag/WithSecurityScheme/WithSchema/WithOperation(...)
 func NewParameter(name, in, description string, required bool, schema map[string]any) Parameter
 func NewJSONResponse(description string, example any) Response
 func NewJSONRefResponse(description, schemaName string) Response
@@ -332,7 +332,7 @@ func NewUIHandler(spec *Spec) http.Handler // 自写 HTML + 内嵌 JS
    切片 → `array + items`；`time.Time` → `string/date-time`；`any` → `{}`；
    深度上限 8 层，超出回退 `{"type":"object"}`。
 5. 结构化响应：`Response.Content` 为「媒体类型 → `MediaType`」，
-   大对象用 `UseSchema` + `NewJSONRefResponse` 生成 `#/components/schemas/...`，
+   大对象用 `WithSchema` + `NewJSONRefResponse` 生成 `#/components/schemas/...`，
    多个接口共用同一份模式；SSE 与下载分别用 `text/event-stream`、
    `application/octet-stream`。
 6. UI：`embed` 一个自写页面（左侧按 `tags` 分组、支持方法筛选与搜索，
@@ -682,8 +682,8 @@ func NewProxy(balancer *Balancer, options ...Option) leego.HandleFunc
 
 ```go
 func NewClient(handler http.Handler) *Client
-func (own *Client) UseHeader(key, value string) *Client
-func (own *Client) UseCookie(cookie *http.Cookie) *Client
+func (own *Client) WithHeader(key, value string) *Client
+func (own *Client) WithCookie(cookie *http.Cookie) *Client
 func (own *Client) Get(path string, options ...RequestOption) *Response
 func (own *Client) SendJSON(method, path string, body any, options ...RequestOption) *Response
 
@@ -710,7 +710,7 @@ func (own *FrozenClock) Set(at time.Time)
 
 实现要点：全程 `httptest.ResponseRecorder`，进程内调用，不监听端口；
 `RequestOption`（`WithHeader`、`WithCookie`、`WithQuery`、`WithRawQuery`）为函数式选项，
-`UseHeader` / `UseCookie` 固定在客户端上对所有请求生效；断言失败直接 `t.Fatal`，
+`WithHeader` / `WithCookie` 固定在客户端上对所有请求生效；断言失败直接 `t.Fatal`，
 并返回响应本身以支持链式断言；`NewFrozenClock` 用于稳定时间断言（不改根包时钟）。
 
 ---

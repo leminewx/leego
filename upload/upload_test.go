@@ -193,7 +193,7 @@ func TestUploadFlow(t *testing.T) {
 }
 
 func TestUploadRejectsInvalidRequests(t *testing.T) {
-	engine, _, _ := newUploadEngine(t, UseMaxSize(16))
+	engine, _, _ := newUploadEngine(t, WithMaxSize(16))
 
 	if recorder := doJSON(t, engine, http.MethodPost, "/upload?action=init", map[string]any{"size": 0}); recorder.Code != http.StatusBadRequest {
 		t.Fatalf("零长度状态码 = %d, want 400", recorder.Code)

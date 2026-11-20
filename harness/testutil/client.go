@@ -39,10 +39,10 @@ func NewClient(handler http.Handler) *Client {
 	return &Client{handler: handler, headers: make(http.Header)}
 }
 
-// UseHeader 设置默认请求头并返回自身，便于链式调用。
+// WithHeader 设置默认请求头并返回自身，便于链式调用。
 //
 // 同名请求头会被覆盖；传入空 key 时忽略。
-func (own *Client) UseHeader(key, value string) *Client {
+func (own *Client) WithHeader(key, value string) *Client {
 	if key == "" {
 		return own
 	}
@@ -51,8 +51,8 @@ func (own *Client) UseHeader(key, value string) *Client {
 	return own
 }
 
-// UseCookie 追加一个默认 Cookie 并返回自身。
-func (own *Client) UseCookie(cookie *http.Cookie) *Client {
+// WithCookie 追加一个默认 Cookie 并返回自身。
+func (own *Client) WithCookie(cookie *http.Cookie) *Client {
 	if cookie == nil {
 		return own
 	}

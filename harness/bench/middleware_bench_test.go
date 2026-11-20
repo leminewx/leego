@@ -45,7 +45,7 @@ func BenchmarkMiddlewareRecovery(b *testing.B) {
 func BenchmarkMiddlewareCORS(b *testing.B) {
 	b.Run("Simple", func(b *testing.B) {
 		engine := newTestEngine(func(engine *leego.Engine) {
-			engine.UseMiddlewares(cors.NewDefaultCORS().AdaptToMiddleware())
+			engine.UseMiddlewares(cors.New().AdaptToMiddleware())
 			engine.GET("/ping", pingHandle)
 		})
 
@@ -56,7 +56,7 @@ func BenchmarkMiddlewareCORS(b *testing.B) {
 
 	b.Run("Preflight", func(b *testing.B) {
 		engine := newTestEngine(func(engine *leego.Engine) {
-			engine.UseMiddlewares(cors.NewDefaultCORS().AdaptToMiddleware())
+			engine.UseMiddlewares(cors.New().AdaptToMiddleware())
 			engine.GET("/ping", pingHandle)
 		})
 
@@ -93,7 +93,7 @@ func BenchmarkMiddlewareBreaker(b *testing.B) {
 func BenchmarkMiddlewareCompress(b *testing.B) {
 	payload := strings.Repeat("leego performance benchmark payload line. ", 100)
 	engine := newTestEngine(func(engine *leego.Engine) {
-		engine.UseMiddlewares(compress.NewCompress().AdaptToMiddleware())
+		engine.UseMiddlewares(compress.New().AdaptToMiddleware())
 		engine.GET("/report", func(ctx *leego.Context) {
 			_ = ctx.ResponseText(http.StatusOK, payload)
 		})
@@ -109,7 +109,7 @@ func BenchmarkMiddlewareCompress(b *testing.B) {
 // BenchmarkMiddlewareCache 测量响应缓存的命中路径。
 func BenchmarkMiddlewareCache(b *testing.B) {
 	engine := newTestEngine(func(engine *leego.Engine) {
-		engine.UseMiddlewares(cacheMW.NewCache().AdaptToMiddleware())
+		engine.UseMiddlewares(cacheMW.New().AdaptToMiddleware())
 		engine.GET("/catalog", func(ctx *leego.Context) {
 			_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"items": []int{1, 2, 3}})
 		})
@@ -126,7 +126,7 @@ func BenchmarkMiddlewareSession(b *testing.B) {
 	b.Cleanup(func() { _ = store.Close() })
 
 	engine := newTestEngine(func(engine *leego.Engine) {
-		engine.UseMiddlewares(session.New(store, session.UseSecret([]byte("bench-secret-0123456789abcdef0123456789"))))
+		engine.UseMiddlewares(session.New(store, session.WithSecret([]byte("bench-secret-0123456789abcdef0123456789"))))
 		engine.GET("/login", func(ctx *leego.Context) {
 			current, ok := session.GetFromRequest(ctx.Request)
 			if !ok {
@@ -172,7 +172,7 @@ func BenchmarkMiddlewareChain(b *testing.B) {
 		engine.UseMiddlewares(
 			logger.AdaptToMiddleware(),
 			middlewares.NewRecovery().AdaptToMiddleware(),
-			cors.NewDefaultCORS().AdaptToMiddleware(),
+			cors.New().AdaptToMiddleware(),
 			breaker.NewCircuitBreaker(breaker.NewDefaultConfig()).AdaptToMiddleware(),
 		)
 		engine.GET("/users/:id", func(ctx *leego.Context) {

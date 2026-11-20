@@ -11,7 +11,7 @@ import (
 
 // TestCollectRecordsMetrics 验证指标中间件记录请求与状态码。
 func TestCollectRecordsMetrics(t *testing.T) {
-	monitor := collector.NewCollector(http.MethodGet, "/api/ping")
+	monitor := collector.New(http.MethodGet, "/api/ping")
 
 	handle := NewMonitor(monitor).AdaptToMiddleware()(func(ctx *leego.Context) {
 		_ = ctx.ResponseText(http.StatusOK, "pong")
@@ -35,7 +35,7 @@ func TestCollectRecordsMetrics(t *testing.T) {
 
 // TestCollectRecordsFailures 验证 5xx 被计入失败。
 func TestCollectRecordsFailures(t *testing.T) {
-	monitor := collector.NewCollector(http.MethodPost, "/api/error")
+	monitor := collector.New(http.MethodPost, "/api/error")
 
 	handle := NewMonitor(monitor).AdaptToMiddleware()(func(ctx *leego.Context) {
 		_ = ctx.ResponseText(http.StatusInternalServerError, "boom")
@@ -55,7 +55,7 @@ func TestCollectRecordsFailures(t *testing.T) {
 
 // TestCollectRecordsPanicAsFailure 验证处理器 panic 被记为 500 且不泄漏在途计数。
 func TestCollectRecordsPanicAsFailure(t *testing.T) {
-	monitor := collector.NewCollector(http.MethodGet, "/api/panic")
+	monitor := collector.New(http.MethodGet, "/api/panic")
 	handle := NewMonitor(monitor).AdaptToMiddleware()(func(*leego.Context) {
 		panic("boom")
 	})

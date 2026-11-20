@@ -26,7 +26,7 @@ func (own *counter) hit() int64 {
 func newEngine(config ...cache.Config) (*leego.Engine, *counter) {
 	count := &counter{}
 	engine := leego.NewEngine()
-	engine.UseMiddlewares(cache.NewCache(config...).AdaptToMiddleware())
+	engine.UseMiddlewares(cache.New(config...).AdaptToMiddleware())
 
 	engine.GET("/data", func(ctx *leego.Context) {
 		count.value.Add(1)

@@ -18,7 +18,7 @@ import (
 
 func main() {
 	engine := leego.NewEngine(
-		leego.UseEngineName("leego-stress-base"),
+		leego.WithEngineName("leego-stress-base"),
 		leego.DisableStartupLog(),
 	)
 	engine.UseMiddlewares(

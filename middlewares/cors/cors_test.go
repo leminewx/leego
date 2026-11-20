@@ -36,9 +36,9 @@ func createPreflightRequest(origin, method, requestHeaders string) *http.Request
 	return req
 }
 
-// TestNewDefaultCORS 验证默认配置。
-func TestNewDefaultCORS(t *testing.T) {
-	cors := NewDefaultCORS()
+// TestNew 验证默认配置。
+func TestNew(t *testing.T) {
+	cors := New()
 	if !cors.IsEnabled() {
 		t.Fatal("默认跨域中间件必须处于启用状态")
 	}
@@ -76,7 +76,7 @@ func TestSimpleRequestWithWildcardOrigin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
 	req.Header.Set("Origin", "https://any.example")
 
-	recorder, called := performCORS(NewDefaultCORS(), req)
+	recorder, called := performCORS(New(), req)
 
 	if !called {
 		t.Fatal("普通跨域请求必须放行到业务处理函数")
@@ -98,7 +98,7 @@ func TestSimpleRequestWithWildcardOrigin(t *testing.T) {
 
 // TestSimpleRequestWithSpecificOrigin 验证白名单来源与凭证。
 func TestSimpleRequestWithSpecificOrigin(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowOrigins("https://a.example")
 	cors.SetAllowCredentials(true)
 
@@ -125,7 +125,7 @@ func TestSimpleRequestWithSpecificOrigin(t *testing.T) {
 
 // TestSimpleRequestWithDisallowedOrigin 验证不在白名单的来源。
 func TestSimpleRequestWithDisallowedOrigin(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowOrigins("https://a.example")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
@@ -145,7 +145,7 @@ func TestSimpleRequestWithDisallowedOrigin(t *testing.T) {
 
 // TestPreflightAllowed 验证合法预检请求。
 func TestPreflightAllowed(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowOrigins("https://a.example")
 	cors.SetAllowMethods("POST")
 	cors.SetAllowHeaders("X-Token")
@@ -186,7 +186,7 @@ func TestPreflightAllowed(t *testing.T) {
 
 // TestPreflightEchoesRequestHeaders 验证未配置请求头白名单时回显请求头。
 func TestPreflightEchoesRequestHeaders(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowMethods(http.MethodPost)
 
 	recorder, _ := performCORS(cors, createPreflightRequest("https://a.example", http.MethodPost, "X-Custom, X-Trace"))
@@ -198,7 +198,7 @@ func TestPreflightEchoesRequestHeaders(t *testing.T) {
 
 // TestPreflightRejectedOrigin 验证来源被拒的预检请求。
 func TestPreflightRejectedOrigin(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowOrigins("https://a.example")
 
 	recorder, called := performCORS(cors, createPreflightRequest("https://b.example", http.MethodGet, ""))
@@ -218,7 +218,7 @@ func TestPreflightRejectedOrigin(t *testing.T) {
 
 // TestPreflightRejectedMethod 验证方法被拒的预检请求。
 func TestPreflightRejectedMethod(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowMethods(http.MethodPost)
 
 	recorder, called := performCORS(cors, createPreflightRequest("https://a.example", http.MethodDelete, ""))
@@ -237,7 +237,7 @@ func TestPlainOptionsPassThrough(t *testing.T) {
 	req := httptest.NewRequest(http.MethodOptions, "/api/users", nil)
 	req.Header.Set("Origin", "https://a.example")
 
-	recorder, called := performCORS(NewDefaultCORS(), req)
+	recorder, called := performCORS(New(), req)
 	if !called {
 		t.Fatal("普通 OPTIONS 请求必须进入业务处理函数")
 	}
@@ -249,7 +249,7 @@ func TestPlainOptionsPassThrough(t *testing.T) {
 
 // TestDisabledCORS 验证禁用后不写入任何 CORS 头。
 func TestDisabledCORS(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.Disable()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
@@ -267,7 +267,7 @@ func TestDisabledCORS(t *testing.T) {
 
 // TestExposeHeaders 验证暴露响应头。
 func TestExposeHeaders(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetExposeHeaders("X-Total", "x-total")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
@@ -281,7 +281,7 @@ func TestExposeHeaders(t *testing.T) {
 
 // TestWildcardOriginForcesNoCredentials 验证通配符源与凭证互斥。
 func TestWildcardOriginForcesNoCredentials(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowOrigins("*")
 	cors.SetAllowCredentials(true)
 

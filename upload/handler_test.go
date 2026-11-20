@@ -19,12 +19,12 @@ func TestUploadOptionsNormalizeDefaults(t *testing.T) {
 func TestUploadOptionsApplied(t *testing.T) {
 	options := NewDefaultOptions()
 	for _, option := range []Option{
-		UseActionParam("op"),
-		UseIDParam("sid"),
-		UseIndexParam("idx"),
-		UseMaxSize(1024),
-		UseDefaultPartSize(256),
-		UseMaxParts(8),
+		WithActionParam("op"),
+		WithIDParam("sid"),
+		WithIndexParam("idx"),
+		WithMaxSize(1024),
+		WithDefaultPartSize(256),
+		WithMaxParts(8),
 	} {
 		if option == nil {
 			t.Fatal("选项函数不应为 nil")

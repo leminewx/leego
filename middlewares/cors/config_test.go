@@ -7,7 +7,7 @@ import (
 
 // TestSetAllowOrigins 验证来源白名单的设置与规范化。
 func TestSetAllowOrigins(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowOrigins(" https://b.example ", "https://a.example", "https://a.example")
 
 	origins := cors.GetAllowedOrigins()
@@ -29,7 +29,7 @@ func TestSetAllowOrigins(t *testing.T) {
 
 // TestSetAllowCredentials 验证凭证开关与通配符互斥。
 func TestSetAllowCredentials(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowOrigins("https://a.example")
 	cors.SetAllowCredentials(true)
 
@@ -47,7 +47,7 @@ func TestSetAllowCredentials(t *testing.T) {
 
 // TestSetAllowMethods 验证方法白名单的规范化、去重与顺序。
 func TestSetAllowMethods(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowMethods(" post ", "POST", "get", "")
 
 	methods := cors.GetAllowedMethods()
@@ -73,7 +73,7 @@ func TestSetAllowMethods(t *testing.T) {
 
 // TestSetAllowHeaders 验证请求头白名单大小写不敏感去重。
 func TestSetAllowHeaders(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetAllowHeaders("X-Token", "x-token", " Accept ", "")
 
 	headerNames := cors.GetAllowedHeaders()
@@ -84,7 +84,7 @@ func TestSetAllowHeaders(t *testing.T) {
 
 // TestSetExposeHeaders 验证暴露响应头去重与副本语义。
 func TestSetExposeHeaders(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 	cors.SetExposeHeaders("X-Total", "x-total")
 
 	headerNames := cors.GetExposedHeaders()
@@ -101,7 +101,7 @@ func TestSetExposeHeaders(t *testing.T) {
 
 // TestSetMaxAge 验证预检缓存时间的设置。
 func TestSetMaxAge(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 
 	cors.SetMaxAge(120)
 	if cors.GetConfig().MaxAgeSeconds != 120 {
@@ -121,7 +121,7 @@ func TestSetMaxAge(t *testing.T) {
 
 // TestGetConfigDeepCopy 验证配置返回深拷贝。
 func TestGetConfigDeepCopy(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 
 	config := cors.GetConfig()
 	config.AllowOrigins[0] = "changed"
@@ -143,7 +143,7 @@ func TestGetConfigDeepCopy(t *testing.T) {
 
 // TestEnableDisable 验证启停开关。
 func TestEnableDisable(t *testing.T) {
-	cors := NewDefaultCORS()
+	cors := New()
 
 	cors.Disable()
 	if cors.IsEnabled() || cors.GetConfig().IsEnabled {

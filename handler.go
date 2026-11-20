@@ -71,7 +71,7 @@ func newHandler(group *group, method, pattern string, handle HandleFunc, tags ..
 	return &handler{
 		group:      group,
 		base:       handle,
-		collector:  collector.NewCollector(method, pattern, tags...),
+		collector:  collector.New(method, pattern, tags...),
 		paramNames: extractSegmentNames(tree.SplitPattern(pattern)),
 	}
 }

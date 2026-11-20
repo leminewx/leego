@@ -70,43 +70,43 @@ func (own Options) normalize() Options {
 // Option 修改 Options。
 type Option func(*Options)
 
-// UseTransport 设置上游连接池。
-func UseTransport(transport http.RoundTripper) Option {
+// WithTransport 设置上游连接池。
+func WithTransport(transport http.RoundTripper) Option {
 	return func(options *Options) {
 		options.Transport = transport
 	}
 }
 
-// UseFlushInterval 设置响应刷新间隔；传入负数表示立即刷新。
-func UseFlushInterval(interval time.Duration) Option {
+// WithFlushInterval 设置响应刷新间隔；传入负数表示立即刷新。
+func WithFlushInterval(interval time.Duration) Option {
 	return func(options *Options) {
 		options.FlushInterval = interval
 	}
 }
 
-// UseTimeout 设置上游超时预算。
-func UseTimeout(timeout time.Duration) Option {
+// WithTimeout 设置上游超时预算。
+func WithTimeout(timeout time.Duration) Option {
 	return func(options *Options) {
 		options.Timeout = timeout
 	}
 }
 
-// UseTagHeader 设置灰度标签请求头。
-func UseTagHeader(name string) Option {
+// WithTagHeader 设置灰度标签请求头。
+func WithTagHeader(name string) Option {
 	return func(options *Options) {
 		options.TagHeader = name
 	}
 }
 
-// UseTimeoutHeader 设置超时预算请求头。
-func UseTimeoutHeader(name string) Option {
+// WithTimeoutHeader 设置超时预算请求头。
+func WithTimeoutHeader(name string) Option {
 	return func(options *Options) {
 		options.TimeoutHeader = name
 	}
 }
 
-// UseErrorHandler 设置上游失败回调。
-func UseErrorHandler(handler func(ctx *leego.Context, target *url.URL, err error)) Option {
+// WithErrorHandler 设置上游失败回调。
+func WithErrorHandler(handler func(ctx *leego.Context, target *url.URL, err error)) Option {
 	return func(options *Options) {
 		options.OnError = handler
 	}

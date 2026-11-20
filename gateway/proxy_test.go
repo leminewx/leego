@@ -38,12 +38,12 @@ func TestProxyOptionsApply(t *testing.T) {
 	transport := &http.Transport{}
 	called := false
 
-	UseTransport(transport)(&options)
-	UseFlushInterval(-time.Second)(&options)
-	UseTimeout(2 * time.Second)(&options)
-	UseTagHeader("X-Env")(&options)
-	UseTimeoutHeader("X-Budget")(&options)
-	UseErrorHandler(func(*leego.Context, *url.URL, error) { called = true })(&options)
+	WithTransport(transport)(&options)
+	WithFlushInterval(-time.Second)(&options)
+	WithTimeout(2 * time.Second)(&options)
+	WithTagHeader("X-Env")(&options)
+	WithTimeoutHeader("X-Budget")(&options)
+	WithErrorHandler(func(*leego.Context, *url.URL, error) { called = true })(&options)
 
 	if options.Transport != transport || options.FlushInterval != -time.Second || options.Timeout != 2*time.Second {
 		t.Fatalf("Options = %+v", options)

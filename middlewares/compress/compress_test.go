@@ -16,7 +16,7 @@ import (
 
 // TestCompressRestoresWriterOnPanic 验证处理器 panic 后压缩包装器被还原。
 func TestCompressRestoresWriterOnPanic(t *testing.T) {
-	handle := compress.NewCompress().AdaptToMiddleware()(func(*leego.Context) {
+	handle := compress.New().AdaptToMiddleware()(func(*leego.Context) {
 		panic("boom")
 	})
 
@@ -38,7 +38,7 @@ func TestCompressRestoresWriterOnPanic(t *testing.T) {
 // newEngine 构造启用压缩的最小引擎。
 func newEngine(config ...compress.Config) *leego.Engine {
 	engine := leego.NewEngine()
-	engine.UseMiddlewares(compress.NewCompress(config...).AdaptToMiddleware())
+	engine.UseMiddlewares(compress.New(config...).AdaptToMiddleware())
 
 	engine.GET("/json", func(ctx *leego.Context) {
 		_ = ctx.ResponseJSON(http.StatusOK, map[string]string{"message": strings.Repeat("leego ", 200)})
@@ -177,7 +177,7 @@ func TestCompressHonorsCustomTypes(t *testing.T) {
 func TestCompressDetectsContentType(t *testing.T) {
 	// 未显式设置 Content-Type 时按首块数据嗅探。
 	engine := leego.NewEngine()
-	engine.UseMiddlewares(compress.NewCompress().AdaptToMiddleware())
+	engine.UseMiddlewares(compress.New().AdaptToMiddleware())
 	engine.GET("/detect", func(ctx *leego.Context) {
 		_, _ = ctx.Response.Write([]byte(`{"names":["` + strings.Repeat("leego", 500) + `"]}`))
 	})

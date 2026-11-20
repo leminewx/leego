@@ -70,8 +70,8 @@ func createTestReport() collector.Report {
 func createTestDashboard(t *testing.T, options ...Option) *Dashboard {
 	t.Helper()
 
-	options = append([]Option{UseProvider(createTestReport)}, options...)
-	instance, err := NewDashboard(options...)
+	options = append([]Option{WithProvider(createTestReport)}, options...)
+	instance, err := New(options...)
 	if err != nil {
 		t.Fatalf("创建后台失败: %v", err)
 	}
@@ -111,41 +111,41 @@ func TestNewDefaultOptions(t *testing.T) {
 func TestOptionsApplyExpectedValues(t *testing.T) {
 	options := NewDefaultOptions()
 
-	UseTitle("  订单服务  ")(&options)
+	WithTitle("  订单服务  ")(&options)
 	if options.Title != "订单服务" {
 		t.Fatalf("Title = %q, want 订单服务", options.Title)
 	}
-	UseTitle("   ")(&options)
+	WithTitle("   ")(&options)
 	if options.Title != "订单服务" {
 		t.Fatalf("空白标题不应覆盖，得到 %q", options.Title)
 	}
 
-	UseRefreshInterval(2 * time.Second)(&options)
-	UseRefreshInterval(0)(&options)
-	UseRefreshInterval(-time.Second)(&options)
+	WithRefreshInterval(2 * time.Second)(&options)
+	WithRefreshInterval(0)(&options)
+	WithRefreshInterval(-time.Second)(&options)
 	if options.RefreshInterval != 2*time.Second {
 		t.Fatalf("RefreshInterval = %v, want 2s", options.RefreshInterval)
 	}
 
-	UseMaxRoutes(20)(&options)
-	UseMaxRoutes(0)(&options)
+	WithMaxRoutes(20)(&options)
+	WithMaxRoutes(0)(&options)
 	if options.MaxRoutes != 20 {
 		t.Fatalf("MaxRoutes = %d, want 20", options.MaxRoutes)
 	}
 
 	provider := createTestReport
-	UseProvider(provider)(&options)
-	UseProvider(nil)(&options)
+	WithProvider(provider)(&options)
+	WithProvider(nil)(&options)
 	if options.Provider == nil {
 		t.Fatal("nil Provider 不应覆盖已有实现")
 	}
 
 	authorizer := func(*http.Request) bool { return true }
-	UseAuthorizer(authorizer)(&options)
+	WithAuthorizer(authorizer)(&options)
 	if options.Authorizer == nil {
 		t.Fatal("Authorizer 未被设置")
 	}
-	UseAuthorizer(nil)(&options)
+	WithAuthorizer(nil)(&options)
 	if options.Authorizer != nil {
 		t.Fatal("Authorizer 应可被重置为 nil")
 	}
@@ -156,9 +156,9 @@ func TestOptionsApplyExpectedValues(t *testing.T) {
 	}
 }
 
-// TestNewDashboardValidatesMaxRoutes 验证非正数 MaxRoutes 会被拒绝。
-func TestNewDashboardValidatesMaxRoutes(t *testing.T) {
-	_, err := NewDashboard(func(options *Options) {
+// TestNewValidatesMaxRoutes 验证非正数 MaxRoutes 会被拒绝。
+func TestNewValidatesMaxRoutes(t *testing.T) {
+	_, err := New(func(options *Options) {
 		options.MaxRoutes = 0
 	})
 	if err == nil {
@@ -166,11 +166,11 @@ func TestNewDashboardValidatesMaxRoutes(t *testing.T) {
 	}
 }
 
-// TestNewDashboardRendersPage 验证页面模板占位符已被替换，并完成 HTML 转义。
-func TestNewDashboardRendersPage(t *testing.T) {
+// TestNewRendersPage 验证页面模板占位符已被替换，并完成 HTML 转义。
+func TestNewRendersPage(t *testing.T) {
 	instance := createTestDashboard(t,
-		UseTitle(`后台 <script>alert("x")</script>`),
-		UseRefreshInterval(2*time.Second),
+		WithTitle(`后台 <script>alert("x")</script>`),
+		WithRefreshInterval(2*time.Second),
 		EnableExport(false),
 	)
 
@@ -198,7 +198,7 @@ func TestNewDashboardRendersPage(t *testing.T) {
 // TestGetOptionsAndMetadata 验证配置副本、创建时间与字符串描述。
 func TestGetOptionsAndMetadata(t *testing.T) {
 	before := time.Now()
-	instance := createTestDashboard(t, UseTitle("指标"), UseMaxRoutes(10))
+	instance := createTestDashboard(t, WithTitle("指标"), WithMaxRoutes(10))
 	after := time.Now()
 
 	options := instance.GetOptions()
@@ -262,7 +262,7 @@ func TestServeHTTPRejectsUnsupportedMethods(t *testing.T) {
 
 // TestServeHTTPAuthorizer 验证鉴权失败返回 401，成功继续处理。
 func TestServeHTTPAuthorizer(t *testing.T) {
-	instance := createTestDashboard(t, UseAuthorizer(func(req *http.Request) bool {
+	instance := createTestDashboard(t, WithAuthorizer(func(req *http.Request) bool {
 		return req.Header.Get("X-Admin-Token") == "secret"
 	}))
 
@@ -402,7 +402,7 @@ func TestWriteReportFiltersByQuery(t *testing.T) {
 
 // TestWriteReportLimitsRoutes 验证按请求量截断并重新汇总。
 func TestWriteReportLimitsRoutes(t *testing.T) {
-	instance := createTestDashboard(t, UseMaxRoutes(2))
+	instance := createTestDashboard(t, WithMaxRoutes(2))
 	recorder := performDashboardRequest(instance, http.MethodGet, "/metrics/api/report")
 
 	var report collector.Report
@@ -534,7 +534,7 @@ func TestWriteCSVDisabled(t *testing.T) {
 
 // TestWriteReportWithoutProvider 验证未配置 Provider 时返回空报告。
 func TestWriteReportWithoutProvider(t *testing.T) {
-	instance, err := NewDashboard()
+	instance, err := New()
 	if err != nil {
 		t.Fatalf("创建后台失败: %v", err)
 	}
@@ -664,7 +664,7 @@ func TestServeHTTPConcurrently(t *testing.T) {
 
 // BenchmarkServePage 测量页面响应耗时。
 func BenchmarkServePage(b *testing.B) {
-	instance, err := NewDashboard()
+	instance, err := New()
 	if err != nil {
 		b.Fatalf("创建后台失败: %v", err)
 	}
@@ -680,7 +680,7 @@ func BenchmarkServePage(b *testing.B) {
 
 // BenchmarkServeReport 测量报告接口（含过滤与 JSON 序列化）的耗时。
 func BenchmarkServeReport(b *testing.B) {
-	instance, err := NewDashboard(UseProvider(createTestReport))
+	instance, err := New(WithProvider(createTestReport))
 	if err != nil {
 		b.Fatalf("创建后台失败: %v", err)
 	}

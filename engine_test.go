@@ -356,11 +356,11 @@ func TestEngineGetHandler(t *testing.T) {
 // TestEngineConfigOptions 验证配置选项与深拷贝隔离。
 func TestEngineConfigOptions(t *testing.T) {
 	engine := NewEngine(
-		UseEngineName("  svc  "),
-		UseMaxBodyBytes(128),
-		UseStrictJSON(true),
-		UseServerTimeouts(time.Second, 2*time.Second, 3*time.Second, 4*time.Second),
-		UseTrustedProxies("10.0.0.0/8"),
+		WithEngineName("  svc  "),
+		WithMaxBodyBytes(128),
+		WithStrictJSON(true),
+		WithServerTimeouts(time.Second, 2*time.Second, 3*time.Second, 4*time.Second),
+		WithTrustedProxies("10.0.0.0/8"),
 		DisableStartupLog(),
 	)
 
@@ -416,7 +416,7 @@ func TestEngineStrictJSON(t *testing.T) {
 	}
 
 	var bindErr error
-	engine := NewEngine(UseStrictJSON(true), DisableStartupLog())
+	engine := NewEngine(WithStrictJSON(true), DisableStartupLog())
 	engine.POST("/bind", func(ctx *Context) {
 		var body payload
 		bindErr = ctx.BindJSON(&body)
@@ -566,22 +566,22 @@ func TestEngineRunTLSWithoutCertificate(t *testing.T) {
 
 // TestUseWriteTimeoutAllowsZero 验证长连接可以显式关闭写入超时。
 //
-// UseServerTimeouts 会忽略非正数，SSE/WebSocket 无法借它关闭 WriteTimeout，
+// WithServerTimeouts 会忽略非正数，SSE/WebSocket 无法借它关闭 WriteTimeout，
 // 因此必须提供允许 0 的独立选项。
 func TestUseWriteTimeoutAllowsZero(t *testing.T) {
-	engine := NewEngine(DisableStartupLog(), UseWriteTimeout(0), UseServerTimeouts(0, 0, 5*time.Second, 0))
+	engine := NewEngine(DisableStartupLog(), WithWriteTimeout(0), WithServerTimeouts(0, 0, 5*time.Second, 0))
 
-	// UseServerTimeouts 中的正数仍然生效，但 0 不会把显式关闭覆盖回默认值。
+	// WithServerTimeouts 中的正数仍然生效，但 0 不会把显式关闭覆盖回默认值。
 	if got := engine.GetConfig().WriteTimeout; got != 5*time.Second {
 		t.Fatalf("WriteTimeout = %v, want 5s", got)
 	}
 
-	longLived := NewEngine(DisableStartupLog(), UseWriteTimeout(0))
+	longLived := NewEngine(DisableStartupLog(), WithWriteTimeout(0))
 	if got := longLived.GetConfig().WriteTimeout; got != 0 {
 		t.Fatalf("WriteTimeout = %v, want 0（SSE/WebSocket 需要无限期写入）", got)
 	}
 
-	negative := NewEngine(DisableStartupLog(), UseWriteTimeout(-time.Second))
+	negative := NewEngine(DisableStartupLog(), WithWriteTimeout(-time.Second))
 	if got := negative.GetConfig().WriteTimeout; got != 0 {
 		t.Fatalf("负数应视为 0，实际 = %v", got)
 	}
@@ -589,13 +589,13 @@ func TestUseWriteTimeoutAllowsZero(t *testing.T) {
 
 // TestEngineMultipartMemoryOptions 验证 multipart 内存上限的配置与回退。
 func TestEngineMultipartMemoryOptions(t *testing.T) {
-	engine := NewEngine(UseMultipartMemory(4<<20), DisableStartupLog())
+	engine := NewEngine(WithMultipartMemory(4<<20), DisableStartupLog())
 	if got := engine.getMultipartMemory(); got != 4<<20 {
 		t.Fatalf("getMultipartMemory() = %d, want %d", got, int64(4<<20))
 	}
 
 	// 非正数应保留默认值。
-	zero := NewEngine(UseMultipartMemory(0), DisableStartupLog())
+	zero := NewEngine(WithMultipartMemory(0), DisableStartupLog())
 	if got := zero.getMultipartMemory(); got != _DEFAULT_MULTIPART_MEMORY {
 		t.Fatalf("零值配置 = %d, want %d", got, _DEFAULT_MULTIPART_MEMORY)
 	}
@@ -701,7 +701,7 @@ func TestEngineHTTPProtocolsFollowsH2C(t *testing.T) {
 		t.Fatal("GetHTTPHandler() 必须直接返回引擎，不再包装处理器")
 	}
 
-	upgraded := NewEngine(UseH2C(), DisableStartupLog())
+	upgraded := NewEngine(WithH2C(), DisableStartupLog())
 	protocols := upgraded.GetHTTPProtocols()
 	if protocols == nil {
 		t.Fatal("启用 h2c 后 GetHTTPProtocols() 不应返回 nil")
@@ -714,7 +714,7 @@ func TestEngineHTTPProtocolsFollowsH2C(t *testing.T) {
 
 // TestEngineH2CServesUnencryptedHTTP2 验证启用 h2c 后同一端口可服务明文 HTTP/2。
 func TestEngineH2CServesUnencryptedHTTP2(t *testing.T) {
-	engine := NewEngine(UseH2C(), DisableStartupLog())
+	engine := NewEngine(WithH2C(), DisableStartupLog())
 	engine.GET("/ping", func(ctx *Context) {
 		_ = ctx.ResponseText(http.StatusOK, "pong")
 	})

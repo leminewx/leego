@@ -290,64 +290,64 @@ func (own Options) normalize() Options {
 // Option 修改 Options。
 type Option func(*Options)
 
-// UseTitle 设置文档标题。
-func UseTitle(title string) Option {
+// WithTitle 设置文档标题。
+func WithTitle(title string) Option {
 	return func(options *Options) {
 		options.Title = title
 	}
 }
 
-// UseVersion 设置服务版本。
-func UseVersion(version string) Option {
+// WithVersion 设置服务版本。
+func WithVersion(version string) Option {
 	return func(options *Options) {
 		options.Version = version
 	}
 }
 
-// UseDescription 设置服务描述。
-func UseDescription(description string) Option {
+// WithDescription 设置服务描述。
+func WithDescription(description string) Option {
 	return func(options *Options) {
 		options.Description = description
 	}
 }
 
-// UseTermsOfService 设置服务条款地址。
-func UseTermsOfService(url string) Option {
+// WithTermsOfService 设置服务条款地址。
+func WithTermsOfService(url string) Option {
 	return func(options *Options) {
 		options.TermsOfService = url
 	}
 }
 
-// UseContact 设置联系人信息。
-func UseContact(name, url, email string) Option {
+// WithContact 设置联系人信息。
+func WithContact(name, url, email string) Option {
 	return func(options *Options) {
 		options.Contact = &Contact{Name: name, URL: url, Email: email}
 	}
 }
 
-// UseLicense 设置许可信息。
-func UseLicense(name, url string) Option {
+// WithLicense 设置许可信息。
+func WithLicense(name, url string) Option {
 	return func(options *Options) {
 		options.License = &License{Name: name, URL: url}
 	}
 }
 
-// UseServer 追加一个服务地址。
-func UseServer(url, description string) Option {
+// WithServer 追加一个服务地址。
+func WithServer(url, description string) Option {
 	return func(options *Options) {
 		options.Servers = append(options.Servers, Server{URL: url, Description: description})
 	}
 }
 
-// UseTag 追加一个业务分组说明。
-func UseTag(name, description string) Option {
+// WithTag 追加一个业务分组说明。
+func WithTag(name, description string) Option {
 	return func(options *Options) {
 		options.Tags = append(options.Tags, Tag{Name: name, Description: description})
 	}
 }
 
-// UseSecurityScheme 追加一个命名安全方案。
-func UseSecurityScheme(name string, scheme SecurityScheme) Option {
+// WithSecurityScheme 追加一个命名安全方案。
+func WithSecurityScheme(name string, scheme SecurityScheme) Option {
 	return func(options *Options) {
 		if options.SecuritySchemes == nil {
 			options.SecuritySchemes = make(map[string]SecurityScheme, 2)
@@ -357,11 +357,11 @@ func UseSecurityScheme(name string, scheme SecurityScheme) Option {
 	}
 }
 
-// UseOperation 声明一条操作的覆盖项。
+// WithOperation 声明一条操作的覆盖项。
 //
 // key 形如 "GET /api/users/:id"；未匹配到路由时该声明会被忽略，
 // 避免因为路由改名而让文档里出现不存在的接口。
-func UseOperation(key string, operation Operation) Option {
+func WithOperation(key string, operation Operation) Option {
 	return func(options *Options) {
 		if options.Operations == nil {
 			options.Operations = make(map[string]Operation, 8)
@@ -371,17 +371,17 @@ func UseOperation(key string, operation Operation) Option {
 	}
 }
 
-// UseOperations 批量声明操作覆盖项。
-func UseOperations(operations map[string]Operation) Option {
+// WithOperations 批量声明操作覆盖项。
+func WithOperations(operations map[string]Operation) Option {
 	return func(options *Options) {
 		for key, operation := range operations {
-			UseOperation(key, operation)(options)
+			WithOperation(key, operation)(options)
 		}
 	}
 }
 
-// UseSchema 注册一个命名模式，供响应体的 $ref 引用。
-func UseSchema(name string, value any) Option {
+// WithSchema 注册一个命名模式，供响应体的 $ref 引用。
+func WithSchema(name string, value any) Option {
 	return func(options *Options) {
 		if options.Schemas == nil {
 			options.Schemas = make(map[string]any, 8)
@@ -391,11 +391,11 @@ func UseSchema(name string, value any) Option {
 	}
 }
 
-// UseSchemas 批量注册命名模式。
-func UseSchemas(schemas map[string]any) Option {
+// WithSchemas 批量注册命名模式。
+func WithSchemas(schemas map[string]any) Option {
 	return func(options *Options) {
 		for name, value := range schemas {
-			UseSchema(name, value)(options)
+			WithSchema(name, value)(options)
 		}
 	}
 }

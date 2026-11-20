@@ -260,7 +260,7 @@ func (own *Config) SubscribeChange(key string, notify func(any)) (cancel func())
 
 // Watch 启动热更新监听。
 //
-// 参数 interval 大于 0 时覆盖来源构造时的 UseWatchInterval 配置；
+// 参数 interval 大于 0 时覆盖来源构造时的 WithWatchInterval 配置；
 // 小于等于 0 时保留来源自身的间隔（默认 1 秒）。
 // 可重复调用，只有第一次生效；不支持监听的来源会被跳过。
 func (own *Config) Watch(interval time.Duration) error {

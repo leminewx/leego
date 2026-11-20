@@ -174,18 +174,18 @@ func (own *Service) registerOpenAPI() error {
 	options := make([]openapi.Option, 0, 8+len(openAPITagOptions()))
 	options = append(
 		options,
-		openapi.UseTitle("leego harness"),
-		openapi.UseVersion(_HARNESS_VERSION),
-		openapi.UseDescription(
+		openapi.WithTitle("leego harness"),
+		openapi.WithVersion(_HARNESS_VERSION),
+		openapi.WithDescription(
 			"leego 零依赖扩展能力的开发者体验服务。\n\n"+
 				"所有接口都是真实可调的：请求会被记录为指标与链路片段，"+
 				"可分别在 /metrics 与 /dashboard 中查看。",
 		),
-		openapi.UseLicense("MIT", ""),
-		openapi.UseServer("http://"+own.config.Addr, "本地实例"),
-		openapi.UseServer("/", "与文档同源"),
-		openapi.UseSchemas(openAPISchemas()),
-		openapi.UseOperations(openAPIOperations()),
+		openapi.WithLicense("MIT", ""),
+		openapi.WithServer("http://"+own.config.Addr, "本地实例"),
+		openapi.WithServer("/", "与文档同源"),
+		openapi.WithSchemas(openAPISchemas()),
+		openapi.WithOperations(openAPIOperations()),
 	)
 	options = append(options, openAPITagOptions()...)
 
@@ -199,16 +199,16 @@ func (own *Service) registerOpenAPI() error {
 // openAPITagOptions 返回分组说明，顺序即浏览页的展示顺序。
 func openAPITagOptions() []openapi.Option {
 	return []openapi.Option{
-		openapi.UseTag(_TAG_OVERVIEW, "服务概览、健康检查与请求回显"),
-		openapi.UseTag(_TAG_SESSION, "基于 HMAC 签名的服务端会话，登录时轮换会话 ID"),
-		openapi.UseTag(_TAG_CACHE, "响应缓存：新鲜期内直接命中，陈旧期内可异步回源"),
-		openapi.UseTag(_TAG_LIMITER, "令牌桶限流：额度不足立即返回 429"),
-		openapi.UseTag(_TAG_UPLOAD, "分片上传：创建会话、逐片写入、拼接与下载"),
-		openapi.UseTag(_TAG_GATEWAY, "加权轮询与会话粘滞的反向代理，支持灰度标签"),
-		openapi.UseTag(_TAG_STREAM, "基于 SSE 的运行状态推送"),
-		openapi.UseTag(_TAG_JOBS, "进程内任务调度器的执行统计"),
-		openapi.UseTag(_TAG_TRACE, "最近导出的链路片段，用于观察耗时分布"),
-		openapi.UseTag(_TAG_PLATFORM, "由框架组件自行注册的页面与导出端点"),
+		openapi.WithTag(_TAG_OVERVIEW, "服务概览、健康检查与请求回显"),
+		openapi.WithTag(_TAG_SESSION, "基于 HMAC 签名的服务端会话，登录时轮换会话 ID"),
+		openapi.WithTag(_TAG_CACHE, "响应缓存：新鲜期内直接命中，陈旧期内可异步回源"),
+		openapi.WithTag(_TAG_LIMITER, "令牌桶限流：额度不足立即返回 429"),
+		openapi.WithTag(_TAG_UPLOAD, "分片上传：创建会话、逐片写入、拼接与下载"),
+		openapi.WithTag(_TAG_GATEWAY, "加权轮询与会话粘滞的反向代理，支持灰度标签"),
+		openapi.WithTag(_TAG_STREAM, "基于 SSE 的运行状态推送"),
+		openapi.WithTag(_TAG_JOBS, "进程内任务调度器的执行统计"),
+		openapi.WithTag(_TAG_TRACE, "最近导出的链路片段，用于观察耗时分布"),
+		openapi.WithTag(_TAG_PLATFORM, "由框架组件自行注册的页面与导出端点"),
 	}
 }
 

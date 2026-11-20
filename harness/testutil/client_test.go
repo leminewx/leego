@@ -54,7 +54,7 @@ func TestClientGet(t *testing.T) {
 }
 
 func TestClientJSONAndOptions(t *testing.T) {
-	client := testutil.NewClient(newDemoHandler()).UseHeader("X-Token", "default")
+	client := testutil.NewClient(newDemoHandler()).WithHeader("X-Token", "default")
 
 	response := client.SendJSON(http.MethodPost, "/echo?q=keep", map[string]string{"name": "leego"},
 		testutil.WithQuery("q", "added"),

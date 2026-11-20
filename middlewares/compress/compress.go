@@ -77,12 +77,12 @@ type Compress struct {
 	config Config
 }
 
-// NewCompress 创建压缩中间件。
+// New 创建压缩中间件。
 //
 // 参数 config 可省略；多个配置时仅第一个生效，与其它中间件保持一致。
 // 中间件会在响应完成后关闭 gzip 流；业务处理器无需感知。
 // 客户端未声明支持 gzip 时不压缩，遵循 HTTP 协商语义。
-func NewCompress(config ...Config) *Compress {
+func New(config ...Config) *Compress {
 	options := NewDefaultConfig()
 	if len(config) > 0 {
 		options = config[0].normalize()

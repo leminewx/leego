@@ -23,8 +23,8 @@ type sourceConfig struct {
 	interval time.Duration
 }
 
-// UseWatchInterval 设置文件轮询间隔；小于等于 0 时使用默认值。
-func UseWatchInterval(interval time.Duration) SourceOption {
+// WithWatchInterval 设置文件轮询间隔；小于等于 0 时使用默认值。
+func WithWatchInterval(interval time.Duration) SourceOption {
 	return func(config *sourceConfig) {
 		if interval > 0 {
 			config.interval = interval

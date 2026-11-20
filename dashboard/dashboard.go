@@ -10,8 +10,8 @@
 // 典型用法：
 //
 //	engine.RegisterDashboard("/metrics",
-//		dashboard.UseTitle("订单服务指标"),
-//		dashboard.UseAuthorizer(func(req *http.Request) bool {
+//		dashboard.WithTitle("订单服务指标"),
+//		dashboard.WithAuthorizer(func(req *http.Request) bool {
 //			return req.Header.Get("X-Admin-Token") == os.Getenv("ADMIN_TOKEN")
 //		}),
 //	)
@@ -92,8 +92,8 @@ func NewDefaultOptions() Options {
 // Option 定义后台配置选项的函数类型。
 type Option func(options *Options)
 
-// UseTitle 设置页面标题。
-func UseTitle(title string) Option {
+// WithTitle 设置页面标题。
+func WithTitle(title string) Option {
 	return func(options *Options) {
 		if title = strings.TrimSpace(title); title != "" {
 			options.Title = title
@@ -101,8 +101,8 @@ func UseTitle(title string) Option {
 	}
 }
 
-// UseRefreshInterval 设置前端自动刷新间隔。
-func UseRefreshInterval(interval time.Duration) Option {
+// WithRefreshInterval 设置前端自动刷新间隔。
+func WithRefreshInterval(interval time.Duration) Option {
 	return func(options *Options) {
 		if interval > 0 {
 			options.RefreshInterval = interval
@@ -110,8 +110,8 @@ func UseRefreshInterval(interval time.Duration) Option {
 	}
 }
 
-// UseMaxRoutes 设置单次返回的最大路由数量。
-func UseMaxRoutes(maxRoutes int) Option {
+// WithMaxRoutes 设置单次返回的最大路由数量。
+func WithMaxRoutes(maxRoutes int) Option {
 	return func(options *Options) {
 		if maxRoutes > 0 {
 			options.MaxRoutes = maxRoutes
@@ -119,8 +119,8 @@ func UseMaxRoutes(maxRoutes int) Option {
 	}
 }
 
-// UseProvider 设置指标数据提供函数。
-func UseProvider(provider Provider) Option {
+// WithProvider 设置指标数据提供函数。
+func WithProvider(provider Provider) Option {
 	return func(options *Options) {
 		if provider != nil {
 			options.Provider = provider
@@ -128,8 +128,8 @@ func UseProvider(provider Provider) Option {
 	}
 }
 
-// UseAuthorizer 设置访问鉴权函数。
-func UseAuthorizer(authorizer Authorizer) Option {
+// WithAuthorizer 设置访问鉴权函数。
+func WithAuthorizer(authorizer Authorizer) Option {
 	return func(options *Options) {
 		options.Authorizer = authorizer
 	}
@@ -157,10 +157,10 @@ type Dashboard struct {
 	cacheMu sync.RWMutex
 }
 
-// NewDashboard 创建指标后台。
+// New 创建指标后台。
 //
 // 返回值非 nil 表示配置非法（例如 Provider 为 nil 且未提供默认值）。
-func NewDashboard(options ...Option) (*Dashboard, error) {
+func New(options ...Option) (*Dashboard, error) {
 	config := NewDefaultOptions()
 	for _, option := range options {
 		if option != nil {

@@ -140,11 +140,11 @@ SSE 连接通常持续数分钟以上，而引擎默认 `WriteTimeout` 为 60 �
 `net/http` 会直接切断连接。启用 SSE / WebSocket 的服务必须显式关闭该超时：
 
 ```go
-engine := leego.NewEngine(leego.UseWriteTimeout(0))
+engine := leego.NewEngine(leego.WithWriteTimeout(0))
 ```
 
-`UseServerTimeouts` 会忽略非正数，无法用它关闭写入超时，因此单独提供了
-`UseWriteTimeout`。
+`WithServerTimeouts` 会忽略非正数，无法用它关闭写入超时，因此单独提供了
+`WithWriteTimeout`。
 
 ### 连接生命周期
 
@@ -179,7 +179,7 @@ config.OriginCheckFunc = func(req *http.Request) bool {
 	return req.Header.Get("Origin") == "https://app.example.com"
 }
 
-upgraderInstance := upgrader.NewUpgrader(config)
+upgraderInstance := upgrader.New(config)
 connection, err := upgraderInstance.Upgrade(ctx.Request, ctx.Response, nil)
 ```
 

@@ -64,7 +64,7 @@ func loadScenarios() []loadScenario {
 				engine.UseMiddlewares(
 					logger.AdaptToMiddleware(),
 					middlewares.NewRecovery().AdaptToMiddleware(),
-					cors.NewDefaultCORS().AdaptToMiddleware(),
+					cors.New().AdaptToMiddleware(),
 					limiter.NewTokenBucketLimiter(10000000, 10000000).AdaptToMiddleware(),
 					breaker.NewCircuitBreaker(breaker.NewDefaultConfig()).AdaptToMiddleware(),
 				)
@@ -81,7 +81,7 @@ func loadScenarios() []loadScenario {
 					payload += payload
 				}
 
-				engine.UseMiddlewares(compress.NewCompress().AdaptToMiddleware())
+				engine.UseMiddlewares(compress.New().AdaptToMiddleware())
 				engine.GET("/report", func(ctx *leego.Context) {
 					_ = ctx.ResponseText(http.StatusOK, payload)
 				}, "report")
@@ -91,14 +91,14 @@ func loadScenarios() []loadScenario {
 		{
 			name: "cache-hit",
 			register: func(engine *leego.Engine) {
-				engine.UseMiddlewares(cacheMW.NewCache().AdaptToMiddleware())
+				engine.UseMiddlewares(cacheMW.New().AdaptToMiddleware())
 				engine.GET("/ping", jsonHandle, "ping")
 			},
 		},
 		{
 			name:    "h2c",
 			h2c:     true,
-			options: []leego.EngineOption{leego.UseH2C()},
+			options: []leego.EngineOption{leego.WithH2C()},
 			register: func(engine *leego.Engine) {
 				engine.GET("/ping", jsonHandle, "ping")
 			},

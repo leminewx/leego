@@ -10,12 +10,12 @@ import (
 // TestUseWatchInterval 验证轮询间隔只接受正数。
 func TestUseWatchInterval(t *testing.T) {
 	settings := sourceConfig{}
-	UseWatchInterval(-time.Second)(&settings)
+	WithWatchInterval(-time.Second)(&settings)
 	if settings.interval != 0 {
 		t.Fatalf("负数间隔 = %v, want 0", settings.interval)
 	}
 
-	UseWatchInterval(time.Second)(&settings)
+	WithWatchInterval(time.Second)(&settings)
 	if settings.interval != time.Second {
 		t.Fatalf("间隔 = %v, want 1s", settings.interval)
 	}
@@ -135,7 +135,7 @@ func TestRawDigestTracksBytes(t *testing.T) {
 
 // TestSetWatchIntervalIgnoresNonPositive 验证非正间隔不会覆盖现有配置。
 func TestSetWatchIntervalIgnoresNonPositive(t *testing.T) {
-	source := NewJSONSource("config.json", UseWatchInterval(3*time.Second))
+	source := NewJSONSource("config.json", WithWatchInterval(3*time.Second))
 	if got := time.Duration(source.interval.Load()); got != 3*time.Second {
 		t.Fatalf("构造后的间隔 = %v, want 3s", got)
 	}

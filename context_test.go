@@ -169,7 +169,7 @@ func TestContextReadBodyCaches(t *testing.T) {
 
 // TestContextReadBodyRespectsMaxBytes 验证请求体上限。
 func TestContextReadBodyRespectsMaxBytes(t *testing.T) {
-	engine := NewEngine(UseMaxBodyBytes(4), DisableStartupLog())
+	engine := NewEngine(WithMaxBodyBytes(4), DisableStartupLog())
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("too large"))
 	ctx, _ := createTestContext(req)
@@ -1082,7 +1082,7 @@ func TestContextSmallAccessors(t *testing.T) {
 		t.Fatalf("未绑定引擎时 GetServiceName() = %q, want 空", got)
 	}
 
-	engine := NewEngine(UseEngineName("orders"), DisableStartupLog())
+	engine := NewEngine(WithEngineName("orders"), DisableStartupLog())
 	ctx.engine = engine
 
 	if got := ctx.GetServiceName(); got != "orders" {
@@ -1228,7 +1228,7 @@ func TestContextFormFallbacks(t *testing.T) {
 		t.Fatalf("未绑定引擎时内存上限 = %d, want %d", got, _DEFAULT_MULTIPART_MEMORY)
 	}
 
-	ctx.engine = NewEngine(UseMultipartMemory(2<<20), DisableStartupLog())
+	ctx.engine = NewEngine(WithMultipartMemory(2<<20), DisableStartupLog())
 	if got := ctx.getMultipartMemory(); got != 2<<20 {
 		t.Fatalf("绑定引擎后内存上限 = %d, want %d", got, int64(2<<20))
 	}

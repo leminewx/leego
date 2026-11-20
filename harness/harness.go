@@ -194,65 +194,65 @@ func (own Config) clone() Config {
 // Option 修改 Config。
 type Option func(*Config)
 
-// UseAddr 设置监听地址。
-func UseAddr(addr string) Option {
+// WithAddr 设置监听地址。
+func WithAddr(addr string) Option {
 	return func(config *Config) {
 		config.Addr = addr
 	}
 }
 
-// UseDataDir 设置数据目录。
-func UseDataDir(dir string) Option {
+// WithDataDir 设置数据目录。
+func WithDataDir(dir string) Option {
 	return func(config *Config) {
 		config.DataDir = dir
 	}
 }
 
-// UseSessionTTL 设置会话有效期。
-func UseSessionTTL(ttl time.Duration) Option {
+// WithSessionTTL 设置会话有效期。
+func WithSessionTTL(ttl time.Duration) Option {
 	return func(config *Config) {
 		config.SessionTTL = ttl
 	}
 }
 
-// UseSessionSecret 设置会话签名密钥；传 nil 时保留默认值。
-func UseSessionSecret(secret []byte) Option {
+// WithSessionSecret 设置会话签名密钥；传 nil 时保留默认值。
+func WithSessionSecret(secret []byte) Option {
 	return func(config *Config) {
 		config.SessionSecret = append([]byte(nil), secret...)
 	}
 }
 
-// UseCacheTTL 设置缓存新鲜期。
-func UseCacheTTL(ttl time.Duration) Option {
+// WithCacheTTL 设置缓存新鲜期。
+func WithCacheTTL(ttl time.Duration) Option {
 	return func(config *Config) {
 		config.CacheTTL = ttl
 	}
 }
 
-// UseRateLimit 设置令牌桶速率与突发容量。
-func UseRateLimit(limit, burst int) Option {
+// WithRateLimit 设置令牌桶速率与突发容量。
+func WithRateLimit(limit, burst int) Option {
 	return func(config *Config) {
 		config.RateLimit = limit
 		config.RateBurst = burst
 	}
 }
 
-// UseMetricsInterval 设置指标采集间隔。
-func UseMetricsInterval(interval time.Duration) Option {
+// WithMetricsInterval 设置指标采集间隔。
+func WithMetricsInterval(interval time.Duration) Option {
 	return func(config *Config) {
 		config.MetricsInterval = interval
 	}
 }
 
-// UseChunkSize 设置默认分片大小。
-func UseChunkSize(size int64) Option {
+// WithChunkSize 设置默认分片大小。
+func WithChunkSize(size int64) Option {
 	return func(config *Config) {
 		config.ChunkSize = size
 	}
 }
 
-// UseLogging 控制是否启用访问日志。
-func UseLogging(enabled bool) Option {
+// WithLogging 控制是否启用访问日志。
+func WithLogging(enabled bool) Option {
 	return func(config *Config) {
 		config.EnableLogging = enabled
 	}
@@ -324,7 +324,7 @@ func NewService(options ...Option) (*Service, error) {
 		config:      config,
 		uploads:     uploads,
 		sessions:    session.NewMemoryStore(),
-		scheduler:   job.NewScheduler(job.UseWorkers(2)),
+		scheduler:   job.NewScheduler(job.WithWorkers(2)),
 		exporter:    middletrace.NewMemoryExporter(_TRACE_LIMIT),
 		metricStore: metrics.NewMemoryStore(5*time.Minute, 300),
 		startedAt:   time.Now(),
@@ -437,9 +437,9 @@ func (own *Service) buildEngine() *leego.Engine {
 	leego.SetLogoStyle(leego.LOGO_STYLE_ASCII)
 	leego.ShowLogo()
 	engine := leego.NewEngine(
-		leego.UseEngineName("leego-harness"),
-		leego.UseMaxBodyBytes(_MAX_UPLOAD_SIZE),
-		leego.UseServerTimeouts(10*time.Second, 0, 0, 120*time.Second),
+		leego.WithEngineName("leego-harness"),
+		leego.WithMaxBodyBytes(_MAX_UPLOAD_SIZE),
+		leego.WithServerTimeouts(10*time.Second, 0, 0, 120*time.Second),
 	)
 
 	chain := make([]leego.MiddlewareFunc, 0, 6)
@@ -450,8 +450,8 @@ func (own *Service) buildEngine() *leego.Engine {
 	chain = append(
 		chain,
 		own.tracer.AdaptToMiddleware(),
-		cors.NewDefaultCORS().AdaptToMiddleware(),
-		compress.NewCompress(compress.NewDefaultConfig()).AdaptToMiddleware(),
+		cors.New().AdaptToMiddleware(),
+		compress.New(compress.NewDefaultConfig()).AdaptToMiddleware(),
 	)
 	engine.UseMiddlewares(chain...)
 
@@ -479,9 +479,9 @@ func (own *Service) registerSessionRoutes(engine *leego.Engine) {
 	group := engine.NewGroup("/api/session")
 	group.UseMiddlewares(session.New(
 		own.sessions,
-		session.UseTTL(own.config.SessionTTL),
-		session.UseSecret(own.config.SessionSecret),
-		session.UseSameSite(http.SameSiteLaxMode),
+		session.WithTTL(own.config.SessionTTL),
+		session.WithSecret(own.config.SessionSecret),
+		session.WithSameSite(http.SameSiteLaxMode),
 	))
 
 	group.GET("/current", own.serveSessionCurrent, "session-current", _TAG_SESSION)
@@ -492,7 +492,7 @@ func (own *Service) registerSessionRoutes(engine *leego.Engine) {
 // registerCacheRoutes 注册响应缓存演示路由。
 func (own *Service) registerCacheRoutes(engine *leego.Engine) {
 	group := engine.NewGroup("/api/cache")
-	group.UseMiddlewares(cache.NewCache(cache.Config{
+	group.UseMiddlewares(cache.New(cache.Config{
 		TTL:   own.config.CacheTTL,
 		Stale: own.config.CacheStale,
 		Vary:  []string{"Accept-Encoding"},
@@ -514,9 +514,9 @@ func (own *Service) registerLimiterRoutes(engine *leego.Engine) {
 func (own *Service) registerUploadRoutes(engine *leego.Engine) {
 	handler := upload.NewHandler(
 		own.uploads,
-		upload.UseMaxSize(_MAX_UPLOAD_SIZE),
-		upload.UseDefaultPartSize(own.config.ChunkSize),
-		upload.UseMaxParts(_MAX_UPLOAD_PARTS),
+		upload.WithMaxSize(_MAX_UPLOAD_SIZE),
+		upload.WithDefaultPartSize(own.config.ChunkSize),
+		upload.WithMaxParts(_MAX_UPLOAD_PARTS),
 	)
 
 	engine.POST("/api/upload", handler, "upload-init", _TAG_UPLOAD)
@@ -530,8 +530,8 @@ func (own *Service) registerUploadRoutes(engine *leego.Engine) {
 func (own *Service) registerGatewayRoutes(engine *leego.Engine) {
 	handler := gateway.NewProxy(
 		own.balancer,
-		gateway.UseTimeout(3*time.Second),
-		gateway.UseErrorHandler(func(ctx *leego.Context, target *url.URL, err error) {
+		gateway.WithTimeout(3*time.Second),
+		gateway.WithErrorHandler(func(ctx *leego.Context, target *url.URL, err error) {
 			log.Printf("harness: gateway error: target=%s err=%v", target.Redacted(), err)
 		}),
 	)
@@ -547,15 +547,15 @@ func (own *Service) registerPlatformRoutes() error {
 	if err := own.engine.RegisterMetrics(
 		"/metrics",
 		own.metricStore,
-		leego.UseMetricsInterval(own.config.MetricsInterval),
+		leego.WithMetricsInterval(own.config.MetricsInterval),
 	); err != nil {
 		return fmt.Errorf("harness: register metrics: %w", err)
 	}
 
 	if err := own.engine.RegisterDashboard(
 		"/dashboard",
-		dashboard.UseTitle("leego harness"),
-		dashboard.UseRefreshInterval(2*time.Second),
+		dashboard.WithTitle("leego harness"),
+		dashboard.WithRefreshInterval(2*time.Second),
 	); err != nil {
 		return fmt.Errorf("harness: register dashboard: %w", err)
 	}

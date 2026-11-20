@@ -177,7 +177,7 @@ func TestWatchFileUpdatesSubscription(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	writeJSON(t, path, `{"server": {"port": 8080, "name": "before"}}`)
 
-	instance, err := config.Load(config.NewJSONSource(path, config.UseWatchInterval(10*time.Millisecond)))
+	instance, err := config.Load(config.NewJSONSource(path, config.WithWatchInterval(10*time.Millisecond)))
 	if err != nil {
 		t.Fatalf("加载失败: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestSubscribeChangeCancelDoesNotAffectSibling(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	writeJSON(t, path, `{"server": {"port": 8080}}`)
 
-	instance, err := config.Load(config.NewJSONSource(path, config.UseWatchInterval(10*time.Millisecond)))
+	instance, err := config.Load(config.NewJSONSource(path, config.WithWatchInterval(10*time.Millisecond)))
 	if err != nil {
 		t.Fatalf("加载失败: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestWatchZeroIntervalKeepsSourceOption(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	writeJSON(t, path, `{"server": {"port": 8080}}`)
 
-	instance, err := config.Load(config.NewJSONSource(path, config.UseWatchInterval(5*time.Millisecond)))
+	instance, err := config.Load(config.NewJSONSource(path, config.WithWatchInterval(5*time.Millisecond)))
 	if err != nil {
 		t.Fatalf("加载失败: %v", err)
 	}

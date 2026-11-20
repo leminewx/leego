@@ -133,50 +133,50 @@ func (own Options) normalize() (Options, error) {
 // Option 修改 Options。
 type Option func(*Options)
 
-// UseName 设置 Cookie 名称。
-func UseName(name string) Option {
+// WithName 设置 Cookie 名称。
+func WithName(name string) Option {
 	return func(options *Options) {
 		options.Name = name
 	}
 }
 
-// UseTTL 设置会话有效期。
-func UseTTL(ttl time.Duration) Option {
+// WithTTL 设置会话有效期。
+func WithTTL(ttl time.Duration) Option {
 	return func(options *Options) {
 		options.TTL = ttl
 	}
 }
 
-// UsePath 设置 Cookie 生效路径。
-func UsePath(path string) Option {
+// WithPath 设置 Cookie 生效路径。
+func WithPath(path string) Option {
 	return func(options *Options) {
 		options.Path = path
 	}
 }
 
-// UseDomain 设置 Cookie 生效域名。
-func UseDomain(domain string) Option {
+// WithDomain 设置 Cookie 生效域名。
+func WithDomain(domain string) Option {
 	return func(options *Options) {
 		options.Domain = domain
 	}
 }
 
-// UseSecure 设置是否只在 HTTPS 下发送 Cookie。
-func UseSecure(secure bool) Option {
+// WithSecure 设置是否只在 HTTPS 下发送 Cookie。
+func WithSecure(secure bool) Option {
 	return func(options *Options) {
 		options.Secure = secure
 	}
 }
 
-// UseSameSite 设置 SameSite 策略。
-func UseSameSite(sameSite http.SameSite) Option {
+// WithSameSite 设置 SameSite 策略。
+func WithSameSite(sameSite http.SameSite) Option {
 	return func(options *Options) {
 		options.SameSite = sameSite
 	}
 }
 
-// UseSecret 设置 Cookie 签名密钥。
-func UseSecret(secret []byte) Option {
+// WithSecret 设置 Cookie 签名密钥。
+func WithSecret(secret []byte) Option {
 	return func(options *Options) {
 		options.Secret = slices.Clone(secret)
 	}

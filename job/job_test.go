@@ -44,7 +44,7 @@ func drainEvents(events chan struct{}) {
 }
 
 func TestEveryRunsRepeatedly(t *testing.T) {
-	scheduler := NewScheduler(UseWorkers(4))
+	scheduler := NewScheduler(WithWorkers(4))
 	events := make(chan struct{}, 64)
 
 	cancel := scheduler.ScheduleEvery(10*time.Millisecond, JobFunc(func(context.Context) error {
@@ -78,7 +78,7 @@ func TestEveryRunsRepeatedly(t *testing.T) {
 }
 
 func TestAfterRunsOnce(t *testing.T) {
-	scheduler := NewScheduler(UseWorkers(2))
+	scheduler := NewScheduler(WithWorkers(2))
 	events := make(chan struct{}, 4)
 
 	scheduler.ScheduleAfter(10*time.Millisecond, JobFunc(func(context.Context) error {
@@ -100,7 +100,7 @@ func TestAfterRunsOnce(t *testing.T) {
 }
 
 func TestCancelBeforeStart(t *testing.T) {
-	scheduler := NewScheduler(UseWorkers(2))
+	scheduler := NewScheduler(WithWorkers(2))
 	events := make(chan struct{}, 4)
 
 	cancel := scheduler.ScheduleEvery(5*time.Millisecond, JobFunc(func(context.Context) error {
@@ -118,7 +118,7 @@ func TestCancelBeforeStart(t *testing.T) {
 }
 
 func TestStopWaitsForRunningJob(t *testing.T) {
-	scheduler := NewScheduler(UseWorkers(2))
+	scheduler := NewScheduler(WithWorkers(2))
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
 
@@ -155,7 +155,7 @@ func TestStopWaitsForRunningJob(t *testing.T) {
 }
 
 func TestStopReturnsDeadlineExceeded(t *testing.T) {
-	scheduler := NewScheduler(UseWorkers(1))
+	scheduler := NewScheduler(WithWorkers(1))
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
 
@@ -180,7 +180,7 @@ func TestStopReturnsDeadlineExceeded(t *testing.T) {
 }
 
 func TestDropsWhenWorkersBusy(t *testing.T) {
-	scheduler := NewScheduler(UseWorkers(1))
+	scheduler := NewScheduler(WithWorkers(1))
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
 
@@ -221,7 +221,7 @@ func TestDropsWhenWorkersBusy(t *testing.T) {
 }
 
 func TestScheduleAfterStopIsIgnored(t *testing.T) {
-	scheduler := NewScheduler(UseWorkers(1))
+	scheduler := NewScheduler(WithWorkers(1))
 
 	if err := scheduler.Stop(context.Background()); err != nil {
 		t.Fatalf("空调度器 Stop() error = %v", err)
@@ -248,7 +248,7 @@ func TestScheduleAfterStopIsIgnored(t *testing.T) {
 
 func TestErrorHandlerReceivesFailure(t *testing.T) {
 	reported := make(chan error, 1)
-	scheduler := NewScheduler(UseWorkers(1), UseErrorHandler(func(_ Job, err error) {
+	scheduler := NewScheduler(WithWorkers(1), WithErrorHandler(func(_ Job, err error) {
 		select {
 		case reported <- err:
 		default:
@@ -278,7 +278,7 @@ func TestErrorHandlerReceivesFailure(t *testing.T) {
 
 func TestPanickingJobIsReportedAndReleased(t *testing.T) {
 	reported := make(chan error, 1)
-	scheduler := NewScheduler(UseWorkers(1), UseErrorHandler(func(_ Job, err error) {
+	scheduler := NewScheduler(WithWorkers(1), WithErrorHandler(func(_ Job, err error) {
 		select {
 		case reported <- err:
 		default:
@@ -321,7 +321,7 @@ func TestPanickingJobIsReportedAndReleased(t *testing.T) {
 }
 
 func TestPanickingErrorHandlerDoesNotBreakScheduler(t *testing.T) {
-	scheduler := NewScheduler(UseWorkers(1), UseErrorHandler(func(Job, error) {
+	scheduler := NewScheduler(WithWorkers(1), WithErrorHandler(func(Job, error) {
 		panic("handler boom")
 	}))
 
@@ -370,7 +370,7 @@ func TestNilJobIsIgnored(t *testing.T) {
 }
 
 func TestStartIsIdempotent(t *testing.T) {
-	scheduler := NewScheduler(UseWorkers(2))
+	scheduler := NewScheduler(WithWorkers(2))
 	events := make(chan struct{}, 32)
 
 	scheduler.ScheduleEvery(10*time.Millisecond, JobFunc(func(context.Context) error {

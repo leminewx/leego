@@ -7,7 +7,7 @@
 //
 // 典型用法：
 //
-//	c := collector.NewCollector(http.MethodGet, "/users/:id", "get-user", "vip")
+//	c := collector.New(http.MethodGet, "/users/:id", "get-user", "vip")
 //	c.Increase()
 //	// ... 处理请求 ...
 //	c.Decrease(http.StatusOK, time.Since(start))
@@ -153,7 +153,7 @@ type Collector struct {
 	metrics map[int]*metric
 }
 
-// NewCollector 创建一条路由的指标采集器。
+// New 创建一条路由的指标采集器。
 //
 // 参数：
 //   - method：HTTP 请求方法；
@@ -161,7 +161,7 @@ type Collector struct {
 //   - tags：可选标签，第一个非空标签作为路由名称，其余作为业务标签（最多 5 个）。
 //
 // 采集器创建后默认处于启用状态，与“注册即可观测”的默认策略一致。
-func NewCollector(method, pattern string, tags ...string) *Collector {
+func New(method, pattern string, tags ...string) *Collector {
 	own := &Collector{
 		method:  method,
 		pattern: pattern,

@@ -24,7 +24,7 @@ import (
 )
 
 func main() {
-	engine := leego.NewEngine(leego.UseEngineName("leego-file-example"))
+	engine := leego.NewEngine(leego.WithEngineName("leego-file-example"))
 	engine.UseMiddlewares(
 		middlewares.NewLogger().AdaptToMiddleware(),
 		middlewares.NewRecovery().AdaptToMiddleware(),

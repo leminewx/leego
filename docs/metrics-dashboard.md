@@ -114,11 +114,11 @@ clone := collector.Clone()             // 独立副本，可长期持有
 import "gitee.com/leminewx/leego/dashboard"
 
 err := engine.RegisterDashboard("/metrics",
-	dashboard.UseTitle("订单服务指标"),
-	dashboard.UseRefreshInterval(5*time.Second),
-	dashboard.UseMaxRoutes(200),
+	dashboard.WithTitle("订单服务指标"),
+	dashboard.WithRefreshInterval(5*time.Second),
+	dashboard.WithMaxRoutes(200),
 	dashboard.EnableExport(true),
-	dashboard.UseAuthorizer(func(req *http.Request) bool {
+	dashboard.WithAuthorizer(func(req *http.Request) bool {
 		return req.Header.Get("Authorization") == "Bearer admin-token"
 	}),
 )
@@ -127,7 +127,7 @@ err := engine.RegisterDashboard("/metrics",
 `RegisterDashboard` 的默认行为：
 
 - 前缀为空时使用 `/metrics`；
-- 自动注入 `dashboard.UseProvider(engine.CollectReport)`，无需手动提供数据源；
+- 自动注入 `dashboard.WithProvider(engine.CollectReport)`，无需手动提供数据源；
 - 同时注册 `GET <prefix>` 与 `GET <prefix>/*filepath`，并补 `HEAD`；
 - 返回错误表示注册失败（例如引擎已冻结）。
 
@@ -162,7 +162,7 @@ err := engine.RegisterDashboard("/metrics",
 
 ### 截断策略
 
-- `UseMaxRoutes(n)` 对报告与路由清单生效：按请求量从高到低保留前 `n` 条，
+- `WithMaxRoutes(n)` 对报告与路由清单生效：按请求量从高到低保留前 `n` 条，
   截断后重算 `Totals`；
 - CSV 导出额外限制最多 `5000` 行（防止超大报表拖垮浏览器与 Excel）；
 - 默认 `MaxRoutes` 为 `500`。
@@ -207,9 +207,9 @@ store := metrics.NewMemoryStore(24*time.Hour, 60) // 也可用 NewFileStore
 defer store.Close()
 
 err := engine.RegisterMetrics("/observe", store,
-	leego.UseMetricsInterval(5*time.Second),
-	leego.UseMetricsStep(30*time.Second),
-	leego.UseMetricsAuthorizer(func(ctx *leego.Context) bool {
+	leego.WithMetricsInterval(5*time.Second),
+	leego.WithMetricsStep(30*time.Second),
+	leego.WithMetricsAuthorizer(func(ctx *leego.Context) bool {
 		return ctx.GetRequestHeader("X-Admin-Token") == os.Getenv("ADMIN_TOKEN")
 	}),
 )
@@ -226,10 +226,10 @@ err := engine.RegisterMetrics("/observe", store,
 
 | 选项 | 默认 | 说明 |
 | --- | --- | --- |
-| `UseMetricsInterval(d)` | 5 s | 后台采样间隔；非正数回退默认 |
-| `UseMetricsStep(d)` | 30 s | 查询聚合步长 |
+| `WithMetricsInterval(d)` | 5 s | 后台采样间隔；非正数回退默认 |
+| `WithMetricsStep(d)` | 30 s | 查询聚合步长 |
 | `DisableMetricsPrometheus()` | 关闭 | 不注册抓取路由 |
-| `UseMetricsAuthorizer(fn)` | `nil`（放行） | 返回 `false` 时响应 `401` |
+| `WithMetricsAuthorizer(fn)` | `nil`（放行） | 返回 `false` 时响应 `401` |
 
 约束与注意事项：
 
@@ -248,7 +248,7 @@ err := engine.RegisterMetrics("/observe", store,
 ### 自定义数据源
 
 ```go
-dashboard.UseProvider(func() collector.Report {
+dashboard.WithProvider(func() collector.Report {
 	// 合并多个引擎、过滤敏感路由、补充外部指标等
 	return collector.NewReport(snapshots)
 })
@@ -261,7 +261,7 @@ dashboard.UseProvider(func() collector.Report {
 `Option` 是公开的函数类型，可直接编写：
 
 ```go
-func UseOnlyHealthyRoutes() dashboard.Option {
+func WithOnlyHealthyRoutes() dashboard.Option {
 	return func(options *dashboard.Options) {
 		options.Title = "健康路由指标"
 	}

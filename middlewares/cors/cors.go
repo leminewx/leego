@@ -78,7 +78,7 @@ type CORS struct {
 }
 
 /*
-NewDefaultCORS 创建带默认配置的跨域中间件。
+New 创建带默认配置的跨域中间件。
 
 默认行为：
   - 允许任意来源（Access-Control-Allow-Origin: *）；
@@ -88,7 +88,7 @@ NewDefaultCORS 创建带默认配置的跨域中间件。
 
 创建后即处于启用状态，无需再调用 Enable。
 */
-func NewDefaultCORS() *CORS {
+func New() *CORS {
 	instance := &CORS{}
 	instance.SetAllowOrigins()
 	instance.SetAllowMethods(defaultAllowMethods...)

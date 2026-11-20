@@ -129,7 +129,7 @@ func TestUpgradeBuildsHandshakeAndReusesBufferedReader(t *testing.T) {
 	})
 
 	resp, raw := createTestResponseWriter(input)
-	instance := NewUpgrader(nil)
+	instance := New(nil)
 
 	conn, err := instance.Upgrade(createHandshakeRequest(t), resp, nil)
 	if err != nil {
@@ -167,7 +167,7 @@ func TestUpgradeBuildsHandshakeAndReusesBufferedReader(t *testing.T) {
 // TestUpgradeRejectsNilArguments 验证空参数被拒绝。
 func TestUpgradeRejectsNilArguments(t *testing.T) {
 	resp, _ := createTestResponseWriter(nil)
-	instance := NewUpgrader(nil)
+	instance := New(nil)
 
 	if _, err := instance.Upgrade(nil, resp, nil); err == nil {
 		t.Fatal("nil 请求必须返回错误")
@@ -185,7 +185,7 @@ func TestUpgradeRejectsInvalidRequest(t *testing.T) {
 
 	resp, raw := createTestResponseWriter(nil)
 
-	if _, err := NewUpgrader(nil).Upgrade(request, resp, nil); err == nil {
+	if _, err := New(nil).Upgrade(request, resp, nil); err == nil {
 		t.Fatal("非法握手必须返回错误")
 	}
 
@@ -201,7 +201,7 @@ func TestUpgradeRejectsDisallowedOrigin(t *testing.T) {
 
 	resp, raw := createTestResponseWriter(nil)
 
-	if _, err := NewUpgrader(config).Upgrade(createHandshakeRequest(t), resp, nil); err == nil {
+	if _, err := New(config).Upgrade(createHandshakeRequest(t), resp, nil); err == nil {
 		t.Fatal("来源被拒绝时必须返回错误")
 	}
 
@@ -215,7 +215,7 @@ func TestUpgradeFailsWhenHijackFails(t *testing.T) {
 	resp, _ := createTestResponseWriter(nil)
 	resp.hijackErr = errors.New("hijack unsupported")
 
-	_, err := NewUpgrader(nil).Upgrade(createHandshakeRequest(t), resp, nil)
+	_, err := New(nil).Upgrade(createHandshakeRequest(t), resp, nil)
 	if err == nil || !strings.Contains(err.Error(), "failed to hijack") {
 		t.Fatalf("err = %v, want failed to hijack", err)
 	}
@@ -231,7 +231,7 @@ func TestUpgradeAppliesConfig(t *testing.T) {
 
 	resp, _ := createTestResponseWriter(nil)
 
-	conn, err := NewUpgrader(config).Upgrade(createHandshakeRequest(t), resp, nil)
+	conn, err := New(config).Upgrade(createHandshakeRequest(t), resp, nil)
 	if err != nil {
 		t.Fatalf("升级失败: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestUpgradeNegotiatesSubprotocol(t *testing.T) {
 
 	resp, raw := createTestResponseWriter(nil)
 
-	if _, err := NewUpgrader(config).Upgrade(request, resp, nil); err != nil {
+	if _, err := New(config).Upgrade(request, resp, nil); err != nil {
 		t.Fatalf("升级失败: %v", err)
 	}
 
@@ -280,7 +280,7 @@ func TestUpgradeSkipsReservedHeaders(t *testing.T) {
 		"Sec-Websocket-Accept": {"forged"},
 	}
 
-	if _, err := NewUpgrader(nil).Upgrade(createHandshakeRequest(t), resp, respHeader); err != nil {
+	if _, err := New(nil).Upgrade(createHandshakeRequest(t), resp, respHeader); err != nil {
 		t.Fatalf("升级失败: %v", err)
 	}
 
@@ -335,7 +335,7 @@ func TestValidateRequest(t *testing.T) {
 				testCase.mutate(request)
 			}
 
-			err := NewUpgrader(config).validateRequest(request)
+			err := New(config).validateRequest(request)
 
 			if testCase.wantErr == "" {
 				if err != nil {
@@ -371,7 +371,7 @@ func TestNegotiateSubprotocol(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			instance := NewUpgrader(&Config{Subprotocols: testCase.subprotocols})
+			instance := New(&Config{Subprotocols: testCase.subprotocols})
 
 			request := createHandshakeRequest(t)
 			if testCase.header != "" {
@@ -413,11 +413,11 @@ func TestComputeAcceptKey(t *testing.T) {
 	}
 }
 
-// TestNewUpgraderKeepsOriginCheckNil 验证显式 nil 的来源校验函数保持 nil。
+// TestNewKeepsOriginCheckNil 验证显式 nil 的来源校验函数保持 nil。
 //
 // nil 表示不做来源校验（与默认配置返回 true 等价），此处仅锁定复制语义。
-func TestNewUpgraderKeepsOriginCheckNil(t *testing.T) {
-	instance := NewUpgrader(&Config{MaxReadLimit: 1024})
+func TestNewKeepsOriginCheckNil(t *testing.T) {
+	instance := New(&Config{MaxReadLimit: 1024})
 
 	if instance.OriginCheckFunc != nil {
 		t.Fatal("OriginCheckFunc 应保持 nil")

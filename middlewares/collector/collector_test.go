@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// TestNewCollector 验证采集器的元信息与默认状态。
-func TestNewCollector(t *testing.T) {
-	monitor := NewCollector("GET", "/users/:id", " 获取用户 ", " v1 ", "", "auth")
+// TestNew 验证采集器的元信息与默认状态。
+func TestNew(t *testing.T) {
+	monitor := New("GET", "/users/:id", " 获取用户 ", " v1 ", "", "auth")
 
 	if monitor.GetMethod() != "GET" {
 		t.Fatalf("method = %q, want GET", monitor.GetMethod())
@@ -36,9 +36,9 @@ func TestNewCollector(t *testing.T) {
 	}
 }
 
-// TestNewCollectorWithoutTags 验证没有标签时的默认行为。
-func TestNewCollectorWithoutTags(t *testing.T) {
-	monitor := NewCollector("POST", "/orders")
+// TestNewWithoutTags 验证没有标签时的默认行为。
+func TestNewWithoutTags(t *testing.T) {
+	monitor := New("POST", "/orders")
 
 	if monitor.GetName() != "" {
 		t.Fatalf("name = %q, want 空字符串", monitor.GetName())
@@ -49,9 +49,9 @@ func TestNewCollectorWithoutTags(t *testing.T) {
 	}
 }
 
-// TestNewCollectorLimitsTags 验证标签数量上限。
-func TestNewCollectorLimitsTags(t *testing.T) {
-	monitor := NewCollector("GET", "/limited", "name", "t1", "t2", "t3", "t4", "t5", "t6", "t7")
+// TestNewLimitsTags 验证标签数量上限。
+func TestNewLimitsTags(t *testing.T) {
+	monitor := New("GET", "/limited", "name", "t1", "t2", "t3", "t4", "t5", "t6", "t7")
 
 	if len(monitor.GetTags()) != _MAX_TAG_COUNT {
 		t.Fatalf("tags 数量 = %d, want %d", len(monitor.GetTags()), _MAX_TAG_COUNT)
@@ -60,7 +60,7 @@ func TestNewCollectorLimitsTags(t *testing.T) {
 
 // TestEnableAndDisable 验证启停状态切换。
 func TestEnableAndDisable(t *testing.T) {
-	monitor := NewCollector("GET", "/toggle")
+	monitor := New("GET", "/toggle")
 
 	monitor.Disable()
 	if monitor.IsEnabled() {
@@ -75,7 +75,7 @@ func TestEnableAndDisable(t *testing.T) {
 
 // TestIncreaseAndDecrease 验证在途计数与状态码统计。
 func TestIncreaseAndDecrease(t *testing.T) {
-	monitor := NewCollector("GET", "/decrease")
+	monitor := New("GET", "/decrease")
 
 	monitor.Increase()
 	monitor.Increase()
@@ -128,7 +128,7 @@ func TestIncreaseAndDecrease(t *testing.T) {
 // 运维「重置统计」把 flights 直接置零后，尚未结束的请求仍会调用 Decrease，
 // 若不夹零，在途数会变成负数，指标面板会长期显示负值。
 func TestDecreaseDoesNotGoNegativeAfterReset(t *testing.T) {
-	monitor := NewCollector("GET", "/reset-decrease")
+	monitor := New("GET", "/reset-decrease")
 
 	monitor.Increase()
 	monitor.Increase()
@@ -144,7 +144,7 @@ func TestDecreaseDoesNotGoNegativeAfterReset(t *testing.T) {
 
 // TestSnapshotAverageAndFailureRate 验证派生指标的计算。
 func TestSnapshotAverageAndFailureRate(t *testing.T) {
-	monitor := NewCollector("GET", "/derived")
+	monitor := New("GET", "/derived")
 
 	monitor.Increase()
 	monitor.Decrease(200, 10*time.Millisecond)
@@ -173,7 +173,7 @@ func TestSnapshotAverageAndFailureRate(t *testing.T) {
 
 // TestReset 验证重置统计但保留元信息。
 func TestReset(t *testing.T) {
-	monitor := NewCollector("GET", "/reset", "reset-name", "tag")
+	monitor := New("GET", "/reset", "reset-name", "tag")
 	monitor.Increase()
 	monitor.Decrease(200, time.Millisecond)
 	monitor.Disable()
@@ -196,7 +196,7 @@ func TestReset(t *testing.T) {
 
 // TestCloneIsIndependent 验证副本与原采集器完全独立。
 func TestCloneIsIndependent(t *testing.T) {
-	monitor := NewCollector("GET", "/clone", "clone-name")
+	monitor := New("GET", "/clone", "clone-name")
 	monitor.Increase()
 	monitor.Decrease(200, time.Millisecond)
 
@@ -217,7 +217,7 @@ func TestCloneIsIndependent(t *testing.T) {
 
 // TestGetTagsReturnsCopy 验证标签返回副本，外部修改不影响内部状态。
 func TestGetTagsReturnsCopy(t *testing.T) {
-	monitor := NewCollector("GET", "/tags", "name", "tag")
+	monitor := New("GET", "/tags", "name", "tag")
 
 	tags := monitor.GetTags()
 	tags[0] = "modified"
@@ -229,7 +229,7 @@ func TestGetTagsReturnsCopy(t *testing.T) {
 
 // TestCollectorConcurrency 验证并发采集下计数准确。
 func TestCollectorConcurrency(t *testing.T) {
-	monitor := NewCollector("GET", "/concurrent")
+	monitor := New("GET", "/concurrent")
 
 	const workers = 16
 	const iterations = 500
@@ -271,7 +271,7 @@ func TestCollectorConcurrency(t *testing.T) {
 
 // BenchmarkIncreaseDecrease 测量一次完整采集的开销。
 func BenchmarkIncreaseDecrease(b *testing.B) {
-	monitor := NewCollector("GET", "/bench")
+	monitor := New("GET", "/bench")
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -284,7 +284,7 @@ func BenchmarkIncreaseDecrease(b *testing.B) {
 
 // BenchmarkGetSnapshot 测量快照生成的开销。
 func BenchmarkGetSnapshot(b *testing.B) {
-	monitor := NewCollector("GET", "/bench")
+	monitor := New("GET", "/bench")
 	for code := 200; code < 210; code++ {
 		monitor.Increase()
 		monitor.Decrease(code, time.Microsecond)

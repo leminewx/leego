@@ -5,6 +5,66 @@
 
 ---
 
+## v0.19.0.0 — 构造函数与选项函数命名对齐
+
+> 发布日期：2026-11-20
+> 要求：Go 1.27.4+
+
+本版本按 `docs/conventions.md` 收紧两处命名，均为**不兼容变更**，不保留旧名别名。
+
+### 一、包内唯一目标对象直接 `New()`
+
+包名即被构造对象、且包内只有这一个可构造类型时，构造函数不再重复类型名：
+
+| 旧名称 | 新名称 |
+| --- | --- |
+| `dashboard.NewDashboard(...)` | `dashboard.New(...)` |
+| `cache.NewCache(...)` | `cache.New(...)` |
+| `compress.NewCompress(...)` | `compress.New(...)` |
+| `cors.NewDefaultCORS()` | `cors.New()` |
+| `collector.NewCollector(...)` | `collector.New(...)` |
+| `upgrader.NewUpgrader(...)` | `upgrader.New(...)` |
+
+`cors.New()` 与原来的 `NewDefaultCORS()` 等价：返回带默认配置且已启用的实例。
+包内有多个可构造类型的（`openapi.NewSpec`、`response.NewWriter`、`job.NewScheduler` 等）
+仍保留 `New<类型>`。
+
+### 二、选项函数改为 `With*` / `Without*`
+
+返回 `Option` 类型的配置函数统一使用 `With<属性>` / `Without<属性>` 前缀，不再使用 `Use<属性>`：
+
+| 旧名称 | 新名称 |
+| --- | --- |
+| `leego.UseEngineName(...)` 等 `EngineOption` | `leego.WithEngineName(...)` 等 |
+| `leego.UseH2C()` | `leego.WithH2C()` |
+| `leego.UseMetricsInterval(...)` / `UseMetricsStep(...)` / `UseMetricsAuthorizer(...)` | `leego.WithMetricsInterval(...)` 等 |
+| `session.UseTTL(...)` / `UseSecure(...)` / `UseSecret(...)` 等同族 | `session.WithTTL(...)` 等 |
+| `openapi.UseServer(...)` / `UseTag(...)` / `UseSchema(...)` / `UseOperation(...)` 等同族 | `openapi.WithServer(...)` 等 |
+| `dashboard.UseTitle(...)` / `UseProvider(...)` 等同族 | `dashboard.WithTitle(...)` 等 |
+| `upload.UseMaxSize(...)` 等同族 | `upload.WithMaxSize(...)` 等 |
+| `harness.UseAddr(...)` 等同族 | `harness.WithAddr(...)` 等 |
+| `gateway.UseTransport(...)` 等同族 | `gateway.WithTransport(...)` 等 |
+| `job.UseWorkers(...)` / `UseErrorHandler(...)` | `job.WithWorkers(...)` / `WithErrorHandler(...)` |
+| `config.UseWatchInterval(...)` | `config.WithWatchInterval(...)` |
+| `(*testutil.Client).UseHeader(...)` / `UseCookie(...)` | `(*testutil.Client).WithHeader(...)` / `WithCookie(...)` |
+
+`UseMiddlewares` 属于注册语义，不在此列，保持原名。
+
+### 三、测试函数名
+
+受影响的测试函数同步去掉类型后缀，例如 `TestNewCollector` → `TestNew`、
+`TestNewDefaultCORS` → `TestNew`、`TestNewUpgraderCopiesConfig` → `TestNewCopiesConfig`。
+
+### 四、升级步骤
+
+1. 全局替换构造调用：`dashboard.NewDashboard` → `dashboard.New`、`cache.NewCache` → `cache.New`、
+   `compress.NewCompress` → `compress.New`、`cors.NewDefaultCORS` → `cors.New`、
+   `collector.NewCollector` → `collector.New`、`upgrader.NewUpgrader` → `upgrader.New`；
+2. 把所有选项函数的 `Use` 前缀改为 `With`（`UseMiddlewares` 除外）；
+3. `gofmt -l .`、`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全部通过。
+
+---
+
 ## v0.17.0.0 — 中间件构造器与包名统一
 
 > 发布日期：2026-11-20
@@ -41,6 +101,7 @@
 | `limiter.Limiter.GetMiddleware(timeout)` | `limiter.Limiter.AdaptToMiddleware()` |
 
 上表全部需要尾部再调用 `.AdaptToMiddleware()` 才能传入 `UseMiddlewares`。
+其中 `cache.NewCache` / `compress.NewCompress` 已在 v0.19.0.0 中收敛为 `New`，以文首版本说明为准。
 `NewLoggerWithConfig` 与 `NewRecoveryWithConfig` 在构造时复制一份配置快照，
 运行期修改原始配置对象不再影响已创建的实例。
 

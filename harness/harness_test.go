@@ -80,15 +80,15 @@ func TestConfigCloneCopiesSecret(t *testing.T) {
 func TestServiceOptions(t *testing.T) {
 	config := NewDefaultConfig()
 	for _, option := range []Option{
-		UseAddr("127.0.0.1:9999"),
-		UseDataDir("data"),
-		UseSessionTTL(time.Minute),
-		UseSessionSecret([]byte("secret")),
-		UseCacheTTL(time.Second),
-		UseRateLimit(3, 6),
-		UseMetricsInterval(time.Second),
-		UseChunkSize(1024),
-		UseLogging(false),
+		WithAddr("127.0.0.1:9999"),
+		WithDataDir("data"),
+		WithSessionTTL(time.Minute),
+		WithSessionSecret([]byte("secret")),
+		WithCacheTTL(time.Second),
+		WithRateLimit(3, 6),
+		WithMetricsInterval(time.Second),
+		WithChunkSize(1024),
+		WithLogging(false),
 	} {
 		if option == nil {
 			t.Fatal("选项函数不应为 nil")

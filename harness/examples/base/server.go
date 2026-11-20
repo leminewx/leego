@@ -74,15 +74,15 @@ func newEngine() *leego.Engine {
 	leego.ShowLogo()
 
 	return leego.NewEngine(
-		leego.UseEngineName("leego-base-example"),
+		leego.WithEngineName("leego-base-example"),
 		// 四个服务端超时，避免慢连接长期占用文件描述符。
-		leego.UseServerTimeouts(5*time.Second, 10*time.Second, 10*time.Second, 60*time.Second),
+		leego.WithServerTimeouts(5*time.Second, 10*time.Second, 10*time.Second, 60*time.Second),
 		// 请求体上限 8 MiB，防止超大请求打爆内存。
-		leego.UseMaxBodyBytes(8<<20),
+		leego.WithMaxBodyBytes(8<<20),
 		// 严格 JSON：未知字段直接报错，便于尽早发现前后端字段不一致。
-		leego.UseStrictJSON(true),
+		leego.WithStrictJSON(true),
 		// 仅信任本机回环地址上代理传来的 X-Forwarded-For。
-		leego.UseTrustedProxies("127.0.0.1/32", "::1/128"),
+		leego.WithTrustedProxies("127.0.0.1/32", "::1/128"),
 	)
 }
 
@@ -91,7 +91,7 @@ func registerMiddlewares(engine *leego.Engine) {
 	// 令牌桶：每秒补充 30 个令牌，允许 60 个瞬时突发；等待上限 5 秒。
 	rateLimiter := limiter.NewTokenBucketLimiter(30, 60, limiter.Config{WaitTimeout: 5 * time.Second})
 
-	corsMiddleware := cors.NewDefaultCORS()
+	corsMiddleware := cors.New()
 	corsMiddleware.SetAllowOrigins("*")
 	corsMiddleware.SetMaxAge(3600)
 
@@ -291,9 +291,9 @@ func registerLoginRoutes(engine *leego.Engine) {
 func registerDashboard(engine *leego.Engine) {
 	dashboardError := engine.RegisterDashboard(
 		"/dashboard",
-		dashboard.UseTitle("Leego 指标分析"),
-		dashboard.UseRefreshInterval(5*time.Second),
-		dashboard.UseMaxRoutes(200),
+		dashboard.WithTitle("Leego 指标分析"),
+		dashboard.WithRefreshInterval(5*time.Second),
+		dashboard.WithMaxRoutes(200),
 		dashboard.EnableExport(true),
 	)
 	if dashboardError != nil {

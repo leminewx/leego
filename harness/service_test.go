@@ -32,8 +32,8 @@ func newTestService(t *testing.T, options ...harness.Option) (*harness.Service, 
 	t.Helper()
 
 	base := []harness.Option{
-		harness.UseDataDir(t.TempDir()),
-		harness.UseLogging(false),
+		harness.WithDataDir(t.TempDir()),
+		harness.WithLogging(false),
 	}
 
 	service, err := harness.NewService(append(base, options...)...)
@@ -251,7 +251,7 @@ func TestServiceCacheHit(t *testing.T) {
 }
 
 func TestServiceRateLimit(t *testing.T) {
-	_, server := newTestService(t, harness.UseRateLimit(2, 2))
+	_, server := newTestService(t, harness.WithRateLimit(2, 2))
 	client := newClient(t)
 
 	var allowed atomic.Int64
@@ -283,7 +283,7 @@ func TestServiceRateLimit(t *testing.T) {
 }
 
 func TestServiceUploadRoundTrip(t *testing.T) {
-	_, server := newTestService(t, harness.UseChunkSize(8))
+	_, server := newTestService(t, harness.WithChunkSize(8))
 	client := newClient(t)
 
 	content := []byte("leego harness upload demo")
@@ -556,9 +556,9 @@ func TestServiceEventsStream(t *testing.T) {
 
 func TestServiceRunAndShutdown(t *testing.T) {
 	service, err := harness.NewService(
-		harness.UseAddr("127.0.0.1:0"),
-		harness.UseDataDir(t.TempDir()),
-		harness.UseLogging(false),
+		harness.WithAddr("127.0.0.1:0"),
+		harness.WithDataDir(t.TempDir()),
+		harness.WithLogging(false),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)

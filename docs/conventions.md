@@ -7,7 +7,8 @@
 
 | 主题 | 现行口径 | 关键变化 |
 | --- | --- | --- |
-| 构造函数 | 统一 `New*` / `new*` | 不再使用 `Create*` 作为纯内存构造 |
+| 构造函数 | 统一 `New*` / `new*`；包内唯一目标对象直接 `New()` | 不再使用 `Create*` 作为纯内存构造，也不再重复类型名 |
+| 函数式选项 | 统一 `With*` / `Without*` | 不再使用 `Use*` 命名选项 |
 | 上下文响应 | 统一 `Response*` 前缀 | 不再分散为 `Write*` / `Render*` / `Send*` / `Serve*` / `Stream*` |
 | 常量 | 公有全大写下划线连接；私有 `_` 开头全大写 | 取代 camelCase 私有常量 |
 | 词性判定 | 以词典词性为准，兼类词不算违规（如 `Group`） | 不再机械按首词表面词性判定 |
@@ -22,16 +23,21 @@
 2. 构造函数是唯一允许使用固定前缀 `New` 的例外：`New` 在此语境下是约定俗成的构造谓词。
 3. 不允许用名词、形容词、副词或介词开头，例如 `Path()`、`Allowed()`、`NextSegment()`、`WithPrefix()`（函数式选项见第 5 条）。
 4. 名称应表达**语义**而非**实现**：`countActiveConnections` 优于 `loopMap`。
-5. **函数式选项白名单**：返回 `Option` 类型、专门用于配置的选项函数，允许 `With<属性>` /
-   `Without<属性>` 前缀（`trace.WithSampler`、`trace.WithoutPropagation`、
-   `testutil.WithQuery`），与 `Use<属性>`（`engine.UseH2C`、`session.UseTTL`）并存。
-   这里的 `With` 是「携带某属性」而非介词短语，仅限该用途；普通函数仍不得用 `With` 开头。
+5. **函数式选项白名单**：返回 `Option` 类型、或返回被配置对象自身（如 `*testutil.Client`）
+   的配置函数，统一使用 `With<属性>` / `Without<属性>` 前缀（`trace.WithSampler`、
+   `trace.WithoutPropagation`、`testutil.WithQuery`、`engine.WithH2C`、
+   `(*testutil.Client).WithHeader`），**不再使用 `Use<属性>`**；`Use` 只保留给「注册」语义
+   （`UseMiddlewares`）。这里的 `With` 是「携带某属性」而非介词短语，仅限该用途；
+   普通函数仍不得用 `With` 开头。
 
 ### 1.2 构造函数：`New` / `new`
 
 - 导出构造函数：`New<类型>[]`，例如 `NewEngine`、`NewContext`、`NewManager`、`NewParser`。
+- 包内唯一目标对象：包名即被构造对象、且该包只对外暴露这一个可构造类型时，构造函数直接命名为
+  `New()`，例如 `dashboard.New`、`cache.New`、`compress.New`、`cors.New`、`collector.New`、
+  `upgrader.New`；包内有多个可构造类型时仍用 `New<类型>`。
 - 包内私有构造函数：`new<类型>[]`，例如 `newContext`、`newRouter`、`newStaticHandler`、`newRequest`。
-- 带默认值的构造函数：`NewDefault<类型>`，例如 `NewDefaultEngineConfig`、`NewDefaultConfig`、`NewDefaultCORS`。
+- 带默认值的构造函数：`NewDefault<类型>`，例如 `NewDefaultEngineConfig`、`NewDefaultConfig`、`NewDefaultOptions`。
 - 带可选变体的构造函数：`New<类型>With<特征>`，例如 `NewLatenciesWithCapacity`、`NewMessageWithEvent`。
 - 对象克隆不走构造函数族：用 `Clone`（返回独立副本）或 `Copy`（写入已有目标）。
 
@@ -79,7 +85,7 @@
 
 | 动词 | 语义 | 示例 |
 | --- | --- | --- |
-| `New` | 纯内存构造 | `NewEngine`、`NewNode` |
+| `New` | 纯内存构造；包内唯一目标对象直接 `New()` | `NewEngine`、`NewNode`、`dashboard.New` |
 | `NewDefault` | 构造带安全默认值的实例 | `NewDefaultConfig` |
 | `NewFrom` / `NewWith` | 从既有对象或附加特征构造 | `NewMessageWithEvent` |
 | `Clone` | 深拷贝 | `EngineConfig.Clone` |
@@ -206,8 +212,8 @@
 | `Mount` | 挂载子树或目录 | `MountStatic` |
 | `Register` / `Unregister` | 注册与注销 | `RegisterDashboard` |
 | `Subscribe` / `Unsubscribe` | 订阅与退订 | `SubscribeTopic` |
-| `Use` | 启用中间件或选项 | `UseMiddlewares`、`UseH2C` |
-| `With` / `Without` | 函数式选项携带属性（仅限返回 `Option` 的函数） | `WithSampler`、`WithoutPropagation` |
+| `Use` | 注册中间件或路由 | `UseMiddlewares` |
+| `With` / `Without` | 函数式选项携带属性（仅限返回 `Option` 的函数） | `WithSampler`、`WithoutPropagation`、`WithH2C` |
 | `Enable` / `Disable` / `Toggle` | 开关 | `Enable`、`DisableStartupLog` |
 | `Lock` / `Unlock` / `Freeze` / `Unfreeze` | 加解锁或冻结 | `Freeze` |
 | `Mark` / `Unmark` | 打标记 | `MarkPrepared` |
@@ -402,13 +408,14 @@ var (
 | `response.CreateWriterPool()` | `response.NewWriterPool()` |
 | `sse.CreateClient(...)` / `websocket.CreateClient(...)` | `NewClient(...)` |
 | `sse.CreateManager()` / `websocket.CreateManager(...)` | `NewManager(...)` |
-| `upgrader.CreateUpgrader(...)` | `upgrader.NewUpgrader(...)` |
+| `upgrader.CreateUpgrader(...)` | `upgrader.New(...)` |
 | `limiter.CreateFixedWindowLimiter(...)` 等同族 | `NewFixedWindowLimiter(...)` |
 | `breaker.CreateCircuitBreaker(...)` | `breaker.NewCircuitBreaker(...)` |
-| `collector.CreateCollector(...)` | `collector.NewCollector(...)` |
+| `collector.CreateCollector(...)` | `collector.New(...)` |
 | `tree.CreateNode(...)` / `tree.CreateTrie()` | `tree.NewNode(...)` / `tree.NewTrie()` |
 | `stresstest.CreateClient(...)` | `stresstest.NewClient(...)` |
-| `dashboard.CreateDashboard(...)` | `dashboard.NewDashboard(...)` |
+| `dashboard.CreateDashboard(...)` | `dashboard.New(...)` |
+| `cache` / `compress` / `cors` 包内构造 | `cache.New(...)` / `compress.New(...)` / `cors.New()` |
 | 各包 `CreateDefaultConfig()` | `NewDefaultConfig()` |
 
 ### 5.2 上下文响应
@@ -441,6 +448,23 @@ var (
 | 私有 `errFormatXxx` | `_ERR_FORMAT_XXX` |
 | 私有 `bucketCount` | `_BUCKET_COUNT` |
 | 导出 `MSG_TYPE_*` / `STATE_*` / `CLOSE_CODE_*` | 保持不变 |
+
+### 5.4 选项函数
+
+| 旧名称 | 新名称 |
+| --- | --- |
+| `leego.UseEngineName(...)` 等 `EngineOption` | `leego.WithEngineName(...)` |
+| `leego.UseH2C()` | `leego.WithH2C()` |
+| `session.UseTTL(...)` / `UseSecure(...)` | `session.WithTTL(...)` / `WithSecure(...)` |
+| `openapi.UseSchema(...)` / `UseOperation(...)` | `openapi.WithSchema(...)` / `WithOperation(...)` |
+| `dashboard.UseProvider(...)` / `UseTitle(...)` | `dashboard.WithProvider(...)` / `WithTitle(...)` |
+| `upload.UseMaxSize(...)` 等 | `upload.WithMaxSize(...)` |
+| `harness.UseAddr(...)` 等 | `harness.WithAddr(...)` |
+| `gateway.UseTimeout(...)` 等 | `gateway.WithTimeout(...)` |
+| `job.UseWorkers(...)` 等 | `job.WithWorkers(...)` |
+| `config.UseWatchInterval(...)` | `config.WithWatchInterval(...)` |
+| `(*testutil.Client).UseHeader(...)` / `UseCookie(...)` | `(*testutil.Client).WithHeader(...)` / `WithCookie(...)` |
+| `UseMiddlewares` | 保持不变（注册语义，不是选项） |
 
 迁移建议：先全局替换调用点，再跑 `go build ./...` 与 `go vet ./...`；
 若使用接口断言，注意同步修改自定义实现的方法名。
@@ -485,7 +509,7 @@ go list -deps ./... | grep -E '^[A-Za-z0-9._-]+\.[A-Za-z]{2,}/' | grep -v '^gola
 
 ### 6.4 提交前检查清单
 
-1. 构造函数是否使用 `New*` / `new*`，且没有引入 `Create*` 内存构造？
+1. 构造函数是否使用 `New*` / `new*`（包内唯一目标对象用 `New()`），且没有引入 `Create*` 内存构造？
 2. `Context` 新增的响应方法是否命名为 `Response*`，并在 1.3 的表格中补充？
 3. 常量是否满足：导出全大写下划线、私有 `_` 开头全大写？
 4. 新增导出函数首词是否为动词 / be / 情态动词（接口实现与函数式选项除外）？
@@ -498,3 +522,4 @@ go list -deps ./... | grep -E '^[A-Za-z0-9._-]+\.[A-Za-z]{2,}/' | grep -v '^gola
 11. 若修改了对外契约（名称、字段、消息类型、状态码），是否同步更新 `RELEASE.md` 与 `docs/`？
 12. 是否新增了 `require` 条目？若新增，是否属于本节允许范围并已在 PR 说明？
 13. 涉及外部系统的能力是否以接口暴露，而非在核心内直接调用第三方 SDK？
+14. 选项函数是否统一为 `With*` / `Without*`，未使用 `Use*`（`UseMiddlewares` 除外）？

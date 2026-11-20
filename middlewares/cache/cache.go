@@ -128,10 +128,10 @@ type Cache struct {
 	store *store
 }
 
-// NewCache 创建响应缓存中间件。
+// New 创建响应缓存中间件。
 //
 // 参数 config 可省略；多个配置时仅第一个生效，与其它中间件保持一致。
-func NewCache(config ...Config) *Cache {
+func New(config ...Config) *Cache {
 	options := NewDefaultConfig()
 	if len(config) > 0 {
 		options = config[0].normalize()

@@ -25,9 +25,9 @@ func main() {
 	dataDir := flag.String("data", "", "数据目录，默认位于系统临时目录")
 	flag.Parse()
 
-	options := []harness.Option{harness.UseAddr(*addr)}
+	options := []harness.Option{harness.WithAddr(*addr)}
 	if *dataDir != "" {
-		options = append(options, harness.UseDataDir(*dataDir))
+		options = append(options, harness.WithDataDir(*dataDir))
 	}
 
 	service, err := harness.NewService(options...)

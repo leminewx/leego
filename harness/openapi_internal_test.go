@@ -13,7 +13,7 @@ import (
 func newMetadataService(t *testing.T) *Service {
 	t.Helper()
 
-	service, err := NewService(UseDataDir(t.TempDir()), UseLogging(false))
+	service, err := NewService(WithDataDir(t.TempDir()), WithLogging(false))
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}

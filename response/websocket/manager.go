@@ -85,7 +85,7 @@ config 为 nil 时使用 upgrader 的默认配置；
 */
 func NewManager(config *upgrader.Config) *Manager {
 	return &Manager{
-		upgrader:     upgrader.NewUpgrader(config),
+		upgrader:     upgrader.New(config),
 		pingInterval: _DEFAULT_PING_INTERVAL,
 		closeChan:    make(chan struct{}),
 	}

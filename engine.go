@@ -33,7 +33,7 @@ const (
 	// _DEFAULT_MAX_BODY_BYTES 定义单个请求体默认允许的最大字节数（8 MiB）。
 	//
 	// 该上限用于防御“声明超大 Content-Length 后慢速发送”的内存耗尽攻击，
-	// 业务方可通过 UseMaxBodyBytes 调整，或在具体路由中自行覆盖。
+	// 业务方可通过 WithMaxBodyBytes 调整，或在具体路由中自行覆盖。
 	_DEFAULT_MAX_BODY_BYTES int64 = 8 << 20
 	// _DEFAULT_READ_HEADER_TIMEOUT 定义读取请求头的默认超时时间。
 	//
@@ -56,7 +56,7 @@ type ErrorHandlerFunc func(ctx *Context, err error)
 
 // EngineConfig 定义引擎的完整配置。
 //
-// 所有字段都有安全的默认值；通过 UseXxx 选项函数按需覆盖，
+// 所有字段都有安全的默认值；通过 WithXxx 选项函数按需覆盖，
 // 避免“零值即不安全”的静默默认。
 type EngineConfig struct {
 	// Name 为服务名称，出现在日志、指标后台与错误响应中。
@@ -67,11 +67,11 @@ type EngineConfig struct {
 	MaxBodyBytes int64
 	// StrictJSON 为 true 时，JSON 绑定会拒绝未知字段。
 	StrictJSON bool
-	// UseH2C 为 true 时允许明文 HTTP/2 与 HTTP/1.1 共用同一端口。
+	// H2C 为 true 时允许明文 HTTP/2 与 HTTP/1.1 共用同一端口。
 	//
 	// 由 http.Server.Protocols 控制，不依赖处理器包装；客户端必须直接发送
 	// HTTP/2 连接序言（前导知识），用 Upgrade: h2c 握手的请求按 HTTP/1.1 处理。
-	UseH2C bool
+	H2C bool
 	// DisableStartupLog 为 true 时不打印路由注册信息。
 	DisableStartupLog bool
 	// ReadHeaderTimeout 为读取请求头的超时时间。
@@ -81,7 +81,7 @@ type EngineConfig struct {
 	// WriteTimeout 为写入响应的超时时间。
 	//
 	// 注意：SSE / WebSocket 等长连接必须设为 0（不限制），
-	// 否则连接会在默认 60 秒后被切断；可用 UseWriteTimeout 单独调整。
+	// 否则连接会在默认 60 秒后被切断；可用 WithWriteTimeout 单独调整。
 	WriteTimeout time.Duration
 	// IdleTimeout 为空闲连接的超时时间。
 	IdleTimeout time.Duration
@@ -98,7 +98,7 @@ func NewDefaultEngineConfig() EngineConfig {
 		MaxMultipartMemory: _DEFAULT_MULTIPART_MEMORY,
 		MaxBodyBytes:       _DEFAULT_MAX_BODY_BYTES,
 		StrictJSON:         false,
-		UseH2C:             false,
+		H2C:                false,
 		DisableStartupLog:  false,
 		ReadHeaderTimeout:  _DEFAULT_READ_HEADER_TIMEOUT,
 		ReadTimeout:        _DEFAULT_READ_TIMEOUT,
@@ -123,8 +123,8 @@ func (own EngineConfig) Clone() EngineConfig {
 // EngineOption 定义引擎配置选项的函数类型。
 type EngineOption func(config *EngineConfig)
 
-// UseEngineName 设置服务名称。
-func UseEngineName(name string) EngineOption {
+// WithEngineName 设置服务名称。
+func WithEngineName(name string) EngineOption {
 	return func(config *EngineConfig) {
 		if name = strings.TrimSpace(name); name != "" {
 			config.Name = name
@@ -132,8 +132,8 @@ func UseEngineName(name string) EngineOption {
 	}
 }
 
-// UseMultipartMemory 设置解析 multipart 表单时允许使用的最大内存。
-func UseMultipartMemory(bytes int64) EngineOption {
+// WithMultipartMemory 设置解析 multipart 表单时允许使用的最大内存。
+func WithMultipartMemory(bytes int64) EngineOption {
 	return func(config *EngineConfig) {
 		if bytes > 0 {
 			config.MaxMultipartMemory = bytes
@@ -141,21 +141,21 @@ func UseMultipartMemory(bytes int64) EngineOption {
 	}
 }
 
-// UseMaxBodyBytes 设置单个请求体的最大字节数；传入小于等于 0 的值表示不限制。
-func UseMaxBodyBytes(bytes int64) EngineOption {
+// WithMaxBodyBytes 设置单个请求体的最大字节数；传入小于等于 0 的值表示不限制。
+func WithMaxBodyBytes(bytes int64) EngineOption {
 	return func(config *EngineConfig) {
 		config.MaxBodyBytes = bytes
 	}
 }
 
-// UseStrictJSON 设置 JSON 绑定是否拒绝未知字段。
-func UseStrictJSON(strict bool) EngineOption {
+// WithStrictJSON 设置 JSON 绑定是否拒绝未知字段。
+func WithStrictJSON(strict bool) EngineOption {
 	return func(config *EngineConfig) {
 		config.StrictJSON = strict
 	}
 }
 
-// UseH2C 启用明文 HTTP/2（h2c）。
+// WithH2C 启用明文 HTTP/2（h2c）。
 //
 // 该能力由标准库 http.Server.Protocols 提供（Go 1.24+），不再依赖
 // golang.org/x/net/http2/h2c：同一端口既接受 HTTP/1.1，也接受直接发送
@@ -164,16 +164,16 @@ func UseStrictJSON(strict bool) EngineOption {
 //
 // Run / RunTLS / RunUnix / RunFd / RunListener 会自动把协议集写入服务器；
 // 自行创建 http.Server 时，需要把它的 Protocols 设为 GetHTTPProtocols()。
-func UseH2C() EngineOption {
+func WithH2C() EngineOption {
 	return func(config *EngineConfig) {
-		config.UseH2C = true
+		config.H2C = true
 	}
 }
 
-// UseServerTimeouts 一次性设置服务端四个超时时间。
+// WithServerTimeouts 一次性设置服务端四个超时时间。
 //
 // 任一参数小于等于 0 时保留该配置项的默认值，避免误把超时设为 0 而退化为无限等待。
-func UseServerTimeouts(readHeader, read, write, idle time.Duration) EngineOption {
+func WithServerTimeouts(readHeader, read, write, idle time.Duration) EngineOption {
 	return func(config *EngineConfig) {
 		if readHeader > 0 {
 			config.ReadHeaderTimeout = readHeader
@@ -190,12 +190,12 @@ func UseServerTimeouts(readHeader, read, write, idle time.Duration) EngineOption
 	}
 }
 
-// UseWriteTimeout 单独设置响应写入超时。
+// WithWriteTimeout 单独设置响应写入超时。
 //
-// 与 UseServerTimeouts 不同，这里允许传入 0：SSE / WebSocket 等长连接
+// 与 WithServerTimeouts 不同，这里允许传入 0：SSE / WebSocket 等长连接
 // 依赖该值关闭全局写入超时，否则默认 60 秒会直接切断连接。
 // 负数视为 0。
-func UseWriteTimeout(timeout time.Duration) EngineOption {
+func WithWriteTimeout(timeout time.Duration) EngineOption {
 	return func(config *EngineConfig) {
 		if timeout < 0 {
 			timeout = 0
@@ -205,11 +205,11 @@ func UseWriteTimeout(timeout time.Duration) EngineOption {
 	}
 }
 
-// UseTrustedProxies 设置可信代理的 CIDR 列表。
+// WithTrustedProxies 设置可信代理的 CIDR 列表。
 //
 // 只有来自这些网段的请求才会被信任 X-Forwarded-For / X-Real-IP；
 // 传入无效 CIDR 时会被忽略，并在错误返回值中汇总（见 Engine.SetTrustedProxies）。
-func UseTrustedProxies(cidrs ...string) EngineOption {
+func WithTrustedProxies(cidrs ...string) EngineOption {
 	return func(config *EngineConfig) {
 		config.TrustedProxies = append([]string(nil), cidrs...)
 	}
@@ -579,8 +579,8 @@ func (own *Engine) IsBlacklisted(path string) bool {
 //
 // 必须在服务启动（Prepare）之前调用；返回值非 nil 表示注册失败。
 func (own *Engine) RegisterDashboard(prefix string, options ...dashboard.Option) error {
-	options = append([]dashboard.Option{dashboard.UseProvider(own.CollectReport)}, options...)
-	monitor, err := dashboard.NewDashboard(options...)
+	options = append([]dashboard.Option{dashboard.WithProvider(own.CollectReport)}, options...)
+	monitor, err := dashboard.New(options...)
 	if err != nil {
 		return err
 	}
@@ -1015,7 +1015,7 @@ func (own *Engine) GetHTTPHandler() http.Handler {
 // 启用后返回同时包含 HTTP/1.1、HTTP/2 与明文 HTTP/2 的集合——保留 HTTP/2 是为了
 // RunTLS 场景下 ALPN 仍能协商到 h2，而不是只提供 h2c。
 func (own *Engine) GetHTTPProtocols() *http.Protocols {
-	if !own.config.UseH2C {
+	if !own.config.H2C {
 		return nil
 	}
 

@@ -52,9 +52,9 @@ func TestNewDefaultConfigValues(t *testing.T) {
 	}
 }
 
-// TestNewUpgraderUsesDefaultsWhenConfigIsNil 验证 nil 配置回退为默认值。
-func TestNewUpgraderUsesDefaultsWhenConfigIsNil(t *testing.T) {
-	instance := NewUpgrader(nil)
+// TestNewUsesDefaultsWhenConfigIsNil 验证 nil 配置回退为默认值。
+func TestNewUsesDefaultsWhenConfigIsNil(t *testing.T) {
+	instance := New(nil)
 
 	if instance.ReadTimeout != 60*time.Second {
 		t.Fatalf("ReadTimeout = %v, want 60s", instance.ReadTimeout)
@@ -69,19 +69,19 @@ func TestNewUpgraderUsesDefaultsWhenConfigIsNil(t *testing.T) {
 	}
 }
 
-// TestNewUpgraderNormalizesMaxReadLimit 验证非正上限被修正为默认值。
-func TestNewUpgraderNormalizesMaxReadLimit(t *testing.T) {
-	instance := NewUpgrader(&Config{MaxReadLimit: -1})
+// TestNewNormalizesMaxReadLimit 验证非正上限被修正为默认值。
+func TestNewNormalizesMaxReadLimit(t *testing.T) {
+	instance := New(&Config{MaxReadLimit: -1})
 
 	if instance.MaxReadLimit != _DEFAULT_MAX_READ_LIMIT {
 		t.Fatalf("MaxReadLimit = %d, want %d", instance.MaxReadLimit, int64(_DEFAULT_MAX_READ_LIMIT))
 	}
 }
 
-// TestNewUpgraderCopiesConfig 验证创建后修改原配置不影响升级器。
-func TestNewUpgraderCopiesConfig(t *testing.T) {
+// TestNewCopiesConfig 验证创建后修改原配置不影响升级器。
+func TestNewCopiesConfig(t *testing.T) {
 	config := NewDefaultConfig()
-	instance := NewUpgrader(config)
+	instance := New(config)
 
 	config.ReadTimeout = time.Second
 	config.MaxReadLimit = 1024

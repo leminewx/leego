@@ -100,43 +100,43 @@ func (own Options) normalize() Options {
 // Option 修改 Options。
 type Option func(*Options)
 
-// UseActionParam 设置动作参数名。
-func UseActionParam(name string) Option {
+// WithActionParam 设置动作参数名。
+func WithActionParam(name string) Option {
 	return func(options *Options) {
 		options.ActionParam = name
 	}
 }
 
-// UseIDParam 设置会话参数名。
-func UseIDParam(name string) Option {
+// WithIDParam 设置会话参数名。
+func WithIDParam(name string) Option {
 	return func(options *Options) {
 		options.IDParam = name
 	}
 }
 
-// UseIndexParam 设置分片序号参数名。
-func UseIndexParam(name string) Option {
+// WithIndexParam 设置分片序号参数名。
+func WithIndexParam(name string) Option {
 	return func(options *Options) {
 		options.IndexParam = name
 	}
 }
 
-// UseMaxSize 设置单文件上限。
-func UseMaxSize(size int64) Option {
+// WithMaxSize 设置单文件上限。
+func WithMaxSize(size int64) Option {
 	return func(options *Options) {
 		options.MaxSize = size
 	}
 }
 
-// UseDefaultPartSize 设置默认分片大小。
-func UseDefaultPartSize(size int64) Option {
+// WithDefaultPartSize 设置默认分片大小。
+func WithDefaultPartSize(size int64) Option {
 	return func(options *Options) {
 		options.DefaultPartSize = size
 	}
 }
 
-// UseMaxParts 设置分片数量上限。
-func UseMaxParts(count int) Option {
+// WithMaxParts 设置分片数量上限。
+func WithMaxParts(count int) Option {
 	return func(options *Options) {
 		options.MaxParts = count
 	}
