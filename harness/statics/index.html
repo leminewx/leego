@@ -17,13 +17,13 @@
     --warn: #ffb020;
     --danger: #ff5d73;
     --radius: 14px;
+    --sidebar: 268px;
   }
 
   * { box-sizing: border-box; }
 
   body {
     margin: 0;
-    padding: 28px 20px 60px;
     font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
     background:
       radial-gradient(1200px 600px at 10% -10%, rgba(91, 140, 255, .18), transparent 60%),
@@ -32,84 +32,197 @@
     color: var(--text);
   }
 
-  header {
-    max-width: 1280px;
-    margin: 0 auto 22px;
+  .shell { display: flex; min-height: 100vh; }
+
+  /* 左侧菜单 */
+  .sidebar {
+    width: var(--sidebar);
+    flex: none;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 20px 14px 18px;
+    background: linear-gradient(180deg, #101733, #0b1226);
+    border-right: 1px solid var(--line);
     display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    align-items: flex-end;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 30;
   }
 
-  header h1 {
+  .brand { display: flex; align-items: center; gap: 12px; padding: 0 4px; }
+
+  .brand .mark {
+    width: 42px;
+    height: 42px;
+    flex: none;
+    filter: drop-shadow(0 8px 18px rgba(91, 140, 255, .35));
+  }
+
+  .brand h1 {
     margin: 0;
-    font-size: 26px;
-    letter-spacing: .5px;
+    font-size: 18px;
+    letter-spacing: .4px;
+    white-space: nowrap;
   }
 
-  header h1 span { color: var(--accent); }
-  
-    .brand { display: flex; align-items: center; gap: 14px; }
-  
-    .brand .mark {
-      width: 46px;
-      height: 46px;
-      flex: none;
-      filter: drop-shadow(0 8px 18px rgba(91, 140, 255, .35));
-    }
-  
-  header p {
+  .brand h1 span { color: var(--accent); }
+
+  .brand p {
+    margin: 3px 0 0;
+    color: var(--muted);
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+
+  .menu {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .menu-group {
+    margin: 12px 8px 4px;
+    font-size: 11px;
+    letter-spacing: .12em;
+    color: #6b7899;
+    text-transform: uppercase;
+  }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13.5px;
+    transition: color .16s, background .16s, border-color .16s;
+  }
+
+  .menu-item:hover { color: var(--text); background: rgba(91, 140, 255, .08); }
+
+  .menu-item.active {
+    color: var(--text);
+    background: rgba(91, 140, 255, .16);
+    border-color: rgba(91, 140, 255, .38);
+  }
+
+  .menu-item .dot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .55;
+  }
+
+  .menu-item.active .dot { background: var(--accent); opacity: 1; }
+
+  .menu-item .arrow { margin-left: auto; font-size: 11px; color: #6b7899; }
+
+  .sidebar-foot {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(10, 16, 34, .6);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* 右侧功能区 */
+  .main {
+    flex: 1;
+    min-width: 0;
+    padding: 22px 26px 60px;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  .topbar .titles { min-width: 0; }
+
+  .topbar h2 {
+    margin: 0;
+    font-size: 21px;
+    letter-spacing: .3px;
+  }
+
+  .topbar p {
     margin: 6px 0 0;
     color: var(--muted);
     font-size: 13px;
+    line-height: 1.6;
   }
 
-  .links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .topbar-links {
+    margin-left: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
 
-  .links a {
+  .topbar-links a {
     color: var(--text);
     text-decoration: none;
-    font-size: 13px;
+    font-size: 12.5px;
     padding: 7px 12px;
     border: 1px solid var(--line);
     border-radius: 999px;
     background: rgba(20, 27, 49, .7);
+    white-space: nowrap;
     transition: border-color .2s, color .2s;
   }
 
-  .links a:hover { border-color: var(--accent); color: var(--accent); }
+  .topbar-links a:hover { border-color: var(--accent); color: var(--accent); }
 
-  main {
-    max-width: 1280px;
-    margin: 0 auto;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-    gap: 16px;
+  .icon-btn {
+    display: none;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 8px 12px;
+    font-size: 13px;
+    cursor: pointer;
   }
+
+  .panel { display: none; }
+  .panel.active { display: flex; flex-direction: column; gap: 14px; }
 
   .card {
     background: linear-gradient(180deg, var(--panel), var(--panel-2));
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: 16px 16px 14px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    min-height: 210px;
+    gap: 12px;
   }
 
-  .card h2 {
+  .card h3 {
     margin: 0;
-    font-size: 15px;
+    font-size: 14px;
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  .card h2 i {
-    width: 8px;
-    height: 8px;
+  .card h3 i {
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: var(--accent);
     display: inline-block;
@@ -118,11 +231,34 @@
   .card p.hint {
     margin: 0;
     color: var(--muted);
-    font-size: 12px;
-    line-height: 1.6;
+    font-size: 12.5px;
+    line-height: 1.65;
   }
 
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  .endpoint {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .method {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    background: rgba(91, 140, 255, .18);
+    color: #a9c0ff;
+  }
+
+  .method.post { background: rgba(41, 211, 162, .18); color: #7ce8c5; }
+  .method.put { background: rgba(255, 176, 32, .18); color: #ffcf7a; }
+  .method.del { background: rgba(255, 93, 115, .18); color: #ff97a7; }
 
   button {
     cursor: pointer;
@@ -152,7 +288,7 @@
 
   input[type="text"] {
     flex: 1;
-    min-width: 120px;
+    min-width: 140px;
     padding: 8px 10px;
     border-radius: 9px;
     border: 1px solid var(--line);
@@ -164,41 +300,33 @@
 
   input[type="text"]:focus { border-color: var(--accent); }
 
-  input[type="file"] {
-    color: var(--muted);
-    font-size: 12px;
-    max-width: 100%;
-  }
+  input[type="file"] { color: var(--muted); font-size: 12px; max-width: 100%; }
 
   label.check {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: 12.5px;
     color: var(--muted);
     cursor: pointer;
   }
 
   pre {
     margin: 0;
-    padding: 10px;
+    padding: 12px;
     border-radius: 10px;
     border: 1px solid var(--line);
     background: #0a1022;
     font-size: 12px;
-    line-height: 1.55;
+    line-height: 1.6;
     overflow: auto;
-    max-height: 200px;
+    max-height: 420px;
     white-space: pre-wrap;
     word-break: break-all;
     color: #c9d6f7;
-    flex: 1;
   }
 
-  pre:empty::before {
-    content: "等待操作…";
-    color: #56628a;
-  }
+  pre:empty::before { content: "等待操作…"; color: #56628a; }
 
   .badge {
     display: inline-block;
@@ -228,12 +356,12 @@
   progress::-moz-progress-bar { background: var(--accent); }
 
   .stream {
-    height: 160px;
+    height: 300px;
     overflow: auto;
     border-radius: 10px;
     border: 1px solid var(--line);
     background: #0a1022;
-    padding: 8px 10px;
+    padding: 10px 12px;
     font-family: "Cascadia Code", Consolas, monospace;
     font-size: 12px;
     line-height: 1.7;
@@ -246,13 +374,27 @@
 
   a.download { color: var(--accent-2); font-size: 13px; }
 
-  footer {
-    max-width: 1280px;
-    margin: 26px auto 0;
-    color: var(--muted);
-    font-size: 12px;
-    text-align: center;
+  .links-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
   }
+
+  .links-grid a {
+    display: block;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(10, 16, 34, .6);
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13px;
+    transition: border-color .2s, color .2s;
+  }
+
+  .links-grid a:hover { border-color: var(--accent); color: var(--accent); }
+
+  .links-grid a small { display: block; margin-top: 4px; color: var(--muted); font-size: 11.5px; }
 
   code {
     background: rgba(91, 140, 255, .12);
@@ -261,146 +403,283 @@
     border-radius: 5px;
     font-size: 12px;
   }
+
+  .scrim {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 8, 18, .6);
+    z-index: 25;
+  }
+
+  @media (max-width: 900px) {
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      transform: translateX(-100%);
+      transition: transform .22s ease;
+    }
+
+    .sidebar.open { transform: translateX(0); }
+    .scrim.show { display: block; }
+    .icon-btn { display: inline-block; }
+    .main { padding: 16px 14px 48px; }
+    .topbar { flex-wrap: wrap; }
+    .topbar-links { margin-left: 0; width: 100%; justify-content: flex-start; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">
-    <svg class="mark" viewBox="0 0 48 48" role="img" aria-label="leego">
-      <defs>
-        <linearGradient id="leegoBrand" x1="6" y1="6" x2="42" y2="42" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#5b8cff"/>
-          <stop offset="1" stop-color="#29d3a2"/>
-        </linearGradient>
-      </defs>
-      <rect x="1.5" y="1.5" width="45" height="45" rx="13" fill="#101733" stroke="url(#leegoBrand)" stroke-width="2"/>
-      <path d="M18 13v17a5 5 0 0 0 5 5h7" fill="none" stroke="url(#leegoBrand)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M30 15l5 4-5 4" fill="none" stroke="#29d3a2" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="33" cy="31" r="2.6" fill="#5b8cff"/>
-    </svg>
-    <div>
-      <h1>leego <span>harness</span></h1>
-      <p>零第三方依赖的框架扩展能力体验服务 · 会话 / 缓存 / 限流 / 分片上传 / SSE / 反向代理 / 任务 / 链路 / 指标</p>
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 48 48" role="img" aria-label="leego">
+        <defs>
+          <linearGradient id="leegoBrand" x1="6" y1="6" x2="42" y2="42" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#5b8cff"/>
+            <stop offset="1" stop-color="#29d3a2"/>
+          </linearGradient>
+        </defs>
+        <rect x="1.5" y="1.5" width="45" height="45" rx="13" fill="#101733" stroke="url(#leegoBrand)" stroke-width="2"/>
+        <path d="M18 13v17a5 5 0 0 0 5 5h7" fill="none" stroke="url(#leegoBrand)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M30 15l5 4-5 4" fill="none" stroke="#29d3a2" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="33" cy="31" r="2.6" fill="#5b8cff"/>
+      </svg>
+      <div>
+        <h1>leego <span>harness</span></h1>
+        <p>零依赖扩展能力体验</p>
+      </div>
     </div>
-  </div>
-  <nav class="links">
-    <a href="/dashboard" target="_blank">分析后台</a>
-    <a href="/openapi" target="_blank">OpenAPI</a>
-    <a href="/metrics" target="_blank">指标趋势</a>
-    <a href="/metrics/prometheus" target="_blank">Prometheus</a>
-    <a href="/api/traces" target="_blank">链路快照</a>
-  </nav>
-</header>
 
-<main>
-  <section class="card">
-    <h2><i></i>服务概览</h2>
-    <p class="hint">读取服务名、Go 版本、运行时长与当前配置，确认服务已经就绪。</p>
-    <div class="row">
-      <button id="btn-hello">GET /api/hello</button>
-      <button class="ghost" id="btn-health">健康检查</button>
+    <nav class="menu" id="menu">
+      <div class="menu-group">能力</div>
+      <a class="menu-item active" href="#overview" data-panel="overview"><span class="dot"></span>服务概览</a>
+      <a class="menu-item" href="#echo" data-panel="echo"><span class="dot"></span>请求回显</a>
+      <a class="menu-item" href="#session" data-panel="session"><span class="dot"></span>服务端会话</a>
+      <a class="menu-item" href="#cache" data-panel="cache"><span class="dot"></span>响应缓存</a>
+      <a class="menu-item" href="#limiter" data-panel="limiter"><span class="dot"></span>令牌桶限流</a>
+      <a class="menu-item" href="#upload" data-panel="upload"><span class="dot"></span>分片上传</a>
+      <a class="menu-item" href="#stream" data-panel="stream"><span class="dot"></span>SSE 事件流</a>
+      <a class="menu-item" href="#gateway" data-panel="gateway"><span class="dot"></span>反向代理</a>
+      <a class="menu-item" href="#jobs" data-panel="jobs"><span class="dot"></span>定时任务</a>
+      <a class="menu-item" href="#traces" data-panel="traces"><span class="dot"></span>链路追踪</a>
+
+      <div class="menu-group">平台</div>
+      <a class="menu-item" href="/dashboard" target="_blank">分析后台<span class="arrow">↗</span></a>
+      <a class="menu-item" href="/openapi" target="_blank">OpenAPI 文档<span class="arrow">↗</span></a>
+      <a class="menu-item" href="/metrics" target="_blank">指标趋势<span class="arrow">↗</span></a>
+      <a class="menu-item" href="/metrics/prometheus" target="_blank">Prometheus<span class="arrow">↗</span></a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <span class="badge ok">运行中</span>
+      <span>数据目录：系统临时目录</span>
+      <span>参数：<code>-data</code> 可指定</span>
     </div>
-    <pre id="out-hello"></pre>
-  </section>
+  </aside>
 
-  <section class="card">
-    <h2><i></i>请求回显</h2>
-    <p class="hint">回显方法、路径、请求头与请求体，观察中间件对请求的改写（例如追踪头）。</p>
-    <div class="row">
-      <input type="text" id="echo-text" value="hello leego" placeholder="请求体">
-      <button id="btn-echo">POST /api/echo</button>
+  <main class="main">
+    <div class="topbar">
+      <button class="icon-btn" id="btn-menu">菜单</button>
+      <div class="titles">
+        <h2 id="panel-title">服务概览</h2>
+        <p id="panel-desc">读取服务名、Go 版本、运行时长与当前配置，确认服务已经就绪。</p>
+      </div>
+      <div class="topbar-links">
+        <a href="/openapi" target="_blank">OpenAPI</a>
+        <a href="/dashboard" target="_blank">分析后台</a>
+        <a href="/api/traces" target="_blank">链路快照</a>
+      </div>
     </div>
-    <pre id="out-echo"></pre>
-  </section>
 
-  <section class="card">
-    <h2><i></i>服务端会话</h2>
-    <p class="hint">Cookie 只保存 HMAC 签名后的会话 ID，数据留在服务端；登录时会轮换 ID 防止会话固定。</p>
-    <div class="row">
-      <input type="text" id="session-name" value="gopher" placeholder="用户名">
-      <button id="btn-login">登录</button>
-      <button class="ghost" id="btn-session">当前会话</button>
-      <button class="danger" id="btn-logout">退出</button>
-    </div>
-    <pre id="out-session"></pre>
-  </section>
+    <section class="panel active" id="panel-overview">
+      <div class="card">
+        <h3><i></i>服务概览</h3>
+        <p class="hint">读取服务名、Go 版本、运行时长与当前配置，确认服务已经就绪。</p>
+        <div class="row">
+          <button id="btn-hello">GET /api/hello</button>
+          <button class="ghost" id="btn-health">健康检查</button>
+        </div>
+        <pre id="out-hello"></pre>
+      </div>
+      <div class="card">
+        <h3><i></i>平台入口</h3>
+        <p class="hint">以下页面与本页共享同一份运行数据，可用来观察指标、链路与文档。</p>
+        <div class="links-grid">
+          <a href="/dashboard" target="_blank">分析后台<small>路由列表、指标趋势与重置操作</small></a>
+          <a href="/openapi" target="_blank">OpenAPI 文档<small>按分组浏览的接口契约</small></a>
+          <a href="/metrics" target="_blank">指标趋势<small>内存指标存储与历史采样</small></a>
+          <a href="/metrics/prometheus" target="_blank">Prometheus<small>标准文本 exposition 格式</small></a>
+        </div>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2><i></i>响应缓存</h2>
-    <p class="hint">接口内部随机延迟 10–40ms；连续请求两次，第二次应命中并被 <code>X-Cache</code> 标记。</p>
-    <div class="row">
-      <button id="btn-cache">连续请求两次</button>
-    </div>
-    <pre id="out-cache"></pre>
-  </section>
+    <section class="panel" id="panel-echo">
+      <div class="card">
+        <h3><i></i>请求回显</h3>
+        <p class="hint">回显方法、路径、请求头与请求体，观察中间件对请求的改写（例如追踪头）。</p>
+        <div class="row">
+          <input type="text" id="echo-text" value="hello leego" placeholder="请求体">
+          <button id="btn-echo">POST /api/echo</button>
+        </div>
+        <pre id="out-echo"></pre>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2><i></i>令牌桶限流</h2>
-    <p class="hint">默认每秒 5 个令牌、突发 10；一次并发 20 个请求即可观察到 429。</p>
-    <div class="row">
-      <button id="btn-limit">并发 20 次</button>
-    </div>
-    <pre id="out-limit"></pre>
-  </section>
+    <section class="panel" id="panel-session">
+      <div class="card">
+        <h3><i></i>服务端会话</h3>
+        <p class="hint">Cookie 只保存 HMAC 签名后的会话 ID，数据留在服务端；登录时会轮换 ID 防止会话固定。</p>
+        <div class="row">
+          <input type="text" id="session-name" value="gopher" placeholder="用户名">
+          <button id="btn-login">登录</button>
+          <button class="ghost" id="btn-session">当前会话</button>
+          <button class="danger" id="btn-logout">退出</button>
+        </div>
+        <pre id="out-session"></pre>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2><i></i>分片上传</h2>
-    <p class="hint">前端按 256 KiB 切片，服务端逐片落盘并做长度校验，完成后按 SHA-256 合并并支持秒传。</p>
-    <div class="row">
-      <input type="file" id="upload-file">
-      <button id="btn-upload">开始上传</button>
-    </div>
-    <progress id="upload-progress" max="100" value="0"></progress>
-    <pre id="out-upload"></pre>
-    <a class="download" id="upload-link" href="#" hidden>下载文件</a>
-  </section>
+    <section class="panel" id="panel-cache">
+      <div class="card">
+        <h3><i></i>响应缓存</h3>
+        <p class="hint">接口内部随机延迟 10–40ms；连续请求两次，第二次应命中并被 <code>X-Cache</code> 标记。</p>
+        <div class="row">
+          <span class="endpoint"><span class="method">GET</span><code>/api/cache/timestamp</code></span>
+          <button id="btn-cache">连续请求两次</button>
+        </div>
+        <pre id="out-cache"></pre>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2><i></i>SSE 事件流</h2>
-    <p class="hint">每秒推送一次服务状态；事件类型由 <code>NewMessageWithEvent</code> 指定。</p>
-    <div class="row">
-      <button id="btn-sse-start">建立连接</button>
-      <button class="ghost" id="btn-sse-stop">断开</button>
-      <span class="badge" id="sse-status">未连接</span>
-    </div>
-    <div class="stream" id="sse-log"></div>
-  </section>
+    <section class="panel" id="panel-limiter">
+      <div class="card">
+        <h3><i></i>令牌桶限流</h3>
+        <p class="hint">默认每秒 5 个令牌、突发 10；一次并发 20 个请求即可观察到 429。</p>
+        <div class="row">
+          <span class="endpoint"><span class="method">GET</span><code>/api/limited/ping</code></span>
+          <button id="btn-limit">并发 20 次</button>
+        </div>
+        <pre id="out-limit"></pre>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2><i></i>反向代理与灰度</h2>
-    <p class="hint">两个内部上游按 3:1 平滑加权轮询；携带 <code>X-Leego-Canary: v2</code> 时只命中灰度实例。</p>
-    <div class="row">
-      <button id="btn-gateway">请求 /api/gateway/demo</button>
-      <label class="check"><input type="checkbox" id="gateway-canary"> 灰度流量</label>
-    </div>
-    <pre id="out-gateway"></pre>
-  </section>
+    <section class="panel" id="panel-upload">
+      <div class="card">
+        <h3><i></i>分片上传</h3>
+        <p class="hint">前端按 256 KiB 切片，服务端逐片落盘并做长度校验，完成后按序合并并支持下载。</p>
+        <div class="row">
+          <input type="file" id="upload-file">
+          <button id="btn-upload">开始上传</button>
+        </div>
+        <progress id="upload-progress" max="100" value="0"></progress>
+        <pre id="out-upload"></pre>
+        <a class="download" id="upload-link" href="#" hidden>下载文件</a>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2><i></i>定时任务</h2>
-    <p class="hint">调度器每 3 秒执行一次计数任务；并发额度不足时丢弃并计数，不会阻塞调度协程。</p>
-    <div class="row">
-      <button id="btn-jobs">刷新统计</button>
-    </div>
-    <pre id="out-jobs"></pre>
-  </section>
+    <section class="panel" id="panel-stream">
+      <div class="card">
+        <h3><i></i>SSE 事件流</h3>
+        <p class="hint">每秒推送一次服务状态；事件类型由 <code>NewMessageWithEvent</code> 指定。</p>
+        <div class="row">
+          <button id="btn-sse-start">建立连接</button>
+          <button class="ghost" id="btn-sse-stop">断开</button>
+          <span class="badge" id="sse-status">未连接</span>
+        </div>
+        <div class="stream" id="sse-log"></div>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2><i></i>链路追踪</h2>
-    <p class="hint">内存导出器保留最近 256 条片段；刷新本页操作后再点击可看到新的链路。</p>
-    <div class="row">
-      <button id="btn-traces">最近链路</button>
-    </div>
-    <pre id="out-traces"></pre>
-  </section>
-</main>
+    <section class="panel" id="panel-gateway">
+      <div class="card">
+        <h3><i></i>反向代理与灰度</h3>
+        <p class="hint">两个内部上游按 3:1 平滑加权轮询；携带 <code>X-Leego-Canary: v2</code> 时只命中灰度实例。</p>
+        <div class="row">
+          <span class="endpoint"><span class="method">GET</span><code>/api/gateway/*path</code></span>
+          <button id="btn-gateway">请求 /api/gateway/demo</button>
+          <label class="check"><input type="checkbox" id="gateway-canary"> 灰度流量</label>
+        </div>
+        <pre id="out-gateway"></pre>
+      </div>
+    </section>
 
-<footer>
-  leego harness · 仅用于本地开发体验；数据写入系统临时目录，可通过 <code>-data</code> 参数指定。
-</footer>
+    <section class="panel" id="panel-jobs">
+      <div class="card">
+        <h3><i></i>定时任务</h3>
+        <p class="hint">调度器每 3 秒执行一次计数任务；并发额度不足时丢弃并计数，不会阻塞调度协程。</p>
+        <div class="row">
+          <span class="endpoint"><span class="method">GET</span><code>/api/jobs</code></span>
+          <button id="btn-jobs">刷新统计</button>
+        </div>
+        <pre id="out-jobs"></pre>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-traces">
+      <div class="card">
+        <h3><i></i>链路追踪</h3>
+        <p class="hint">内存导出器保留最近 256 条片段；先操作其它面板，再回到这里刷新即可看到新的链路。</p>
+        <div class="row">
+          <span class="endpoint"><span class="method">GET</span><code>/api/traces</code></span>
+          <button id="btn-traces">最近链路</button>
+        </div>
+        <pre id="out-traces"></pre>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
 
 <script>
   const $ = (selector) => document.querySelector(selector);
+
+  // 面板标题与说明：切换菜单时同步到顶栏。
+  const PANELS = {
+    overview: ["服务概览", "读取服务名、Go 版本、运行时长与当前配置，确认服务已经就绪。"],
+    echo: ["请求回显", "回显方法、路径、请求头与请求体，观察中间件对请求的改写。"],
+    session: ["服务端会话", "Cookie 只保存 HMAC 签名后的会话 ID，数据留在服务端；登录时会轮换 ID。"],
+    cache: ["响应缓存", "接口内部随机延迟 10–40ms；连续请求两次，第二次应命中并被 X-Cache 标记。"],
+    limiter: ["令牌桶限流", "默认每秒 5 个令牌、突发 10；一次并发 20 个请求即可观察到 429。"],
+    upload: ["分片上传", "前端按 256 KiB 切片，服务端逐片落盘并校验长度，完成后按序合并。"],
+    stream: ["SSE 事件流", "每秒推送一次服务状态；事件类型由 NewMessageWithEvent 指定。"],
+    gateway: ["反向代理与灰度", "两个内部上游按 3:1 平滑加权轮询；携带 X-Leego-Canary: v2 时只命中灰度实例。"],
+    jobs: ["定时任务", "调度器每 3 秒执行一次计数任务；额度不足时丢弃并计数，不会阻塞调度协程。"],
+    traces: ["链路追踪", "内存导出器保留最近 256 条片段；先操作其它面板，再回来刷新可看到新链路。"]
+  };
+
+  function activate(name) {
+    const target = PANELS[name] ? name : "overview";
+
+    document.querySelectorAll(".panel").forEach((panel) => {
+      panel.classList.toggle("active", panel.id === "panel-" + target);
+    });
+
+    document.querySelectorAll(".menu-item[data-panel]").forEach((item) => {
+      item.classList.toggle("active", item.dataset.panel === target);
+    });
+
+    const meta = PANELS[target];
+    $("#panel-title").textContent = meta[0];
+    $("#panel-desc").textContent = meta[1];
+    closeSidebar();
+  }
+
+  function openSidebar() {
+    $("#sidebar").classList.add("open");
+    $("#scrim").classList.add("show");
+  }
+
+  function closeSidebar() {
+    $("#sidebar").classList.remove("open");
+    $("#scrim").classList.remove("show");
+  }
+
+  $("#btn-menu").addEventListener("click", openSidebar);
+  $("#scrim").addEventListener("click", closeSidebar);
+  window.addEventListener("hashchange", () => activate(location.hash.slice(1)));
 
   function setOutput(target, value) {
     const element = $(target);
@@ -514,7 +793,7 @@
         throw new Error(`初始化失败：${JSON.stringify(init.body)}`);
       }
 
-      const id = init.body.ID;
+      const id = init.body.id;
       const total = Math.max(1, Math.ceil(file.size / chunkSize));
       for (let index = 0; index < total; index++) {
         const chunk = file.slice(index * chunkSize, Math.min((index + 1) * chunkSize, file.size));
@@ -552,7 +831,7 @@
     line.className = kind;
     line.textContent = text;
     log.appendChild(line);
-    while (log.childElementCount > 60) {
+    while (log.childElementCount > 120) {
       log.removeChild(log.firstElementChild);
     }
     log.scrollTop = log.scrollHeight;
@@ -606,6 +885,8 @@
     );
     setOutput("#out-traces", `共 ${result.body.total} 条，最近 ${lines.length} 条：\n` + lines.join("\n"));
   });
+
+  activate((location.hash || "#overview").slice(1));
 </script>
 </body>
 </html>

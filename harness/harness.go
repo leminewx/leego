@@ -46,7 +46,6 @@ import (
 	"gitee.com/leminewx/leego/middlewares/cors"
 	"gitee.com/leminewx/leego/middlewares/limiter"
 	middletrace "gitee.com/leminewx/leego/middlewares/trace"
-	"gitee.com/leminewx/leego/openapi"
 	"gitee.com/leminewx/leego/response/sse"
 	"gitee.com/leminewx/leego/session"
 	"gitee.com/leminewx/leego/upload"
@@ -435,8 +434,9 @@ func (own *Service) Shutdown(ctx context.Context) error {
 
 // buildEngine 创建引擎并注册全部业务路由。
 func (own *Service) buildEngine() *leego.Engine {
+	leego.SetLogoStyle(leego.LOGO_STYLE_ASCII)
+	leego.ShowLogo()
 	engine := leego.NewEngine(
-		leego.DisableStartupLog(),
 		leego.UseEngineName("leego-harness"),
 		leego.UseMaxBodyBytes(_MAX_UPLOAD_SIZE),
 		leego.UseServerTimeouts(10*time.Second, 0, 0, 120*time.Second),
@@ -455,11 +455,11 @@ func (own *Service) buildEngine() *leego.Engine {
 	)
 	engine.UseMiddlewares(chain...)
 
-	engine.GET("/", own.serveIndexPage, "index")
-	engine.GET("/api/hello", own.serveHello, "hello")
-	engine.GET("/api/healthz", own.serveHealth, "health")
-	engine.GET("/api/echo", own.serveEcho, "echo")
-	engine.POST("/api/echo", own.serveEcho, "echo-post")
+	engine.GET("/", own.serveIndexPage, "index", _TAG_OVERVIEW)
+	engine.GET("/api/hello", own.serveHello, "hello", _TAG_OVERVIEW)
+	engine.GET("/api/healthz", own.serveHealth, "health", _TAG_OVERVIEW)
+	engine.GET("/api/echo", own.serveEcho, "echo", _TAG_OVERVIEW)
+	engine.POST("/api/echo", own.serveEcho, "echo-post", _TAG_OVERVIEW)
 
 	own.registerSessionRoutes(engine)
 	own.registerCacheRoutes(engine)
@@ -467,9 +467,9 @@ func (own *Service) buildEngine() *leego.Engine {
 	own.registerUploadRoutes(engine)
 	own.registerGatewayRoutes(engine)
 
-	engine.GET("/api/events", own.serveEvents, "events")
-	engine.GET("/api/jobs", own.serveJobs, "jobs")
-	engine.GET("/api/traces", own.serveTraces, "traces")
+	engine.GET("/api/events", own.serveEvents, "events", _TAG_STREAM)
+	engine.GET("/api/jobs", own.serveJobs, "jobs", _TAG_JOBS)
+	engine.GET("/api/traces", own.serveTraces, "traces", _TAG_TRACE)
 
 	return engine
 }
@@ -484,9 +484,9 @@ func (own *Service) registerSessionRoutes(engine *leego.Engine) {
 		session.UseSameSite(http.SameSiteLaxMode),
 	))
 
-	group.GET("/current", own.serveSessionCurrent, "session-current")
-	group.POST("/login", own.serveSessionLogin, "session-login")
-	group.POST("/logout", own.serveSessionLogout, "session-logout")
+	group.GET("/current", own.serveSessionCurrent, "session-current", _TAG_SESSION)
+	group.POST("/login", own.serveSessionLogin, "session-login", _TAG_SESSION)
+	group.POST("/logout", own.serveSessionLogout, "session-logout", _TAG_SESSION)
 }
 
 // registerCacheRoutes 注册响应缓存演示路由。
@@ -498,7 +498,7 @@ func (own *Service) registerCacheRoutes(engine *leego.Engine) {
 		Vary:  []string{"Accept-Encoding"},
 	}).AdaptToMiddleware())
 
-	group.GET("/timestamp", own.serveCacheTimestamp, "cache-timestamp")
+	group.GET("/timestamp", own.serveCacheTimestamp, "cache-timestamp", _TAG_CACHE)
 }
 
 // registerLimiterRoutes 注册限流演示路由。
@@ -507,7 +507,7 @@ func (own *Service) registerLimiterRoutes(engine *leego.Engine) {
 	// 非阻塞判定：额度不足立即返回 429，前端连点即可观察到效果。
 	group.UseMiddlewares(own.bucket.AdaptToMiddleware())
 
-	group.GET("/ping", own.serveLimitedPing, "limited-ping")
+	group.GET("/ping", own.serveLimitedPing, "limited-ping", _TAG_LIMITER)
 }
 
 // registerUploadRoutes 注册分片上传与下载路由。
@@ -519,11 +519,11 @@ func (own *Service) registerUploadRoutes(engine *leego.Engine) {
 		upload.UseMaxParts(_MAX_UPLOAD_PARTS),
 	)
 
-	engine.POST("/api/upload", handler, "upload-init")
-	engine.PUT("/api/upload", handler, "upload-part")
-	engine.GET("/api/upload", handler, "upload-status")
-	engine.DELETE("/api/upload", handler, "upload-abort")
-	engine.GET("/api/upload/download/*filepath", own.serveUploadDownload, "upload-download")
+	engine.POST("/api/upload", handler, "upload-init", _TAG_UPLOAD)
+	engine.PUT("/api/upload", handler, "upload-part", _TAG_UPLOAD)
+	engine.GET("/api/upload", handler, "upload-status", _TAG_UPLOAD)
+	engine.DELETE("/api/upload", handler, "upload-abort", _TAG_UPLOAD)
+	engine.GET("/api/upload/download/*filepath", own.serveUploadDownload, "upload-download", _TAG_UPLOAD)
 }
 
 // registerGatewayRoutes 注册反向代理演示路由。
@@ -536,8 +536,8 @@ func (own *Service) registerGatewayRoutes(engine *leego.Engine) {
 		}),
 	)
 
-	engine.GET("/api/gateway/*path", handler, "gateway")
-	engine.POST("/api/gateway/*path", handler, "gateway-post")
+	engine.GET("/api/gateway/*path", handler, "gateway", _TAG_GATEWAY)
+	engine.POST("/api/gateway/*path", handler, "gateway-post", _TAG_GATEWAY)
 }
 
 // registerPlatformRoutes 注册指标、分析后台与 OpenAPI 文档。
@@ -560,13 +560,8 @@ func (own *Service) registerPlatformRoutes() error {
 		return fmt.Errorf("harness: register dashboard: %w", err)
 	}
 
-	if err := own.engine.RegisterOpenAPI(
-		"/openapi",
-		openapi.UseTitle("leego harness"),
-		openapi.UseVersion("1.0.0"),
-		openapi.UseDescription("leego 零依赖扩展能力的开发者体验服务"),
-	); err != nil {
-		return fmt.Errorf("harness: register openapi: %w", err)
+	if err := own.registerOpenAPI(); err != nil {
+		return err
 	}
 
 	return nil
@@ -669,7 +664,7 @@ func (own *Service) serveIndexPage(ctx *leego.Context) {
 func (own *Service) serveHello(ctx *leego.Context) {
 	_ = ctx.ResponseJSON(http.StatusOK, map[string]any{
 		"service":    own.engine.GetName(),
-		"version":    "1.0.0",
+		"version":    _HARNESS_VERSION,
 		"go":         runtime.Version(),
 		"started_at": own.startedAt,
 		"uptime":     time.Since(own.startedAt).Round(time.Second).String(),

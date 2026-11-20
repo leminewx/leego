@@ -50,10 +50,10 @@ leego/
 ├── problem/                    # RFC 7807 错误模型（A 档）
 │   └── problem.go              # Problem / FieldError / NewFromValidation / Write
 ├── openapi/                    # OpenAPI 3.1 + 内嵌浏览页（不导入 leego）
-│   ├── openapi.go              # Spec / Options / ConvertPattern
+│   ├── openapi.go              # Spec / Options / 声明式覆盖与多响应
 │   ├── schema.go               # reflect → JSON Schema
 │   ├── handler.go              # 文档 JSON 与 UI 两个 http.Handler
-│   └── assets/index.html       # go:embed 自写页面
+│   └── assets/index.html       # go:embed 自写页面（分组导航 + 结构化详情）
 ├── metrics/                    # 指标持久化与导出（A 档）
 │   ├── store.go                # Store 接口 + MemoryStore / FileStore（JSONL 回放）
 │   ├── series.go               # 环形序列与时间范围聚合
@@ -277,13 +277,29 @@ type Validatable interface{ Validate() error }
 
 ```go
 type Route struct {
-	Method  string
-	Pattern string
-	Name    string
-	Tags    []string
+	Method, Pattern, Name string
+	Tags                  []string
+	Summary, Description  string
+	Deprecated            bool
+	Parameters            []Parameter
+	RequestBody           *RequestBody
+	Responses             map[string]Response
 }
 
 type RouteSource interface{ GetRoutes() []Route }
+
+// Options 聚合文档级元数据；Operations 是声明式覆盖表，
+// 键为 "METHOD 路径模板"，未匹配到路由时声明被忽略。
+type Options struct {
+	Title, Version, Description, TermsOfService string
+	Contact         *Contact
+	License         *License
+	Servers         []Server
+	Tags            []Tag
+	SecuritySchemes map[string]SecurityScheme
+	Schemas         map[string]any    // 命名模式，供 $ref 引用
+	Operations      map[string]Operation
+}
 
 type Spec struct { OpenAPI, Info, Paths, Components }
 func NewSpec(source RouteSource, options ...Option) *Spec
@@ -291,23 +307,40 @@ func (own *Spec) MarshalJSON() ([]byte, error)       // 稳定排序，便于 di
 func (own *Spec) AddOperation(method, pattern string, op Operation)
 func (own *Spec) AddSchema(name string, value any)   // reflect → Schema
 
+// 声明式构造函数
+func UseServer/UseTag/UseSecurityScheme/UseSchema/UseOperation(...)
+func NewParameter(name, in, description string, required bool, schema map[string]any) Parameter
+func NewJSONResponse(description string, example any) Response
+func NewJSONRefResponse(description, schemaName string) Response
+func NewJSONRequestBody(required bool, example any) *RequestBody
+func SchemaRef(name string) map[string]any
+
 func NewHandler(spec *Spec) http.Handler  // GET {prefix}/openapi.json
 func NewUIHandler(spec *Spec) http.Handler // 自写 HTML + 内嵌 JS
 ```
 
 **实现步骤**
 
-1. 路径转换：`/users/:id` → `/users/{id}`；`*path` → `/{path}`（标记为 wildcard）。
+1. 路径转换：`/users/:id` → `/users/{id}`；`*path` → `/{path}`（标记为 wildcard），
+   路径参数自动转为 `in: path` 且 `required: true`。
 2. 每个 `Route` 生成 `PathItem` 的一个方法项，`operationId` 用
-   `Name` 或 `method + pattern` 的规范化串。
-3. `Schema` 生成：基本类型 → `type/format`；结构体 → `object + properties`；
+   `Name` 或 `method + pattern` 的规范化串；未声明响应时写入默认 `200 OK`。
+3. 声明式覆盖：`normalizeOperationKey` 兼容 `GET /a/:id`、`get /a/{id}` 与
+   省略方法的 `/a/:id`；`mergeOperation` 只替换显式填写的字段，
+   因此自动推导的 `operationId` 与路径参数不会丢失。
+4. `Schema` 生成：基本类型 → `type/format`；结构体 → `object + properties`；
    切片 → `array + items`；`time.Time` → `string/date-time`；`any` → `{}`；
    深度上限 8 层，超出回退 `{"type":"object"}`。
-4. UI：`embed` 一个自写页面（左侧路由树、右侧 schema、顶部搜索），
-   纯 `fetch` + 原生 DOM，不引 CDN。
-5. 快照语义：`RegisterOpenAPI` 在 `Prepare()` 前构建 `Spec`，
+5. 结构化响应：`Response.Content` 为「媒体类型 → `MediaType`」，
+   大对象用 `UseSchema` + `NewJSONRefResponse` 生成 `#/components/schemas/...`，
+   多个接口共用同一份模式；SSE 与下载分别用 `text/event-stream`、
+   `application/octet-stream`。
+6. UI：`embed` 一个自写页面（左侧按 `tags` 分组、支持方法筛选与搜索，
+   右侧渲染参数表、请求体、可展开响应体、cURL 与原始 JSON），
+   纯 `fetch` + 原生 DOM，不引 CDN；cURL 基地址取自 `servers`。
+7. 快照语义：`RegisterOpenAPI` 在 `Prepare()` 前构建 `Spec`，
    运行期只读；路由变更需重新构建（注册期语义）。
-6. 构造期缓存：`NewHandler` 在创建时完成一次 `MarshalJSON`，成功则缓存字节、
+8. 构造期缓存：`NewHandler` 在创建时完成一次 `MarshalJSON`，成功则缓存字节、
    失败则缓存错误（每请求直接 500，文案不包含内部细节）；`NewUIHandler` 只
    `ReadFile` 一次并缓存页面，避免每请求读盘。
 
@@ -323,7 +356,8 @@ func (own *Engine) RegisterOpenAPI(prefix string, options ...openapi.Option) err
 ```
 
 **测试点**：模式转换（含 wildcard）、schema 递归与深度截断、
-JSON 输出稳定性（两次序列化字节一致）、UI 页面可离线加载。
+JSON 输出稳定性（两次序列化字节一致）、声明键的多种写法、
+未注册模式的 `$ref` 能被发现、UI 页面可离线加载。
 
 ---
 

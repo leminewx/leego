@@ -306,3 +306,160 @@ func TestUseOptions(t *testing.T) {
 		}
 	}
 }
+
+// TestSpecStructuredDocument 验证服务地址、分组、安全方案、命名模式、
+// 请求体与多状态码响应都能写入文档。
+func TestSpecStructuredDocument(t *testing.T) {
+	source := sampleRoutes{routes: []openapi.Route{
+		{Method: http.MethodGet, Pattern: "/users/:id", Name: "get-user", Tags: []string{"用户"}},
+		{Method: http.MethodPost, Pattern: "/users", Name: "create-user", Tags: []string{"用户"}},
+	}}
+
+	spec := openapi.NewSpec(source,
+		openapi.UseTitle("用户服务"),
+		openapi.UseVersion("3.0.0"),
+		openapi.UseTermsOfService("https://example.com/terms"),
+		openapi.UseContact("维护者", "https://example.com", "dev@example.com"),
+		openapi.UseLicense("MIT", "https://example.com/license"),
+		openapi.UseServer("https://api.example.com", "生产环境"),
+		openapi.UseTag("用户", "用户相关接口"),
+		openapi.UseSecurityScheme("bearerAuth", openapi.SecurityScheme{
+			Type:         "http",
+			Scheme:       "bearer",
+			BearerFormat: "JWT",
+		}),
+		openapi.UseSchema("UserProfile", User{}),
+		openapi.UseOperation("GET /users/:id", openapi.Operation{
+			Summary:  "查询用户",
+			Security: []map[string][]string{{"bearerAuth": nil}},
+			Parameters: []openapi.Parameter{
+				openapi.NewParameter("verbose", openapi.IN_QUERY, "是否返回扩展字段", false, map[string]any{"type": "boolean"}),
+			},
+			Responses: map[string]openapi.Response{
+				"200": openapi.NewJSONRefResponse("用户详情", "UserProfile"),
+				"404": openapi.NewJSONRefResponse("用户不存在", "UserProfile"),
+			},
+		}),
+		openapi.UseOperation("POST /users", openapi.Operation{
+			Summary:     "创建用户",
+			RequestBody: openapi.NewJSONRequestBody(true, map[string]any{"name": "leego"}),
+			Responses: map[string]openapi.Response{
+				"201": openapi.NewJSONResponse("已创建", map[string]any{"id": 1}),
+				"400": {Description: "参数非法"},
+			},
+		}),
+	)
+
+	data, err := spec.MarshalJSON()
+	if err != nil {
+		t.Fatalf("序列化失败: %v", err)
+	}
+
+	text := string(data)
+	for _, want := range []string{
+		`"termsOfService": "https://example.com/terms"`,
+		`"contact"`,
+		`"license"`,
+		`"servers"`,
+		`"description": "生产环境"`,
+		`"securitySchemes"`,
+		`"bearerAuth"`,
+		`"bearerFormat": "JWT"`,
+		`"$ref": "#/components/schemas/UserProfile"`,
+		`"requestBody"`,
+		`"operationId": "get-user"`,
+		`"verbose"`,
+		`"201"`,
+		`"404"`,
+		`"security"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("文档缺少 %q\n%s", want, text)
+		}
+	}
+
+	var document struct {
+		Servers []openapi.Server `json:"servers"`
+		Tags    []openapi.Tag    `json:"tags"`
+		Paths   map[string]map[string]struct {
+			Summary     string                      `json:"summary"`
+			OperationID string                      `json:"operationId"`
+			Parameters  []openapi.Parameter         `json:"parameters"`
+			Responses   map[string]openapi.Response `json:"responses"`
+		} `json:"paths"`
+		Components struct {
+			Schemas map[string]any `json:"schemas"`
+		} `json:"components"`
+	}
+
+	if err = json.Unmarshal(data, &document); err != nil {
+		t.Fatalf("反序列化失败: %v", err)
+	}
+
+	if len(document.Servers) != 1 || document.Servers[0].URL != "https://api.example.com" {
+		t.Fatalf("servers = %+v", document.Servers)
+	}
+
+	if len(document.Tags) != 1 || document.Tags[0].Name != "用户" {
+		t.Fatalf("tags = %+v", document.Tags)
+	}
+
+	if _, ok := document.Components.Schemas["UserProfile"]; !ok {
+		t.Fatalf("缺少命名模式: %v", document.Components.Schemas)
+	}
+
+	get := document.Paths["/users/{id}"]["get"]
+	if get.Summary != "查询用户" || get.OperationID != "get-user" {
+		t.Fatalf("get 操作 = %+v", get)
+	}
+
+	if len(get.Responses) != 2 {
+		t.Fatalf("get 响应数量 = %d", len(get.Responses))
+	}
+}
+
+// TestUseOperationKeyVariants 验证键的多种写法都能命中同一路由。
+func TestUseOperationKeyVariants(t *testing.T) {
+	source := sampleRoutes{routes: []openapi.Route{
+		{Method: http.MethodGet, Pattern: "/users/:id", Name: "get-user"},
+	}}
+
+	for _, key := range []string{"GET /users/:id", "get /users/{id}", "/users/:id"} {
+		spec := openapi.NewSpec(source, openapi.UseOperation(key, openapi.Operation{Summary: "查询用户"}))
+
+		data, err := spec.MarshalJSON()
+		if err != nil {
+			t.Fatalf("序列化失败: %v", err)
+		}
+
+		text := string(data)
+		if !strings.Contains(text, "查询用户") {
+			t.Fatalf("键 %q 未生效\n%s", key, text)
+		}
+
+		// 未声明的字段必须保留自动推导结果。
+		if !strings.Contains(text, `"operationId": "get-user"`) {
+			t.Fatalf("键 %q 覆盖后丢失 operationId\n%s", key, text)
+		}
+	}
+}
+
+// TestAddTagAndServer 验证运行时追加的顶层元数据。
+func TestAddTagAndServer(t *testing.T) {
+	spec := openapi.NewSpec(nil)
+	spec.AddTag("系统", "系统接口")
+	spec.AddServer("/", "同源")
+	spec.AddSecurityScheme("basicAuth", openapi.SecurityScheme{Type: "http", Scheme: "basic"})
+
+	data, err := spec.MarshalJSON()
+	if err != nil {
+		t.Fatalf("序列化失败: %v", err)
+	}
+
+	text := string(data)
+	for _, want := range []string{"系统接口", "同源", "basicAuth"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("文档缺少 %q\n%s", want, text)
+		}
+	}
+}

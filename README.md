@@ -77,20 +77,29 @@ import (
 )
 
 func main() {
+	// 选项在构造期一次性写入配置：服务名进入日志与指标，四个超时进入内置的
+	// http.Server；任一超时 <= 0 时保留默认值，不会退化成无限等待。
 	engine := leego.NewEngine(
 		leego.UseEngineName("demo"),
 		leego.UseServerTimeouts(5*time.Second, 10*time.Second, 10*time.Second, 60*time.Second),
 	)
 
+	// 全局链按追加顺序执行：日志在外层（覆盖全部响应），恢复在内层（兜住后续 panic）。
+	// 必须在首个请求前注册——引擎冻结后再追加中间件会 panic。
 	engine.UseMiddlewares(
 		middlewares.NewLogger().AdaptToMiddleware(),
 		middlewares.NewRecovery().AdaptToMiddleware(),
 	)
 
+	// 第三个参数是路由名称，会出现在启动日志、指标后台与 OpenAPI 文档里。
 	engine.GET("/ping", func(ctx *leego.Context) {
+		// Context 取自 sync.Pool，禁止跨请求保存；ResponseJSON 会自行写出
+		// Content-Type 与状态码，返回值只在编码阶段失败时非 nil。
 		_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"message": "pong"})
 	}, "健康检查")
 
+	// Run 阻塞到服务退出；正常关闭的 http.ErrServerClosed 会被转成 nil，
+	// 因此这里的 err 只代表端口占用一类的真实故障。
 	if err := engine.Run(":8080"); err != nil {
 		log.Fatalf("服务退出: %v", err)
 	}
@@ -109,7 +118,9 @@ func main() {
 内置 4 种样式，默认沿用最初的宽幅艺术字：
 
 ```go
+// 样式是进程级全局状态，启动前设置一次即可；越界值会被忽略。
 leego.SetLogoStyle(leego.LOGO_STYLE_PIXEL)
+// ShowLogo 只写 os.Stdout，Run 不会自动调用它，需要显式打印。
 leego.ShowLogo()
 ```
 
@@ -162,12 +173,14 @@ leego.ShowLogo()
 运行时读取与修改：
 
 ```go
-config := engine.GetConfig()        // 返回深拷贝，修改不影响引擎
-engine.SetName("order-service")     // 等价于替换服务名
+config := engine.GetConfig()    // 返回深拷贝：修改它不会影响引擎
+engine.SetName("order-service") // 等价于替换 config.Name
 engine.SetMaxMultipartMemory(8 << 20)
-engine.SetTrustedProxies("10.0.0.0/8")
+engine.SetTrustedProxies("10.0.0.0/8") // 只有这些网段传来的转发头才被采信
+
 engine.SetErrorHandler(func(ctx *leego.Context, err error) {
-	// 统一错误格式：依次尝试自定义处理器 → 默认 JSON 错误
+	// ctx.Fail(err) 的最后一步会走到这里；未设置时输出默认 JSON 错误。
+	// 处理器负责写出响应，返回后框架不会再补响应体。
 	_ = ctx.ResponseJSON(http.StatusInternalServerError, leego.JSON{"error": err.Error()})
 })
 ```
@@ -182,11 +195,16 @@ engine.SetErrorHandler(func(ctx *leego.Context, err error) {
 ### 注册
 
 ```go
+// 处理器统一是 func(*leego.Context)；末尾的 tags 可选：
+// 第一个元素作为路由名称，其余作为业务标签，进入指标与 OpenAPI。
 engine.GET("/users", listUsers, "查询用户列表", "user")
 engine.POST("/users", createUser)
 engine.PUT("/users/:id", updateUser)
 engine.PATCH("/users/:id", patchUser)
 engine.DELETE("/users/:id", deleteUser)
+
+// HEAD / OPTIONS 一般不必手动注册：缺省时分别回退到 GET、自动返回 204 + Allow，
+// 这里演示显式注册的写法。
 engine.HEAD("/health", health)
 engine.OPTIONS("/users", options)
 ```
@@ -197,11 +215,12 @@ engine.OPTIONS("/users", options)
 ### 参数与通配符
 
 ```go
-// /users/42
+// :param 只匹配单个路径段，取值不含 "/"：/users/42 命中，/users/42/x 不命中。
 engine.GET("/users/:id", func(ctx *leego.Context) {
 	_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"id": ctx.GetPathValue("id")})
 })
 
+// *wildcard 匹配剩余全部路径（不含前导 "/"），未命名时默认参数名为 filepath：
 // /files/a/b/c.txt -> ctx.GetPathValue("filepath") == "a/b/c.txt"
 engine.GET("/files/*filepath", func(ctx *leego.Context) {
 	_ = ctx.ResponseText(http.StatusOK, ctx.GetPathValue("filepath"))
@@ -215,11 +234,11 @@ engine.GET("/files/*filepath", func(ctx *leego.Context) {
 
 ```go
 api := engine.NewGroup("/api/v1")
-api.UseMiddlewares(authMiddleware)
+api.UseMiddlewares(authMiddleware) // 只作用于该组及其子组
 
 admin := api.NewGroup("/admin")
-admin.UseMiddlewares(requireRole("admin"))
-admin.GET("/stats", showStats) // 实际路径：GET /api/v1/admin/stats
+admin.UseMiddlewares(requireRole("admin")) // 排在 auth 之后：先认证，再判角色
+admin.GET("/stats", showStats)             // 实际路径：GET /api/v1/admin/stats
 ```
 
 父组的前缀与中间件会被子组继承；中间件按「父 → 子」顺序执行。
@@ -227,6 +246,8 @@ admin.GET("/stats", showStats) // 实际路径：GET /api/v1/admin/stats
 ### 静态文件
 
 ```go
+// 目录必须存在，否则注册期直接 panic，把配置错误挡在启动阶段。
+// 路径遍历（..、反斜杠、NUL、绝对路径）由框架统一拦截。
 engine.SetStatic("/static", "./public")
 engine.SetStaticFS("/assets", http.Dir("./assets"))
 ```
@@ -236,10 +257,12 @@ engine.SetStaticFS("/assets", http.Dir("./assets"))
 ### 黑名单与路由开关
 
 ```go
-engine.AddURLBlacklist("/admin", "/internal") // 命中返回 403
+// 按请求路径精确匹配，命中即返回 403，不进入路由匹配，也不经过业务中间件。
+engine.AddURLBlacklist("/admin", "/internal")
 
 if handler, ok := engine.GetHandler(http.MethodGet, "/maintenance"); ok {
-	handler.Disable() // 之后访问返回 423；处理器与指标仍然保留
+	// Disable 只切换运行时开关（之后访问返回 423）；处理器与指标都还在，可再 Enable。
+	handler.Disable()
 }
 ```
 
@@ -254,6 +277,7 @@ if handler, ok := engine.GetHandler(http.MethodGet, "/maintenance"); ok {
 ### 路由表
 
 ```go
+// 返回按方法 + 模式排序的只读快照，不含处理器，可直接序列化给运维接口。
 for _, route := range engine.GetRoutes() {
 	// route.Method / route.Pattern / route.Name / route.Tags / route.Enabled
 }
@@ -271,10 +295,11 @@ for _, route := range engine.GetRoutes() {
 ### 请求参数
 
 ```go
-ctx.GetQueryValue("id")           // ?id=xxx
-ctx.GetFormValue("name")          // Query + form-urlencoded
-ctx.GetPostFormValue("name")      // 仅 form-urlencoded
-ctx.GetMultipartFormValue("name") // multipart 字段
+// 六个取值入口共享同一份解析结果，重复调用不会重复解析请求。
+ctx.GetQueryValue("id")           // 仅查询串：?id=xxx
+ctx.GetFormValue("name")          // 查询串 + form-urlencoded
+ctx.GetPostFormValue("name")      // 仅请求体中的 form-urlencoded
+ctx.GetMultipartFormValue("name") // multipart 表单字段
 ctx.GetPathValue("id")            // 路由参数
 ctx.GetPathValues()               // 全部路由参数
 ```
@@ -282,16 +307,29 @@ ctx.GetPathValues()               // 全部路由参数
 ### 请求体与绑定
 
 ```go
-raw, err := ctx.ReadBody()        // 读取并缓存请求体（受 MaxBodyBytes 限制）
-body, _ := ctx.GetRequestBody()   // 仅返回已缓存内容，不触发读取
+// ReadBody 读满并缓存：多次调用返回同一份字节，日志、审计与绑定都能复用；
+// 超限时返回 http.MaxBytesError，Request.Body 仍由 net/http 负责关闭。
+raw, err := ctx.ReadBody()
+if err != nil {
+	ctx.ResponseError(http.StatusRequestEntityTooLarge, err.Error())
+	return
+}
+
+// 拿到原始字节后可以先做签名校验、审计落库，再交给下面的绑定。
+verifySignature(raw)
 
 var payload User
+// 绑定复用上面的缓存，不会二次读取请求体；失败通常是 JSON 语法或类型不匹配。
 if err := ctx.BindJSON(&payload); err != nil {
 	ctx.ResponseError(http.StatusBadRequest, "JSON 无效: "+err.Error())
 	return
 }
 
-_ = ctx.Bind(&payload)  // 按 Content-Type 自动选择 JSON / XML / Form
+// GetRequestBody 只返回已缓存内容，不触发读取，适合中间件收尾时记录请求体。
+_ = ctx.GetRequestBody()
+
+// Bind 按 Content-Type 分派到下面两个具体实现；也可直接调用其中一个。
+_ = ctx.Bind(&payload)
 _ = ctx.BindXML(&payload)
 _ = ctx.BindForm(&payload)
 ```
@@ -301,17 +339,29 @@ _ = ctx.BindForm(&payload)
 ### 文件上传
 
 ```go
+// GetFormFile 返回文件句柄与元信息（文件名、大小、类型）；返回的
+// multipart.File 由调用方关闭，框架不代管。
 file, header, err := ctx.GetFormFile("avatar")
-// 或直接落盘（权限默认 0o750，可自定义）
+if err != nil {
+	ctx.ResponseError(http.StatusBadRequest, "缺少文件字段 avatar")
+	return
+}
+defer file.Close()
+
+// 落盘时按给定权限创建父目录，默认 0o750；target 完全由业务决定，
+// 若来自用户输入必须先做白名单或 filepath.IsLocal 校验。
 _ = ctx.SaveUploadedFile(header, "./uploads/avatar.png", 0o600)
 ```
 
 ### Cookie
 
 ```go
+// 参数顺序：名称、值、maxAge（秒）、path、domain、secure、httpOnly。
+// 值会做 url.PathEscape，与 GetCookieValue 对称，空格与 "+" 都能往返。
 ctx.SetCookieData("sid", "abc123", 3600, "/", "", false, true)
-ctx.SetSameSite(http.SameSiteLaxMode)
+ctx.SetSameSite(http.SameSiteLaxMode) // 只影响本响应后续写出的 Cookie
 
+// 非法转义时原样返回，不会静默变成空串。
 value, err := ctx.GetCookieValue("sid")
 ```
 
@@ -339,35 +389,41 @@ value, err := ctx.GetCookieValue("sid")
 | `ResponseSSE(callback)` | 单连接 SSE 事件流 |
 
 ```go
+// 成功响应统一走 Response* 家族：状态码与 Content-Type 一次写完。
 _ = ctx.ResponseJSON(http.StatusCreated, leego.JSON{"id": 1, "name": "leego"})
+// 状态码必须落在 300–308，否则 panic，避免发出浏览器无法识别的重定向。
 ctx.ResponseRedirect(http.StatusFound, "/login")
 ```
 
 ### Header、状态码与元信息
 
 ```go
-ctx.SetStatusCode(http.StatusAccepted)
-status := ctx.GetStatusCode()
+ctx.SetStatusCode(http.StatusAccepted) // 只设置状态码，响应体仍由业务写入
+status := ctx.GetStatusCode()          // 尚未设置时返回 0
 
+// 请求头改的是内存中的 Request.Header，不影响已接收的原始报文。
 ctx.SetRequestHeader("X-Trace-Id", "123")
 ctx.GetRequestHeader("Authorization")
 ctx.SetResponseHeader("X-Powered-By", "Leego")
 ctx.DeleteResponseHeader("X-Powered-By")
 
-ctx.GetClientIP()       // 可信代理感知
-ctx.GetContentType()    // 去除参数后的媒体类型
-ctx.IsWebsocket()
-ctx.GetStartTime()      // 上下文创建时间，用于自定义耗时统计
-ctx.GetServiceName()    // 引擎名称
-ctx.GetEngine()         // 所属引擎（可能为 nil）
+ctx.GetClientIP()    // 只在直连对端属于可信网段时才解析转发头
+ctx.GetContentType() // 去掉 charset 等参数后的媒体类型
+ctx.IsWebsocket()    // 依据 Connection / Upgrade 头判断
+ctx.GetStartTime()   // 上下文创建时间，用于自定义耗时统计
+ctx.GetServiceName() // 引擎名称
+ctx.GetEngine()      // 所属引擎，可能为 nil
 ```
 
 ### 错误链与派生上下文
 
 ```go
+// 错误链按追加顺序保存，nil 会被忽略；GetLastError 取最后一个，无错误时返回 nil。
 ctx.AddError(errors.New("下游超时"))
 last := ctx.GetLastError()
 
+// 派生上下文共享响应包装器，但有独立的参数表与错误链副本，且不进入对象池；
+// 用于给下游调用挂上超时或取消信号。
 derived := ctx.DeriveContext(context.WithValue(ctx.Request.Context(), key, value))
 value, _ := derived.GetContextValue(key)
 ```
@@ -375,8 +431,8 @@ value, _ := derived.GetContextValue(key)
 ### JWT 声明
 
 ```go
-ctx.SetJWTClaims(claims)         // 由认证中间件写入
-claims, ok := ctx.GetJWTClaims() // 由业务处理器读取
+ctx.SetJWTClaims(claims)         // 认证中间件校验通过后写入
+claims, ok := ctx.GetJWTClaims() // 业务处理器读取；未认证时 ok 为 false
 ```
 
 ---
@@ -386,13 +442,15 @@ claims, ok := ctx.GetJWTClaims() // 由业务处理器读取
 中间件签名为 `func(next leego.HandleFunc) leego.HandleFunc`：
 
 ```go
+// 中间件就是包装器：拿到 next 后决定是否调用、调用前后做什么。
 func authMiddleware(next leego.HandleFunc) leego.HandleFunc {
 	return func(ctx *leego.Context) {
 		if ctx.GetRequestHeader("Authorization") == "" {
+			// 不调用 next 即终止链路；ResponseError 写纯文本并记录错误链。
 			ctx.ResponseError(http.StatusUnauthorized, "unauthorized")
-			return // 不调用 next：请求在此终止
+			return
 		}
-		next(ctx) // 调用 next：继续后续链路
+		next(ctx) // 调用 next：继续后续中间件与最终处理器
 	}
 }
 
@@ -433,12 +491,13 @@ import (
 )
 
 corsInstance := cors.NewDefaultCORS()
-corsInstance.SetAllowOrigins("https://example.com")
-corsInstance.SetMaxAge(3600)
+corsInstance.SetAllowOrigins("https://example.com") // 白名单来源；凭证需另行开启
+corsInstance.SetMaxAge(3600) // 预检结果缓存 3600 秒
 
-// 等待上限 3 秒，超时返回 429。
+// 令牌桶：每秒 100 个令牌、突发 200；排队等待上限 3 秒，超时返回 429。
 rateLimiter := limiter.NewTokenBucketLimiter(100, 200, limiter.Config{WaitTimeout: 3 * time.Second})
 
+// 顺序即执行顺序：日志 → 恢复 → CORS → 限流，越靠前越接近请求入口。
 engine.UseMiddlewares(
 	middlewares.NewLogger().AdaptToMiddleware(),
 	middlewares.NewRecovery().AdaptToMiddleware(),
@@ -446,6 +505,8 @@ engine.UseMiddlewares(
 	rateLimiter.AdaptToMiddleware(),
 )
 
+// ExecuteWithContext 会把 5xx 或返回 error 记为失败样本；窗口内失败率超阈值后
+// 直接返回错误，不再打到下游。
 circuitBreaker := breaker.NewCircuitBreaker(breaker.NewDefaultConfig())
 engine.GET("/risky", func(ctx *leego.Context) {
 	if err := circuitBreaker.ExecuteWithContext(ctx, func(ctx *leego.Context) error {
@@ -484,7 +545,7 @@ engine.GET("/risky", func(ctx *leego.Context) {
 | `middlewares/compress` | 按内容类型与最小长度阈值决定是否 gzip | `compress.NewCompress` |
 | `middlewares/trace` | W3C `traceparent` 解析/生成与异步批量导出，未采样且不传播时零分配 | `trace.NewTracer` |
 | `metrics` | 指标存储抽象、内存实现与 Prometheus 文本输出 | `NewMemoryStore`、`RegisterMetrics` |
-| `openapi` | 从已注册路由快照生成 OpenAPI 文档与浏览页 | `NewSpec`、`RegisterOpenAPI` |
+| `openapi` | 从已注册路由快照生成 OpenAPI 3.1 文档与浏览页，支持分组、安全方案、命名模式、请求体与多响应 | `NewSpec`、`UseOperation`、`RegisterOpenAPI` |
 
 ### 会话与分片上传
 
@@ -494,9 +555,12 @@ import (
 	"gitee.com/leminewx/leego/upload"
 )
 
+// 内存存储只适合单机；多实例部署需要实现 session.Store 换成共享存储。
 store := session.NewMemoryStore()
-defer store.Close()
+defer store.Close() // 停掉后台清理协程
 
+// 中间件负责读取 Cookie、恢复会话，并在请求结束时写回。
+// UseSecure(true) 给 Cookie 打上 Secure 标记（仅 HTTPS 下发送），本地 http 调试传 false。
 engine.UseMiddlewares(session.New(
 	store,
 	session.UseTTL(30*time.Minute),
@@ -504,6 +568,7 @@ engine.UseMiddlewares(session.New(
 ))
 
 engine.POST("/login", func(ctx *leego.Context) {
+	// 会话由中间件放进 Request 的 context，因此这里总能取到。
 	current, ok := session.GetFromRequest(ctx.Request)
 	if !ok {
 		ctx.ResponseError(http.StatusInternalServerError, "session unavailable")
@@ -517,6 +582,7 @@ engine.POST("/login", func(ctx *leego.Context) {
 		return
 	}
 
+	// 写回发生在请求结束时，这里只返回会话 ID 供客户端确认。
 	_ = ctx.ResponseJSON(http.StatusOK, leego.JSON{"id": current.GetID()})
 })
 ```
@@ -525,17 +591,20 @@ engine.POST("/login", func(ctx *leego.Context) {
 不经过 multipart 解析：
 
 ```go
+// 本地存储把分片与 JSONL 索引写在 root 下，重启后可按索引恢复进度。
 storage, err := upload.NewLocalStorage("./data")
 if err != nil {
 	log.Fatal(err)
 }
 
+// 上限 1 GiB、默认分片 4 MiB、最多 1024 片；分片体直接读原始字节。
 handler := upload.NewHandler(storage,
 	upload.UseMaxSize(1<<30),
 	upload.UseDefaultPartSize(4<<20),
 	upload.UseMaxParts(1024),
 )
 
+// 同一个处理器按 action 分发，下面四个方法都指向它：
 // POST ?action=init | PUT ?action=part&id=..&index=..
 // POST ?action=complete&id=.. | GET ?action=status&id=.. | DELETE ?action=abort&id=..
 engine.POST("/upload", handler)
@@ -547,24 +616,29 @@ engine.DELETE("/upload", handler)
 ### 任务调度、网关与链路追踪
 
 ```go
+// Workers 是并发槽位上限；Start 之后才接受任务，Stop 只停止取任务，
+// 不会主动取消下面这些任务收到的 ctx。
 scheduler := job.NewScheduler(job.UseWorkers(4))
 scheduler.Start(context.Background())
 defer scheduler.Stop(context.Background())
 
+// 周期任务返回取消函数；单个任务 panic 会被隔离，不影响调度器。
 cancel := scheduler.ScheduleEvery(time.Minute, job.JobFunc(func(ctx context.Context) error {
 	return refreshCache(ctx)
 }))
-defer cancel() // 取消周期任务
+defer cancel() // 取消该周期任务
 
+// 一次性任务：延迟触发，执行完自动出队。
 scheduler.ScheduleAfter(5*time.Second, job.JobFunc(func(context.Context) error {
 	return warmUp()
 }))
 
+// GetStats 是快照：Runs 总执行数、Dropped 因槽位不足被丢弃、Pending 排队数。
 stats := scheduler.GetStats()
-// stats.Runs / Dropped / Pending / Started / Stopped
 ```
 
 ```go
+// 权重决定平滑加权轮询的比例：9:1 意味着大约十个请求里有一个走 canary。
 stable, _ := url.Parse("http://127.0.0.1:9001")
 canary, _ := url.Parse("http://127.0.0.1:9002")
 
@@ -576,6 +650,8 @@ if err != nil {
 	log.Fatal(err)
 }
 
+// 超时是单次转发的上游预算；失败回调返回后若响应仍未写出，
+// 框架会补一个 502 JSON（不回显上游地址，避免泄露内网拓扑）。
 proxy := gateway.NewProxy(balancer,
 	gateway.UseTimeout(3*time.Second),
 	gateway.UseErrorHandler(func(ctx *leego.Context, target *url.URL, err error) {
@@ -583,21 +659,27 @@ proxy := gateway.NewProxy(balancer,
 	}),
 )
 
+// 挂到通配符上，该前缀下的任意子路径都交给代理处理。
 engine.GET("/proxy/*path", proxy)
 engine.POST("/proxy/*path", proxy)
 // 请求头带 X-Leego-Canary: v2 时优先路由到标签为 v2 的上游。
 ```
 
 ```go
+// 内存导出器只保留最近 1024 条，适合本地体验与调试。
 exporter := trace.NewMemoryExporter(1024)
+// 未采样的请求不生成 Span；FlushInterval 控制批量导出的节奏。
 tracer := trace.NewTracer(exporter, trace.WithFlushInterval(time.Second))
 engine.UseMiddlewares(tracer.AdaptToMiddleware())
-// 关闭前刷新剩余 Span：tracer.Shutdown(ctx)
+// 关闭前刷新剩余 Span，否则最后一批数据会随进程退出丢失。
+tracer.Shutdown(context.Background())
 ```
 
 ### 配置、校验与统一错误
 
 ```go
+// 来源按顺序合并，后者覆盖前者：JSON 提供默认值，环境变量做部署期覆盖。
+// 嵌套对象被展平为点号分隔的键，因此下面的 http.addr 才能取到。
 settings, err := config.Load(
 	config.NewJSONSource("config.json", config.UseWatchInterval(time.Second)),
 	config.NewEnvSource("APP_"),
@@ -605,14 +687,16 @@ settings, err := config.Load(
 if err != nil {
 	log.Fatal(err)
 }
-defer settings.Close()
+defer settings.Close() // 停止监听协程并取消全部订阅
 
 addr := settings.GetString("http.addr", "127.0.0.1:8080")
+// 回调在独立协程执行，只在值真正变化时触发，不阻塞配置加载。
 settings.SubscribeChange("http.addr", func(value any) {
 	log.Printf("监听地址变更: %v", value)
 })
 
-if err := settings.Watch(0); err != nil { // 0 表示默认 1 秒轮询
+// 0 表示沿用来源自己的轮询间隔（默认 1 秒）；可重复调用但只有第一次生效。
+if err := settings.Watch(0); err != nil {
 	log.Printf("配置监听未启动: %v", err)
 }
 ```
@@ -626,11 +710,13 @@ type CreateUser struct {
 
 engine.POST("/users", func(ctx *leego.Context) {
 	var request CreateUser
+	// 绑定失败属于请求格式问题，用 400 + RFC 7807 结构返回。
 	if err := ctx.BindJSON(&request); err != nil {
 		problem.New(http.StatusBadRequest, "invalid_json", err.Error()).Write(ctx)
 		return
 	}
 
+	// 校验失败返回 422，problem 会把字段名与规则展开成 details。
 	if err := validate.Check(&request); err != nil {
 		problem.NewFromValidation(err).Write(ctx) // 422 + 字段级细节
 		return
@@ -655,6 +741,17 @@ _ = engine.RegisterOpenAPI("/openapi",
 	openapi.UseTitle("订单服务"),
 	openapi.UseVersion("1.4.0"),
 	openapi.UseDescription("订单与支付相关接口"),
+	openapi.UseServer("https://api.example.com", "生产环境"), // 影响浏览页 cURL 的基地址
+	openapi.UseTag("订单", "下单、查询与取消"), // 分组名 + 描述
+	openapi.UseSchema("Order", Order{}), // 写入 components.schemas
+	openapi.UseOperation("GET /orders/:id", openapi.Operation{
+		Summary: "查询订单",
+		Tags:    []string{"订单"},
+		Responses: map[string]openapi.Response{
+			"200": openapi.NewJSONRefResponse("订单详情", "Order"), // 引用上面的 UseSchema
+			"404": openapi.NewJSONRefResponse("订单不存在", "Error"),
+		},
+	}),
 )
 ```
 
@@ -666,6 +763,13 @@ _ = engine.RegisterOpenAPI("/openapi",
 路由模式会转成 OpenAPI 路径模板（`:id` → `{id}`、`*path` → `{path}`），
 路径参数统一声明为 `string`；前缀为空时默认 `/openapi`。
 
+- 路由的第二个标签（`engine.GET(pattern, handle, name, tag)`）会写入 `operation.tags`；
+- `UseOperation` 的键兼容 `GET /a/:id`、`get /a/{id}` 与省略方法的 `/a/:id`，
+  未匹配到路由的声明会被忽略，避免文档里出现不存在的接口；
+- 大对象用 `UseSchema` + `NewJSONRefResponse` 生成 `$ref` 复用；
+- 浏览页左侧按分组列出接口（支持方法筛选与搜索），右侧展示参数表、请求体、
+  可展开的响应体、cURL 与原始 JSON。
+
 ---
 
 ## 指标与分析后台
@@ -675,13 +779,16 @@ _ = engine.RegisterOpenAPI("/openapi",
 引擎为**每条路由**内置采集器，无需额外中间件。指标维度为「方法 + 模式 + 状态码」：
 
 ```go
+// 报告是某一时刻的快照，可直接序列化给后台；Routes 已按方法 + 模式排序。
 report := engine.CollectReport()
-// report.GeneratedAt / report.Routes（[]collector.Snapshot）/ report.Totals
+fmt.Printf("路由 %d 条，累计请求 %d 次\n", report.Totals.Routes, report.Totals.Requests)
 
+// 也可以单独取快照，做自定义聚合。
 for _, snapshot := range engine.GetAllHandlerSnapshots() {
-	// snapshot.Name / Method / Pattern / Tags / Enabled
-	// snapshot.Flights / Total / Failed / TotalCostMicro
-	// snapshot.Metrics[i].Code / Total / MaxCostMicro / MinCostMicro / TotalCostMicro
+	// Name / Method / Pattern / Tags / Enabled：路由标识与开关状态。
+	// Flights 在途数、Total 累计响应、Failed 为 5xx 次数。
+	// Metrics 按状态码升序，每项含 Code / Total / MaxCostMicro / MinCostMicro /
+	// TotalCostMicro；成本单位均为微秒。
 	_ = snapshot.GetAverageCostMicro()
 	_ = snapshot.GetFailureRate()
 }
@@ -697,10 +804,12 @@ import "gitee.com/leminewx/leego/dashboard"
 
 _ = engine.RegisterDashboard("/metrics",
 	dashboard.UseTitle("指标分析"),
-	dashboard.UseRefreshInterval(5*time.Second),
-	dashboard.UseMaxRoutes(200),
-	dashboard.EnableExport(true),
+	dashboard.UseRefreshInterval(5*time.Second), // 前端自动刷新间隔
+	dashboard.UseMaxRoutes(200), // 单次返回的最大路由数
+	dashboard.EnableExport(true), // 开放 export.csv
 	dashboard.UseAuthorizer(func(req *http.Request) bool {
+		// 返回 false 时统一回 401；不配置 Authorizer 则端点完全开放，
+		// 生产环境必须补上，或把端点限制在内网。
 		return req.Header.Get("Authorization") == "Bearer admin"
 	}),
 )
@@ -728,9 +837,11 @@ _ = engine.RegisterDashboard("/metrics",
 需要给 Prometheus 抓取或历史趋势图提供数据时，可另外挂载 `RegisterMetrics`：
 
 ```go
+// window 为保留时长、buckets 为分桶数：1 小时 / 60 桶，每桶 1 分钟。
 store := metrics.NewMemoryStore(time.Hour, 60)
 defer store.Close()
 
+// 每 5 秒采集一次引擎快照写入存储；同样必须在 Prepare() 之前注册。
 _ = engine.RegisterMetrics("/observe", store,
 	leego.UseMetricsInterval(5*time.Second),
 	leego.UseMetricsStep(time.Minute),
@@ -757,12 +868,14 @@ _ = engine.RegisterMetrics("/observe", store,
 
 ```go
 engine.GET("/sse/once", func(ctx *leego.Context) {
+	// 回调返回只读通道；ResponseSSE 会阻塞到通道关闭或客户端断开，
+	// 通道关闭后自动向客户端补发一条 close 事件。
 	_ = ctx.ResponseSSE(func(requestCtx context.Context) <-chan *sse.Message {
 		events := make(chan *sse.Message, 1)
 		go func() {
-			defer close(events)
+			defer close(events) // 关闭通道即结束本次事件流
 			select {
-			case <-requestCtx.Done():
+			case <-requestCtx.Done(): // 客户端断开或服务关闭，直接退出
 			case events <- sse.NewMessageWithEvent("tick", []byte(`{"ok":true}`)):
 			}
 		}()
@@ -774,21 +887,24 @@ engine.GET("/sse/once", func(ctx *leego.Context) {
 ### SSE：管理器托管多连接
 
 ```go
+// 管理器统一托管多连接：心跳、广播、单发与优雅关闭都在这里。
 manager := sse.NewManager()
-manager.SetHeartbeatPeriod(10 * time.Second)
+manager.SetHeartbeatPeriod(10 * time.Second) // 默认 30 秒，调小便于观察
 defer manager.Close()
 
+// 错误通道必须有人消费，否则投递失败的错误会被丢弃。
 go func() {
-	for err := range manager.GetErrorChan() { // 必须消费，否则错误会被丢弃
+	for err := range manager.GetErrorChan() {
 		log.Printf("SSE: %v", err)
 	}
 }()
 
 engine.GET("/sse/:client", func(ctx *leego.Context) {
-	// Serve 会写响应头 + connect 事件，然后阻塞到客户端断开
+	// Serve 写响应头与 connect 事件后阻塞到客户端断开，因此不能放到后台协程。
 	_ = manager.Serve(ctx.Response, ctx.Request, ctx.GetPathValue("client"))
 })
 
+// 广播给全部连接；按 ID 单发适合定向通知。
 manager.Broadcast(sse.NewHeartbeatMessage())
 manager.SendTo("client-1", sse.NewMessageWithEvent("notice", payload))
 ```
@@ -801,10 +917,13 @@ import (
 	"gitee.com/leminewx/leego/response/websocket/upgrader"
 )
 
+// 默认配置：读超时 60 秒、写超时 10 秒、单条消息上限 16 MiB，且只允许同源。
 manager := websocket.NewManager(upgrader.NewDefaultConfig())
+// Start 可选：只用于把管理器生命周期绑定到 ctx，连接本身独立运行。
 go manager.Start(context.Background())
 
 engine.GET("/ws", func(ctx *leego.Context) {
+	// IsWebsocket 依据 Connection / Upgrade 头判断，普通 GET 请求直接跳过。
 	if ctx.IsWebsocket() {
 		_ = manager.Serve(ctx.Response, ctx.Request)
 	}
@@ -823,11 +942,12 @@ engine.GET("/ws", func(ctx *leego.Context) {
 ```go
 import stress "gitee.com/leminewx/leego/harness/stresstest"
 
+// 配置随被测地址一起生成，其余字段按需覆盖：并发 50、共 5000 次请求。
 config := stress.NewDefaultConfig("http://127.0.0.1:8080/ping")
 config.Concurrent = 50
 config.TotalRequests = 5000
 config.Timeout = 5 * time.Second
-config.KeepAlive = true
+config.KeepAlive = true // 复用连接，避免把建链开销算进延迟
 
 client, err := stress.NewClient(config)
 if err != nil {
@@ -835,6 +955,7 @@ if err != nil {
 }
 defer client.Close()
 
+// Run 阻塞到全部请求完成；请求按并发数均分，保证总数与配置一致。
 snapshot := client.Run()
 fmt.Println(stress.FormatReport(snapshot))
 ```
@@ -861,11 +982,12 @@ go run ./harness/cmd/harness                     # 默认 127.0.0.1:8080
 go run ./harness/cmd/harness -addr :9000 -data ./tmp
 ```
 
-打开 `http://127.0.0.1:8080/` 即为体验页面，页面顶部提供：
+打开 `http://127.0.0.1:8080/` 即为体验页面：左侧菜单按能力分组，右侧为对应功能区，
+面板位置记录在 URL hash 中，窄屏下侧栏收起为抽屉。
 
 | 入口 | 说明 |
 | --- | --- |
-| `/` | 体验前端（十张能力卡片，纯原生 JS，无外部 CDN） |
+| `/` | 体验前端（左侧菜单 + 右侧功能区，纯原生 JS，无外部 CDN） |
 | `/dashboard` | 指标分析后台 |
 | `/openapi` | OpenAPI 文档与浏览页 |
 | `/metrics/prometheus` | Prometheus 文本指标 |
@@ -874,6 +996,7 @@ go run ./harness/cmd/harness -addr :9000 -data ./tmp
 作为库使用时，`harness.NewService` 返回可嵌入的 `*Service`：
 
 ```go
+// 端口传 0 由内核分配，数据目录用临时目录：适合写集成测试。
 service, err := harness.NewService(
 	harness.UseAddr("127.0.0.1:0"),
 	harness.UseDataDir(t.TempDir()),
@@ -884,6 +1007,7 @@ if err != nil {
 }
 defer service.Shutdown(context.Background())
 
+// GetHandler 返回已装配好的 http.Handler，可直接交给 httptest 或标准库服务。
 server := httptest.NewServer(service.GetHandler())
 defer server.Close()
 ```
@@ -897,23 +1021,20 @@ defer server.Close()
 
 ```go
 engine := leego.NewEngine()
-// ... 注册路由与中间件
+// ... 注册路由与中间件（全部注册必须在首个请求前完成）
 
-// 普通 HTTP
-// engine.Run(":8080")
+// 四种监听方式任选其一，都是阻塞调用，正常关闭时返回 nil：
+//
+//	engine.Run(":8080")
+//	engine.RunTLS(":8443", "cert.pem", "key.pem")
+//	engine.RunUnix("/tmp/leego.sock") / RunFd(3) / RunListener(listener)
+//	http.ListenAndServe(":8080", engine.GetHTTPHandler())
+//
+// 注意：WaitSignalAndShutdown 只负责等信号，不负责启动服务；
+// 需要同时监听时应把上面的调用放到单独协程里。
 
-// HTTPS
-// engine.RunTLS(":8443", "cert.pem", "key.pem")
-
-// Unix Socket / 文件描述符 / 自定义 Listener
-// engine.RunUnix("/tmp/leego.sock")
-// engine.RunFd(3)
-// engine.RunListener(listener)
-
-// 交给标准库服务
-// http.ListenAndServe(":8080", engine.GetHTTPHandler())
-
-// 等待 SIGINT / SIGTERM，最多 10 秒优雅关闭
+// 阻塞等待 SIGINT / SIGTERM；收到信号后先执行回调，再按 timeout 优雅关闭。
+// 回调返回错误会直接返回，服务器不会被关闭。
 if err := engine.WaitSignalAndShutdown(10*time.Second, func() error {
 	return closeDatabase() // 关闭前回调，可返回错误
 }); err != nil {

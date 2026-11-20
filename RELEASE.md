@@ -63,13 +63,43 @@
 - 删除极简卡片样式常量 `LOGO_STYLE_CARD` 及对应模板，内置样式由 5 种减少为 4 种；
 - `SetLogoStyle` 的合法上界改为 `LOGO_STYLE_ASCII`，越界值仍被忽略。
 
-### 五、升级步骤
+### 五、OpenAPI 结构化
+
+- 顶层新增 `servers`、`tags`、`components.securitySchemes`，`info` 新增
+  `termsOfService` / `contact` / `license`；
+- 操作新增 `summary` / `description` / `deprecated` / `security` / `requestBody`
+  与多状态码 `responses`；
+- 新增声明式选项：`UseServer`、`UseTag`、`UseSecurityScheme`、`UseSchema`、
+  `UseOperation`、`UseOperations` 以及 `UseTermsOfService` / `UseContact` / `UseLicense`；
+- `Response.Content` 由 `map[string]any` 改为 `map[string]MediaType`：直接构造
+  响应体的代码需要补一层 `openapi.MediaType{Schema: ..., Example: ...}`；
+- 新增 `NewParameter`、`NewJSONResponse`、`NewJSONRefResponse`、
+  `NewJSONRequestBody` 与 `SchemaRef`；
+- 浏览页重做：左侧按 `tags` 分组并提供方法筛选与搜索，右侧展示参数表、
+  请求体、可展开的响应体、cURL 与原始 JSON；cURL 基地址取自 `servers`。
+
+`UseOperation` 的键兼容 `GET /a/:id`、`get /a/{id}` 与省略方法的 `/a/:id`；
+未匹配到路由的声明会被忽略，不会凭空生成接口。
+
+### 六、开发者体验界面
+
+`harness` 前端由「顶栏 + 卡片网格」改为「左侧菜单 + 右侧功能区」：
+
+- 10 个能力面板与平台入口，切换状态写入 URL hash，刷新后保持；
+- 宽度小于 900px 时侧栏收起为抽屉，点击遮罩关闭；
+- 修复分片上传读取会话 ID 时误用大写 `ID` 的问题（服务端 JSON 键为 `id`）；
+- 全部路由补充业务标签，并通过 `harness/openapi.go` 声明中文摘要、参数说明、
+  请求体与多状态码响应；`harness/openapi_internal_test.go` 校验声明表与真实路由、
+  分组、命名模式三者一致。
+
+### 七、升级步骤
 
 1. 全局把 `leego/middleware` 替换为 `leego/middlewares`（含子包路径）；
 2. 按第二节表格把旧函数改为 `New*` 构造器，并在挂载处补 `.AdaptToMiddleware()`；
 3. 原 `GetMiddleware(3 * time.Second)` 一类调用改为
    `limiter.NewXxxLimiter(..., limiter.Config{WaitTimeout: 3 * time.Second})`；
-4. 检查文档、示例、脚本中的旧包路径与 `LOGO_STYLE_CARD` 引用。
+4. 直接构造 `openapi.Response` 的代码把 `Content` 改为 `map[string]MediaType`；
+5. 检查文档、示例、脚本中的旧包路径与 `LOGO_STYLE_CARD` 引用。
 
 验证：`gofmt -l .` 无输出，`go build ./...`、`go vet ./...`、
 `go test ./... -count=1` 全部通过（38 个包）。

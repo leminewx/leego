@@ -118,8 +118,17 @@ func TestServiceServesIndexAndHello(t *testing.T) {
 		t.Fatalf("首页 Content-Type = %q", contentType)
 	}
 
-	if !strings.Contains(string(index.body), "leego harness") {
-		t.Fatal("首页未内嵌前端内容")
+	page := string(index.body)
+	for _, want := range []string{
+		"leego harness",
+		`class="sidebar"`,
+		`data-panel="upload"`,
+		`id="panel-overview"`,
+		"/openapi",
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("首页缺少 %q", want)
+		}
 	}
 
 	hello := do(t, client, http.MethodGet, server.URL+"/api/hello", nil, nil)
@@ -405,11 +414,47 @@ func TestServicePlatformRoutes(t *testing.T) {
 	}
 
 	var spec struct {
-		Paths map[string]any `json:"paths"`
+		Servers []struct {
+			URL string `json:"url"`
+		} `json:"servers"`
+		Tags []struct {
+			Name string `json:"name"`
+		} `json:"tags"`
+		Paths      map[string]any `json:"paths"`
+		Components struct {
+			Schemas map[string]any `json:"schemas"`
+		} `json:"components"`
 	}
 	decodeJSON(t, document.body, &spec)
+
 	if _, ok := spec.Paths["/api/hello"]; !ok {
 		t.Fatalf("OpenAPI 未收录 /api/hello: %v", spec.Paths)
+	}
+
+	if _, ok := spec.Paths["/api/upload/download/{filepath}"]; !ok {
+		t.Fatalf("OpenAPI 未转换路径参数: %v", spec.Paths)
+	}
+
+	if len(spec.Servers) == 0 || len(spec.Tags) == 0 {
+		t.Fatalf("OpenAPI 缺少顶层元数据: servers=%v tags=%v", spec.Servers, spec.Tags)
+	}
+
+	if _, ok := spec.Components.Schemas["HarnessOverview"]; !ok {
+		t.Fatalf("OpenAPI 缺少命名模式: %v", spec.Components.Schemas)
+	}
+
+	text := string(document.body)
+	for _, want := range []string{
+		`"summary": "服务概览"`,
+		`"$ref": "#/components/schemas/HarnessOverview"`,
+		`"requestBody"`,
+		`"X-Leego-Canary"`,
+		`"text/event-stream"`,
+		`"404"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("OpenAPI 缺少结构化字段 %q", want)
+		}
 	}
 
 	dashboard := do(t, client, http.MethodGet, server.URL+"/dashboard", nil, nil)

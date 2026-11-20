@@ -13,8 +13,10 @@
 ```
 harness/
 ├── harness.go              # 体验服务：配置、装配、路由与生命周期
+├── openapi.go              # 结构化 OpenAPI 声明：分组、摘要、模式与多响应
 ├── harness_test.go         # 配置归一化、选项与装配单测
-├── service_test.go         # 真实 HTTP 集成测试（10 个场景）
+├── openapi_internal_test.go # 声明表与真实路由、分组、模式的一致性校验
+├── service_test.go         # 真实 HTTP 集成测试
 ├── statics/index.html      # 单页前端（go:embed，无外部 CDN）
 ├── testdata/               # 演示与测试数据：data.txt / ws-client.html / stress.html
 ├── internal/assetpath/     # 定位 testdata 目录（示例与基准服务共用）
@@ -53,7 +55,7 @@ go run ./harness/cmd/harness
 go run ./harness/cmd/harness -addr :9000 -data ./tmp
 ```
 
-启动后打开 `http://127.0.0.1:8080/`，页面顶部提供后台入口：
+启动后打开 `http://127.0.0.1:8080/`，左侧菜单底部提供平台入口：
 
 | 入口 | 说明 |
 | --- | --- |
@@ -87,10 +89,38 @@ go run ./harness/cmd/harness -addr :9000 -data ./tmp
 | `GET /api/jobs` | 调度器统计：已执行、丢弃、待执行 |
 | `GET /api/traces` | 最近链路（由内存导出器托管） |
 
-前端卡片覆盖：概览、回显、会话、缓存、限流（并发 20 次统计 200/429）、
+### 前端布局
+
+页面采用左侧菜单 + 右侧功能区的两栏结构：
+
+- 左栏按能力列出 10 个面板，底部固定平台入口（分析后台、OpenAPI、指标、Prometheus）；
+- 右栏顶部显示当前面板的标题与说明，内容区一次只渲染一个面板；
+- 面板位置记录在 `#overview`、`#upload` 等 hash 中，刷新后仍停留在同一面板；
+- 宽度小于 900px 时侧栏收起为抽屉，由顶部“菜单”按钮展开，点击遮罩关闭；
+- 请求全部使用原生 `fetch` / `EventSource`，响应以纯文本写入 `textContent`。
+
+### OpenAPI 文档
+
+`harness` 通过 `openapi.UseServer` / `UseTag` / `UseSchema` / `UseOperations`
+把路由标签、中文摘要、参数说明、请求体与多状态码响应声明为元数据：
+
+| 能力 | 声明方式 |
+| --- | --- |
+| 分组 | 路由第二个标签（`engine.GET(pattern, handle, name, tag)`），与 `UseTag` 同名 |
+| 摘要与描述 | `UseOperation("GET /api/hello", openapi.Operation{Summary, Description})` |
+| 复用模式 | `UseSchema("HarnessOverview", overviewResponse{})` + `NewJSONRefResponse` |
+| 请求体 | `NewJSONRequestBody(required, example)` 或显式 `RequestBody` |
+| 多状态码 | `Responses` 中的 `200` / `400` / `404` / `429` 等键 |
+| 媒体类型 | `MEDIA_JSON` / `MEDIA_TEXT` / `MEDIA_EVENT_STREAM` / `MEDIA_OCTET_STREAM` |
+
+浏览页按分组列出接口，详情区展示方法徽章、路径、operationId、参数表、
+请求体、可展开的响应体与 cURL 示例；cURL 的基地址取自文档的 `servers`，
+因此在非 8080 端口运行时示例仍然正确。
+
+前端菜单覆盖：概览、回显、会话、缓存、限流（并发 20 次统计 200/429）、
 分片上传（进度与下载）、SSE、网关灰度、任务统计与链路列表。
 
-页面顶部的标识是内联 SVG（靛蓝到青绿的渐变圆角方 + 字形 L），与
+侧栏顶部的标识是内联 SVG（靛蓝到青绿的渐变圆角方 + 字形 L），与
 `docs/assets/logo.png` 同源：两者都在 48 单位逻辑坐标系里描述，
 修改样式时需要用 `go run ./harness/tools/genlogo/main.go ./docs/assets/logo.png`
 重新生成位图。生成器按 1024 像素渲染后做 4×4 盒式下采样，输出 256 像素，
