@@ -690,22 +690,91 @@ func TestEngineTemplateFuncsAndFiles(t *testing.T) {
 	}
 }
 
-// TestEngineGetHTTPHandlerChoosesH2C 验证启用 h2c 后返回包装后的处理器。
-func TestEngineGetHTTPHandlerChoosesH2C(t *testing.T) {
+// TestEngineHTTPProtocolsFollowsH2C 验证 h2c 通过协议集开启，而非包装处理器。
+func TestEngineHTTPProtocolsFollowsH2C(t *testing.T) {
 	plain := createTestEngine()
+	if protocols := plain.GetHTTPProtocols(); protocols != nil {
+		t.Fatalf("未启用 h2c 时应返回 nil 以沿用标准库默认，实际为 %v", protocols)
+	}
+
 	if _, isEngine := plain.GetHTTPHandler().(*Engine); !isEngine {
-		t.Fatal("未启用 h2c 时应直接返回引擎")
+		t.Fatal("GetHTTPHandler() 必须直接返回引擎，不再包装处理器")
 	}
 
 	upgraded := NewEngine(UseH2C(), DisableStartupLog())
-	handler := upgraded.GetHTTPHandler()
-
-	if handler == nil {
-		t.Fatal("GetHTTPHandler() 不应返回 nil")
+	protocols := upgraded.GetHTTPProtocols()
+	if protocols == nil {
+		t.Fatal("启用 h2c 后 GetHTTPProtocols() 不应返回 nil")
 	}
 
-	if _, isEngine := handler.(*Engine); isEngine {
-		t.Fatal("启用 h2c 后应返回包装处理器")
+	if !protocols.HTTP1() || !protocols.HTTP2() || !protocols.UnencryptedHTTP2() {
+		t.Fatalf("协议集应同时包含 HTTP/1.1、HTTP/2 与明文 HTTP/2，实际为 %v", protocols)
+	}
+}
+
+// TestEngineH2CServesUnencryptedHTTP2 验证启用 h2c 后同一端口可服务明文 HTTP/2。
+func TestEngineH2CServesUnencryptedHTTP2(t *testing.T) {
+	engine := NewEngine(UseH2C(), DisableStartupLog())
+	engine.GET("/ping", func(ctx *Context) {
+		_ = ctx.ResponseText(http.StatusOK, "pong")
+	})
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("监听测试端口失败: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- engine.RunListener(listener) }()
+
+	// 只启用明文 HTTP/2：标准库直接发送连接序言（前导知识），不做 Upgrade 握手。
+	protocols := new(http.Protocols)
+	protocols.SetUnencryptedHTTP2(true)
+	transport := &http.Transport{Protocols: protocols}
+	defer transport.CloseIdleConnections()
+
+	address := "http://" + listener.Addr().String() + "/ping"
+	response, err := (&http.Client{Transport: transport, Timeout: 2 * time.Second}).Get(address)
+	if err != nil {
+		t.Fatalf("明文 HTTP/2 请求失败: %v", err)
+	}
+
+	payload, err := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if err != nil {
+		t.Fatalf("读取响应失败: %v", err)
+	}
+
+	if response.ProtoMajor != 2 {
+		t.Fatalf("协商到的协议 = %s，期望 HTTP/2", response.Proto)
+	}
+
+	if response.StatusCode != http.StatusOK || string(payload) != "pong" {
+		t.Fatalf("响应 = (%d, %q)", response.StatusCode, payload)
+	}
+
+	// 同一端口仍需接受普通 HTTP/1.1 客户端，否则启用 h2c 会踢掉存量调用方。
+	response, err = (&http.Client{Timeout: 2 * time.Second}).Get(address)
+	if err != nil {
+		t.Fatalf("HTTP/1.1 请求失败: %v", err)
+	}
+
+	_ = response.Body.Close()
+	if response.ProtoMajor != 1 {
+		t.Fatalf("默认客户端协商到的协议 = %s，期望 HTTP/1.1", response.Proto)
+	}
+
+	if err := engine.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("RunListener() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("优雅关闭后 RunListener 未返回")
 	}
 }
 

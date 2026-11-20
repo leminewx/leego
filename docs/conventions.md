@@ -468,7 +468,7 @@ go test -race ./...
 ### 6.3 依赖管理（硬约束）
 
 - 核心模块**不得引入任何第三方库**，只允许 Go 标准库与 `golang.org/x/*` 官方扩展库；
-  当前仅允许 `x/crypto`、`x/net`、`x/time`（`x/text` 为间接依赖）。
+  当前仅允许 `x/crypto`、`x/time`。
 - 新增任何 `require` 条目都属于设计决策，必须在 PR 中说明理由并更新本节；
   原则上优先用标准库，能用 30 行写完的能力不引入依赖。
 - 需要外部系统的能力（Redis、对象存储、OTel、SQLite、YAML、Brotli、MQ 等）

@@ -92,14 +92,31 @@
   请求体与多状态码响应；`harness/openapi_internal_test.go` 校验声明表与真实路由、
   分组、命名模式三者一致。
 
-### 七、升级步骤
+### 七、h2c 改用标准库
+
+`UseH2C()` 不再依赖 `golang.org/x/net/http2/h2c`，改由 `http.Server.Protocols`
+（Go 1.24+）开启：
+
+| 旧行为 | 新行为 |
+| --- | --- |
+| 启用 h2c 时 `GetHTTPHandler()` 返回 `h2c.NewHandler` 包装 | 始终返回引擎本身，h2c 由 `Protocols` 决定 |
+| 同时支持 `Upgrade: h2c` 握手与前导知识 | 只支持前导知识（直接发送 HTTP/2 连接序言） |
+| 需自行引入 `golang.org/x/net` | 标准库自带，`go.mod` 移除该直接依赖 |
+
+新增 `GetHTTPProtocols()`：启用时返回 `{HTTP1, HTTP2, UnencryptedHTTP2}`，未启用时
+返回 `nil`（沿用标准库默认）。保留 `HTTP2` 是为了 `RunTLS` 仍能通过 ALPN 协商到 h2。
+
+### 八、升级步骤
 
 1. 全局把 `leego/middleware` 替换为 `leego/middlewares`（含子包路径）；
 2. 按第二节表格把旧函数改为 `New*` 构造器，并在挂载处补 `.AdaptToMiddleware()`；
 3. 原 `GetMiddleware(3 * time.Second)` 一类调用改为
    `limiter.NewXxxLimiter(..., limiter.Config{WaitTimeout: 3 * time.Second})`；
 4. 直接构造 `openapi.Response` 的代码把 `Content` 改为 `map[string]MediaType`；
-5. 检查文档、示例、脚本中的旧包路径与 `LOGO_STYLE_CARD` 引用。
+5. 检查文档、示例、脚本中的旧包路径与 `LOGO_STYLE_CARD` 引用；
+6. 若代码依赖 `GetHTTPHandler()` 的 h2c 包装，自行创建的 `http.Server` 需设置
+   `Protocols: engine.GetHTTPProtocols()`；依赖 `Upgrade: h2c` 握手的客户端应改为
+   直接发送 HTTP/2 连接序言，或继续使用 HTTP/1.1。
 
 验证：`gofmt -l .` 无输出，`go build ./...`、`go vet ./...`、
 `go test ./... -count=1` 全部通过（38 个包）。

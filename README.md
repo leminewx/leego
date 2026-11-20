@@ -58,7 +58,7 @@ Leego 是一个构建在 Go 标准库 `net/http` 之上的轻量级 Web 框架�
 go get gitee.com/leminewx/leego
 ```
 
-依赖：Go 1.27.4+、`golang.org/x/crypto`、`golang.org/x/net`、`golang.org/x/time`。
+依赖：Go 1.27.4+、`golang.org/x/crypto`、`golang.org/x/time`。
 
 ---
 
@@ -164,11 +164,17 @@ leego.ShowLogo()
 | `UseMultipartMemory(bytes)` | 32 MiB | multipart 表单解析可用的最大内存 |
 | `UseMaxBodyBytes(bytes)` | 8 MiB | 单个请求体上限；`<= 0` 表示不限制 |
 | `UseStrictJSON(strict)` | `false` | 为 `true` 时 JSON 绑定拒绝未知字段 |
-| `UseH2C()` | 关闭 | 启用明文 HTTP/2（配合 `GetHTTPHandler()`） |
+| `UseH2C()` | 关闭 | 同端口接受明文 HTTP/2（h2c），与 HTTP/1.1 并存 |
 | `UseServerTimeouts(readHeader, read, write, idle)` | 10s / 60s / 60s / 120s | 任一参数 `<= 0` 时保留默认值，避免退化为无限等待 |
 | `UseWriteTimeout(timeout)` | 60s | 单独设置写入超时；传入 `0` 关闭，SSE / WebSocket 长连接必需 |
 | `UseTrustedProxies(cidrs...)` | 空 | 仅信任这些网段传来的 `X-Forwarded-For` / `X-Real-IP` |
 | `DisableStartupLog()` | 关闭 | 不打印启动期的路由注册信息 |
+
+> `UseH2C()` 基于标准库 `http.Server.Protocols`（Go 1.24+），通过 `Run` / `RunTLS` /
+> `RunUnix` / `RunFd` / `RunListener` 启动时自动生效。自行创建 `http.Server` 时，把
+> `Protocols` 字段设为 `engine.GetHTTPProtocols()`；`GetHTTPHandler()` 只返回引擎本身，
+> 不再包装处理器。标准库只实现前导知识方式：客户端需直接发送 HTTP/2 连接序言，
+> 依赖 `Upgrade: h2c` 握手的客户端会退化为 HTTP/1.1。
 
 运行时读取与修改：
 
@@ -529,7 +535,7 @@ engine.GET("/risky", func(ctx *leego.Context) {
 ## 拓展能力
 
 核心框架之外，仓库提供一组零第三方依赖的工程化包（仅标准库与
-`golang.org/x/crypto`、`golang.org/x/net`、`golang.org/x/time`），按需引入；
+`golang.org/x/crypto`、`golang.org/x/time`），按需引入；
 不引入的包不会被链接进最终二进制。
 
 | 包 | 能力 | 关键入口 |

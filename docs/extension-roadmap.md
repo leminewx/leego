@@ -8,7 +8,7 @@
 [extension-design.md](extension-design.md)。
 
 > **依赖硬约束**：核心与本文所有方案均不引入任何第三方库，只使用 Go 标准库
-> 与 `golang.org/x/*` 官方扩展库（当前仅 `x/crypto`、`x/net`、`x/time`，且 `x/text` 为间接依赖）。
+> 与 `golang.org/x/*` 官方扩展库（当前仅 `x/crypto`、`x/time`）。
 > 需要外部系统的能力（Redis、对象存储、OTel SDK、SQLite、YAML、Brotli 等）
 > 一律**只定义接口**，由使用方在独立模块中实现并注入；不得为了某个可选特性
 > 而把依赖塞进核心的 `require` 列表。可行性矩阵见第七节。
@@ -462,6 +462,7 @@ BFF 层；遗留系统前置网关；灰度发布。
 | 任务调度（4.4） | `container/heap`、`time`、`context`、`sync` | 最小堆驱动 + Worker Pool |
 | CLI 脚手架（4.5） | `flag`、`embed`、`text/template` | 不引 cobra |
 | 网关与灰度（4.6） | `net/http/httputil`、`net/url`、`net` | ReverseProxy 封装 + 加权轮询 |
+| 明文 HTTP/2（h2c） | `net/http`（`Server.Protocols`，Go 1.24+） | 同端口 HTTP/1.1 + h2c，无需扩展库 |
 | 请求签名与防重放 | `crypto/hmac`、`crypto/sha256`、`strconv` | 时间窗 + nonce 去重 |
 | 国际化 i18n | `encoding/json`、`fmt` | 消息表 + 占位符替换 |
 | Prometheus 导出 | `fmt`、`sort`、`strings` | 文本格式手写，无需 client_golang |
@@ -472,9 +473,8 @@ BFF 层；遗留系统前置网关；灰度发布。
 | 能力 | 依赖 | 现状 |
 | --- | --- | --- |
 | 密码哈希 `bcrypt` | `golang.org/x/crypto/bcrypt` | 已使用 |
-| 明文 HTTP/2（h2c） | `golang.org/x/net/http2/h2c` | 已使用 |
 | 令牌桶限流 | `golang.org/x/time/rate` | 已使用 |
-| 文本编码转换（非必需） | `golang.org/x/text` | 间接依赖，i18n 可不依赖 |
+| 文本编码转换（非必需） | `golang.org/x/text` | 未引入，需要时单独添加 |
 
 > 注意：B 档仅限「已经在 `require` 里的官方库」。新增任何 `golang.org/x/*`
 > 模块都需要单独评估（属官方，但仍是新增依赖），原则上优先用标准库。

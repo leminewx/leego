@@ -25,8 +25,6 @@ import (
 	"gitee.com/leminewx/leego/middlewares/collector"
 	"gitee.com/leminewx/leego/response"
 	"gitee.com/leminewx/leego/tree"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 const (
@@ -69,7 +67,10 @@ type EngineConfig struct {
 	MaxBodyBytes int64
 	// StrictJSON 为 true 时，JSON 绑定会拒绝未知字段。
 	StrictJSON bool
-	// UseH2C 为 true 时启用 h2c（明文 HTTP/2）。
+	// UseH2C 为 true 时允许明文 HTTP/2 与 HTTP/1.1 共用同一端口。
+	//
+	// 由 http.Server.Protocols 控制，不依赖处理器包装；客户端必须直接发送
+	// HTTP/2 连接序言（前导知识），用 Upgrade: h2c 握手的请求按 HTTP/1.1 处理。
 	UseH2C bool
 	// DisableStartupLog 为 true 时不打印路由注册信息。
 	DisableStartupLog bool
@@ -154,7 +155,15 @@ func UseStrictJSON(strict bool) EngineOption {
 	}
 }
 
-// UseH2C 启用 h2c（明文 HTTP/2）。
+// UseH2C 启用明文 HTTP/2（h2c）。
+//
+// 该能力由标准库 http.Server.Protocols 提供（Go 1.24+），不再依赖
+// golang.org/x/net/http2/h2c：同一端口既接受 HTTP/1.1，也接受直接发送
+// HTTP/2 连接序言的连接。依赖 Upgrade: h2c 握手升级的客户端只会走 HTTP/1.1，
+// 因为标准库只实现前导知识（prior knowledge）一种方式。
+//
+// Run / RunTLS / RunUnix / RunFd / RunListener 会自动把协议集写入服务器；
+// 自行创建 http.Server 时，需要把它的 Protocols 设为 GetHTTPProtocols()。
 func UseH2C() EngineOption {
 	return func(config *EngineConfig) {
 		config.UseH2C = true
@@ -901,6 +910,7 @@ func (own *Engine) newServer(addr string) *http.Server {
 	return &http.Server{
 		Addr:              addr,
 		Handler:           own.GetHTTPHandler(),
+		Protocols:         own.GetHTTPProtocols(),
 		ReadHeaderTimeout: config.ReadHeaderTimeout,
 		ReadTimeout:       config.ReadTimeout,
 		WriteTimeout:      config.WriteTimeout,
@@ -992,12 +1002,28 @@ func (own *Engine) RunListener(listener net.Listener) error {
 }
 
 // GetHTTPHandler 返回可挂载到任意 http.Server 的处理器。
+//
+// h2c 由 http.Server.Protocols 控制，处理器本身无需包装；自行创建
+// http.Server 时把 Protocols 设为 GetHTTPProtocols() 即可获得同样的协议支持。
 func (own *Engine) GetHTTPHandler() http.Handler {
+	return own
+}
+
+// GetHTTPProtocols 返回与当前配置对应的协议集合。
+//
+// 未启用 h2c 时返回 nil，表示沿用标准库默认（HTTP/1.1，TLS 上额外协商 HTTP/2）；
+// 启用后返回同时包含 HTTP/1.1、HTTP/2 与明文 HTTP/2 的集合——保留 HTTP/2 是为了
+// RunTLS 场景下 ALPN 仍能协商到 h2，而不是只提供 h2c。
+func (own *Engine) GetHTTPProtocols() *http.Protocols {
 	if !own.config.UseH2C {
-		return own
+		return nil
 	}
 
-	return h2c.NewHandler(own, &http2.Server{})
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
+	return protocols
 }
 
 // Shutdown 优雅关闭服务器。
