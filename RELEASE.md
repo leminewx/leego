@@ -5,6 +5,48 @@
 
 ---
 
+## v0.20.0.0 — 中间件归位
+
+> 发布日期：2026-11-20
+> 要求：Go 1.27.4+
+
+本版本把「以中间件方式使用」的拓展模块统一收进 `middlewares/`，并固化
+「`New` 创建实例 + `AdaptToMiddleware` 适配」两段式，属**不兼容变更**。
+
+### 一、`session` 迁移到 `middlewares/session`
+
+| 旧路径 | 新路径 |
+| --- | --- |
+| `gitee.com/leminewx/leego/session` | `gitee.com/leminewx/leego/middlewares/session` |
+
+`session.New(store, options...)` 现在返回 `*Manager`，必须再调用 `AdaptToMiddleware()`
+才能挂载；`GetFromContext` / `GetFromRequest` 与 `Session` 的方法保持不变。
+
+```go
+engine.UseMiddlewares(session.New(
+	store,
+	session.WithTTL(30 * time.Minute),
+).AdaptToMiddleware())
+```
+
+### 二、其余模块的定位
+
+- `headers`、`logging`、`metrics`、`tree`、`config`、`validate`、`problem` 不提供中间件；
+  `dashboard`、`openapi`、`gateway`、`upload` 提供的是处理器（`http.Handler` / `leego.HandleFunc`），
+  均保留在原位置。
+- `middlewares/jwt` 是令牌签发与解析工具，`middlewares/collector` 是指标快照与聚合，
+  两者不是中间件，因此不提供 `AdaptToMiddleware()`；文档中也不再称其为内置中间件。
+- 规则固化在 `docs/conventions.md` 1.9：中间件一律放在 `middlewares/`，由实例提供
+  `AdaptToMiddleware()`，不再直接导出 `MiddlewareFunc` 常量或函数。
+
+### 三、升级步骤
+
+1. 替换导入路径：`leego/session` → `leego/middlewares/session`；
+2. 给 `session.New(...)` 的返回值补 `.AdaptToMiddleware()`；
+3. `gofmt -l .`、`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全部通过。
+
+---
+
 ## v0.19.0.0 — 构造函数与选项函数命名对齐
 
 > 发布日期：2026-11-20
@@ -102,6 +144,7 @@
 
 上表全部需要尾部再调用 `.AdaptToMiddleware()` 才能传入 `UseMiddlewares`。
 其中 `cache.NewCache` / `compress.NewCompress` 已在 v0.19.0.0 中收敛为 `New`，以文首版本说明为准。
+`session` 已于 v0.20.0.0 迁移到 `middlewares/session`，并以实例的 `AdaptToMiddleware()` 挂载。
 `NewLoggerWithConfig` 与 `NewRecoveryWithConfig` 在构造时复制一份配置快照，
 运行期修改原始配置对象不再影响已创建的实例。
 

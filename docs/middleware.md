@@ -112,16 +112,29 @@ stdHandlerFunc := middlewares.UnwrapFromMiddlewareFuncToHTTPHandleFunc(myMiddlew
 | `middlewares` | `NewRecovery()` / `NewRecoveryWithConfig(cfg)` | panic 恢复 |
 | `middlewares` | `NewMonitor(collector)` | 为手工挂载的处理器补充指标 |
 | `middlewares/cors` | `New()` | 跨域 |
-| `middlewares/jwt` | `NewHMACSigner` / `NewParser` | JWT（见 [jwt.md](jwt.md)） |
+| `middlewares/jwt` | `NewHMACSigner` / `NewParser` | JWT 签发与解析工具（本身不是中间件，见 [jwt.md](jwt.md)） |
 | `middlewares/limiter` | 三种限流构造器 | 限流（见 [limiter-breaker.md](limiter-breaker.md)） |
 | `middlewares/breaker` | `NewCircuitBreaker(config)` | 熔断（同上） |
 | `middlewares/cache` | `New(cache.Config{...})` | 响应缓存，默认旁路 Cookie 请求（见 README「拓展能力」） |
 | `middlewares/compress` | `New(compress.Config{...})` | gzip 压缩，按内容类型与阈值判定（同上） |
 | `middlewares/trace` | `NewTracer(exporter, ...)` | W3C `traceparent` 传播与异步导出（同上） |
+| `middlewares/session` | `New(store, options...)` | 服务端会话：签名 Cookie + 可替换存储，支持轮换与销毁 |
 
 所有构造器都只创建实例（结构体或接口），实例通过 `AdaptToMiddleware()` 适配为
-`leego.MiddlewareFunc` 后才能挂载；包装/解包工具函数除外。这样实例可以在多处复用
+`leego.MiddlewareFunc` 后才能挂载；包装与解包工具函数除外。这样实例可以在多处复用
 （同一限流器挂多个路由组、同一熔断器同时用于 `Execute` 与中间件）。
+
+### 目录约定
+
+- 中间件能力一律放在 `middlewares/`：根包为日志、恢复、指标采集，子包为
+  `cors`、`limiter`、`breaker`、`cache`、`compress`、`trace`、`session`；
+  新增中间件不得放在 `middlewares/` 之外的包。
+- 对外可挂载的中间件必须由实例提供 `AdaptToMiddleware()`，不直接导出 `MiddlewareFunc`
+  常量或函数；`WrapFromHTTPHandler` / `UnwrapFromMiddlewareFuncToHTTPHandler` 属于与
+  `http.Handler` 互操作的工具，不返回中间件实例，因此不受此约束。
+- 只为中间件服务但不是中间件的包：`middlewares/collector`（指标快照与报告聚合）、
+  `middlewares/jwt`（令牌签发与解析）。它们不提供 `AdaptToMiddleware`，文档与示例不得
+  把它们当作处理器或中间件直接挂载。
 
 ### 访问日志
 

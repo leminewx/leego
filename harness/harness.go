@@ -45,9 +45,9 @@ import (
 	"gitee.com/leminewx/leego/middlewares/compress"
 	"gitee.com/leminewx/leego/middlewares/cors"
 	"gitee.com/leminewx/leego/middlewares/limiter"
+	"gitee.com/leminewx/leego/middlewares/session"
 	middletrace "gitee.com/leminewx/leego/middlewares/trace"
 	"gitee.com/leminewx/leego/response/sse"
-	"gitee.com/leminewx/leego/session"
 	"gitee.com/leminewx/leego/upload"
 )
 
@@ -482,7 +482,7 @@ func (own *Service) registerSessionRoutes(engine *leego.Engine) {
 		session.WithTTL(own.config.SessionTTL),
 		session.WithSecret(own.config.SessionSecret),
 		session.WithSameSite(http.SameSiteLaxMode),
-	))
+	).AdaptToMiddleware())
 
 	group.GET("/current", own.serveSessionCurrent, "session-current", _TAG_SESSION)
 	group.POST("/login", own.serveSessionLogin, "session-login", _TAG_SESSION)

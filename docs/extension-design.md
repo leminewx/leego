@@ -16,7 +16,7 @@
 
 | 约束 | 具体要求 | 违反后果 |
 | --- | --- | --- |
-| 依赖方向 | 新包可以导入根包 `leego`；根包只能导入**不反向依赖根包**的新包（当前仅 `openapi`、`metrics`），其余一律由 `main` 组装 | 循环导入，编译失败 |
+| 依赖方向 | 新包可以导入根包 `leego`；根包只能导入**不反向依赖根包**的新包（当前为 `openapi`、`metrics`、`middlewares/collector`），其余一律由 `main` 组装 | 循环导入，编译失败 |
 | 注册期/运行期 | 所有路由与中间件在 `Prepare()` 前注册；运行期只读 | panic 或数据竞态 |
 | 池化兼容 | 中间件不得在 `handler` 返回后持有 `Context` | 内存复用后数据串台 |
 | 并发原语 | 配置/缓存/指标用不可变快照 + `atomic.Pointer`；通道永不关闭发送端 | `-race` 失败 |
@@ -61,8 +61,8 @@ leego/
 ├── middlewares/
 │   ├── compress/               # gzip（compress.go + pool.go）
 │   ├── cache/                  # 响应缓存（cache.go + store.go + writer.go）
-│   └── trace/                  # traceparent（trace.go + traceparent.go + exporter.go）
-├── session/                    # 会话（cookie.go + session.go + store.go）
+│   ├── trace/                  # traceparent（trace.go + traceparent.go + exporter.go）
+│   └── session/                # 会话（cookie.go + session.go + store.go）
 ├── upload/                     # 分片上传（upload.go + local.go + handler.go）
 ├── job/                        # 进程内调度（job.go）
 ├── gateway/                    # 反向代理与灰度（gateway.go + proxy.go）
@@ -108,9 +108,9 @@ leego/
                          │  harness/cmd/main │
                          └────────┬──────────┘
                                   │
-   config  validate  problem  session  upload  job  gateway  harness/testutil
-        │       │        │        │       │      │       │        │
-        └───────┴────────┴────────┴───────┴──────┴───────┴────────┘
+   config  validate  problem  upload  job  gateway  harness/testutil
+      │        │         │        │      │      │           │
+      └────────┴─────────┴────────┴──────┴──────┴───────────┘
                                    │ 导入
                           ┌────────▼────────┐
                           │   leego（根）    │
@@ -120,7 +120,7 @@ leego/
         │              │           │             │              │
      tree/         response/    headers/    collector/      dashboard/
                                    │
-                     middlewares/{compress,cache,trace}
+                     middlewares/{compress,cache,trace,session}
                                    │
                          metrics ──┴──> collector + dashboard.Provider
 
@@ -128,9 +128,9 @@ leego/
                     （二者不导入 leego，因此可由根包提供适配方法）
 ```
 
-规则：**箭头只能向上**。`openapi` 与 `metrics` 是仅有的两个「根包向下调用」的包，
-因此它们必须不导入 `leego`：openapi 用自定义 `Route` 结构承接，
-metrics 只用 `collector`/`dashboard` 的公开结构。
+规则：**箭头只能向上**。`openapi`、`metrics` 与 `middlewares/collector` 是仅有的几个
+「根包向下调用」的包，因此它们必须不导入 `leego`：openapi 用自定义 `Route` 结构承接，
+metrics 与 collector 只用公开的数据结构。
 
 ---
 
@@ -511,7 +511,11 @@ func FormatTraceparent(traceID, spanID string, sampled bool) string
 
 ---
 
-### 4.8 `session`：服务端会话
+### 4.8 `middlewares/session`：服务端会话
+
+中间件能力归入 `middlewares/` 后，构造与挂载保持两段式：`New` 只创建实例，
+实例的 `AdaptToMiddleware()` 才产出 `leego.MiddlewareFunc`，同一实例可在多个
+路由组复用。
 
 **核心签名**
 
@@ -524,7 +528,8 @@ type Store interface {
 	Destroy(ctx context.Context, id string) error
 }
 
-func New(store Store, options ...Option) leego.MiddlewareFunc
+func New(store Store, options ...Option) *Manager
+func (*Manager) AdaptToMiddleware() leego.MiddlewareFunc
 func GetFromContext(ctx context.Context) (*Session, bool)
 func GetFromRequest(request *http.Request) (*Session, bool)
 ```
@@ -859,8 +864,8 @@ return nil
 | 4 | `middlewares/compress` + `middlewares/cache` | 压缩与缓存 | SSE/WS 旁路用例 |
 | 5 | `metrics` + `RegisterMetrics` | 环形缓冲、FileStore、Prometheus | 格式逐字对比 |
 | 6 | `openapi` + `RegisterOpenAPI` | Spec + 内嵌 UI | 两次序列化字节一致 |
-| 7 | `middlewares/trace` + `jwt` 扩展 | traceparent、RS256/ES256 | 非法 traceparent 用例 |
-| 8 | `session` + `upload` | 会话、分片上传 | 并发合并与秒传 |
+| 7 | `middlewares/trace` + `middlewares/jwt` 扩展 | traceparent、RS256/ES256 | 非法 traceparent 用例 |
+| 8 | `middlewares/session` + `upload` | 会话、分片上传 | 并发合并与秒传 |
 | 9 | WebSocket / SSE 增强 | 分片、压缩、房间、回放 | RFC 6455 用例 + fuzz |
 | 10 | `job` / `gateway` / `cmd/leego` | 调度、反代、脚手架 | 示例可跑通 |
 
@@ -878,10 +883,10 @@ return nil
 | `problem` | 状态码映射、已写响应时不覆盖 | JSON 字段稳定性 |
 | `openapi` | 模式转换、schema 深度截断、排序稳定 | 快照对比 |
 | `metrics` | 环形边界、JSONL 尾部损坏、轮转 | 大文件流式读 |
-| `compress` | 已协商/未协商、SSE/WS 旁路、小体不压 | 与 `Flush` 交互 |
-| `cache` | 命中/未命中、vary、过期、overflow | 池化归还断言 |
-| `trace` | 非法 traceparent、ID 唯一性 | fuzz 解析入口 |
-| `session` | 过期、ID 轮换、签名篡改 | Cookie 属性断言 |
+| `middlewares/compress` | 已协商/未协商、SSE/WS 旁路、小体不压 | 与 `Flush` 交互 |
+| `middlewares/cache` | 命中/未命中、vary、过期、overflow | 池化归还断言 |
+| `middlewares/trace` | 非法 traceparent、ID 唯一性 | fuzz 解析入口 |
+| `middlewares/session` | 过期、ID 轮换、签名篡改 | Cookie 属性断言 |
 | `upload` | 乱序分片、重复分片、中断续传 | 并发合并 |
 | WS/SSE | 分片边界、压缩协商、回放 | RFC 用例 + fuzz |
 | `job` | 取消、在途等待、队满拒绝 | 时钟可控 |

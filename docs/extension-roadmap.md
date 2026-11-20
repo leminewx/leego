@@ -256,7 +256,8 @@ HTTP 响应缓存：`ETag`/`Last-Modified` 协商、`stale-while-revalidate` 后
 **方案**
 - `jwt`：把 `Signer` 接口从 HMAC 扩展到 `RS256/ES256`（`crypto/rsa`、`crypto/ecdsa`），
   `Parser` 已按 `Algorithm` 分发，只需新增实现与 `kid` 支持。
-- `session` 新包：`Store` 接口（`Get/Save/Destroy`），内置内存实现；
+- `middlewares/session` 新包：`Store` 接口（`Get/Save/Destroy`），内置内存实现；
+  实例由 `New` 构造、`AdaptToMiddleware` 适配，与其余中间件的两段式保持一致；
   跨进程存储由使用方实现接口注入；Cookie 复用 `Context.SetCookieData` 的编码与 `SameSite` 处理。
 - OIDC：只做「授权码 + ID Token 校验」最小闭环；discovery 与 JWKS 用
   `net/http` + `encoding/json` 手写，ID Token 复用本仓库 `jwt`，不引入 IdP SDK。

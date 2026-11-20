@@ -2,12 +2,13 @@
 //
 // 根包直接提供访问日志（NewLogger）、panic 恢复（NewRecovery）与指标采集（NewMonitor）；
 // 子包按能力拆分：限流（limiter）、熔断（breaker）、响应缓存（cache）、
-// 响应压缩（compress）、跨域（cors）、JWT（jwt）、链路追踪（trace），
-// 以及供指标与采集复用的 collector。
+// 响应压缩（compress）、跨域（cors）、JWT（jwt）、链路追踪（trace）、
+// 服务端会话（session），以及供指标与采集复用的 collector。
 //
 // 所有中间件都先由 New* 创建自身实例，再用实例的 AdaptToMiddleware
 // 适配为 leego.MiddlewareFunc，最后通过 leego.Group.UseMiddlewares
-// 挂载到引擎（全局）或路由组（局部）。
+// 挂载到引擎（全局）或路由组（局部）。middlewares/ 之外不再提供中间件；
+// 仅作为工具复用的 jwt（令牌签发与解析）与 collector（指标快照）除外。
 package middlewares
 
 import (

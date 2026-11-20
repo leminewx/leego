@@ -9,6 +9,7 @@
 | --- | --- | --- |
 | 构造函数 | 统一 `New*` / `new*`；包内唯一目标对象直接 `New()` | 不再使用 `Create*` 作为纯内存构造，也不再重复类型名 |
 | 函数式选项 | 统一 `With*` / `Without*` | 不再使用 `Use*` 命名选项 |
+| 包布局 | 中间件一律放在 `middlewares/`，由实例提供 `AdaptToMiddleware()` | 不再散落在根目录，也不再直接导出 `MiddlewareFunc` |
 | 上下文响应 | 统一 `Response*` 前缀 | 不再分散为 `Write*` / `Render*` / `Send*` / `Serve*` / `Stream*` |
 | 常量 | 公有全大写下划线连接；私有 `_` 开头全大写 | 取代 camelCase 私有常量 |
 | 词性判定 | 以词典词性为准，兼类词不算违规（如 `Group`） | 不再机械按首词表面词性判定 |
@@ -287,6 +288,19 @@
 - 测试辅助函数保持 `createXxx` / `buildXxx` / `serveXxx`，**不**套用构造函数的 `New` 规则：
   它们不属于公开 API，且带 `TestingT` 或 `testing.TB` 参数，语义是「搭测试夹具」。
 
+### 1.9 包布局：中间件
+
+- 中间件能力一律放在 `middlewares/`：根包提供访问日志、panic 恢复与指标采集，
+  其余按 `middlewares/<能力>` 拆分（`cors`、`limiter`、`breaker`、`cache`、
+  `compress`、`trace`、`session` 等）。**禁止**在 `middlewares/` 之外的包中新增中间件。
+- 每个中间件包由 `New*` 只创建实例，实例实现 `AdaptToMiddleware() leego.MiddlewareFunc`；
+  不直接导出 `MiddlewareFunc` 常量或函数（`middlewares` 根包的
+  `WrapFromHTTPHandler` / `UnwrapFromMiddlewareFuncToHTTPHandler` 属互操作工具，不在此列）。
+- 只在中间件内部复用的数据结构（`middlewares/collector` 的指标快照）与令牌工具
+  （`middlewares/jwt` 的签发与解析）不要求 `AdaptToMiddleware`，但文档中不得称其为中间件。
+- 被多个中间件共享的纯工具包（`headers`、`logging`、`metrics`）与提供处理器的拓展包
+  （`dashboard`、`openapi`、`gateway`、`upload`）保持独立，不实现 `AdaptToMiddleware`。
+
 ---
 
 ## 二、注释规范
@@ -523,3 +537,4 @@ go list -deps ./... | grep -E '^[A-Za-z0-9._-]+\.[A-Za-z]{2,}/' | grep -v '^gola
 12. 是否新增了 `require` 条目？若新增，是否属于本节允许范围并已在 PR 说明？
 13. 涉及外部系统的能力是否以接口暴露，而非在核心内直接调用第三方 SDK？
 14. 选项函数是否统一为 `With*` / `Without*`，未使用 `Use*`（`UseMiddlewares` 除外）？
+15. 新增中间件是否放在 `middlewares/` 下，并由实例提供 `AdaptToMiddleware()`？

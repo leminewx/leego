@@ -21,10 +21,10 @@ Leego 是一个构建在 Go 标准库 `net/http` 之上的轻量级 Web 框架�
 | 统一上下文 | `Context` 覆盖参数、绑定、响应、错误链、模板、文件、SSE，全部来自 `sync.Pool`；响应统一为 `Response*` 命名族 |
 | 指标内建 | 每条路由自带采集器，`CollectReport()` 直接产出可序列化的指标报告 |
 | 分析后台 | `dashboard` 包内置单页后台，支持过滤、排序、JSON / CSV 导出与健康检查 |
-| 可观测中间件 | 访问日志、panic 恢复、CORS、JWT、限流（固定 / 滑动 / 令牌桶）、熔断 |
+| 可观测中间件 | 访问日志、panic 恢复、CORS、限流（固定 / 滑动 / 令牌桶）、熔断、会话 |
 | 长连接 | SSE（单连接回调式 + 管理器托管多连接）、WebSocket（自实现握手与帧解析） |
 | 压测工具 | `harness/stresstest` 提供并发压测、延迟分位数与报告格式化 |
-| 工程化拓展 | `session` / `upload` / `job` / `gateway` / `cache` / `compress` / `trace` / `metrics` / `openapi` / `config` / `validate` / `problem`，全部只依赖标准库与 `golang.org/x/*` |
+| 工程化拓展 | `middlewares/session` / `upload` / `job` / `gateway` / `cache` / `compress` / `trace` / `metrics` / `openapi` / `config` / `validate` / `problem`，全部只依赖标准库与 `golang.org/x/*` |
 | 体验工具 | `harness` 汇总测试客户端、压测入口与可运行示例，并内置带前端的实体服务 |
 
 ---
@@ -482,6 +482,7 @@ engine.UseMiddlewares(authMiddleware)
 | `cache.New(cache.Config{...})` | 响应缓存：LRU 容量控制、`X-Cache` 标记与 stale-while-revalidate，默认跳过带 Cookie 的请求 |
 | `compress.New(compress.Config{...})` | gzip 压缩：按内容类型与最小长度阈值决定是否压缩 |
 | `trace.NewTracer(exporter, ...)` | 链路追踪：解析/生成 W3C `traceparent`，批量异步导出 |
+| `session.New(store, options...)` | 服务端会话：签名 Cookie + 可替换存储，支持轮换与销毁 |
 
 除包装/解包工具函数外，上表中的构造器只负责创建实例；要用作中间件需再调用
 实例的 `AdaptToMiddleware()` 得到 `leego.MiddlewareFunc`。
@@ -543,7 +544,7 @@ engine.GET("/risky", func(ctx *leego.Context) {
 | `config` | 多源配置合并（Map / JSON / Env / Flag）、热更新与键级订阅 | `Load`、`GetString`、`SubscribeChange`、`Watch` |
 | `validate` | 结构体标签校验，规则表可扩展，元信息按类型缓存 | `Check`、`CheckVar`、`RegisterRule` |
 | `problem` | RFC 7807 风格的统一错误响应 | `New`、`NewFromValidation`、`Write` |
-| `session` | 签名 Cookie 会话，存储接口可替换，支持轮换与销毁 | `session.New`、`GetFromContext` |
+| `middlewares/session` | 签名 Cookie 会话，存储接口可替换，支持轮换与销毁 | `session.New`、`AdaptToMiddleware`、`GetFromContext` |
 | `upload` | 分片上传：断点续传、乱序/重复分片、SHA-256 秒传（JSONL 追加索引，重启可恢复） | `NewLocalStorage`、`NewHandler` |
 | `job` | 最小堆调度：周期/延迟任务、并发槽位与运行统计，单任务 panic 隔离 | `NewScheduler`、`ScheduleEvery`、`ScheduleAfter` |
 | `gateway` | 反向代理与平滑加权轮询，支持标签灰度与超时预算 | `NewBalancer`、`NewProxy` |
@@ -557,7 +558,7 @@ engine.GET("/risky", func(ctx *leego.Context) {
 
 ```go
 import (
-	"gitee.com/leminewx/leego/session"
+	"gitee.com/leminewx/leego/middlewares/session"
 	"gitee.com/leminewx/leego/upload"
 )
 
@@ -571,7 +572,7 @@ engine.UseMiddlewares(session.New(
 	store,
 	session.WithTTL(30*time.Minute),
 	session.WithSecure(true),
-))
+).AdaptToMiddleware())
 
 engine.POST("/login", func(ctx *leego.Context) {
 	// 会话由中间件放进 Request 的 context，因此这里总能取到。
@@ -1085,14 +1086,15 @@ leego/
 │   ├── sse/                                        # SSE 客户端、消息、连接管理器
 │   └── websocket/                                  # WebSocket 连接、帧解析、升级器
 ├── middlewares/                                    # 日志、恢复、指标采集中间件
-│   ├── collector/                                  # 指标类型与报告聚合
+│   ├── collector/                                  # 指标类型与报告聚合（非中间件）
 │   ├── cache/  compress/  trace/                   # 缓存、压缩、链路追踪中间件
-│   └── cors/  jwt/  limiter/  breaker/             # 各功能中间件
+│   ├── session/                                    # 签名 Cookie 会话中间件
+│   └── cors/  jwt/  limiter/  breaker/             # 各功能中间件（jwt 为令牌工具）
 ├── dashboard/                                      # 指标分析后台（页面内嵌）
 ├── metrics/                                        # 指标存储抽象与 Prometheus 输出
 ├── openapi/                                        # OpenAPI 快照与浏览页
 ├── config/  validate/  problem/                    # 配置、校验与统一错误响应
-├── session/  upload/  job/  gateway/               # 会话、分片上传、调度与网关
+├── upload/  job/  gateway/                         # 分片上传、调度与网关
 ├── headers/                                        # HTTP 头常量与内容类型识别
 ├── logging/                                        # 框架内部日志输出
 └── harness/                                        # 开发者体验：测试客户端、压测、示例

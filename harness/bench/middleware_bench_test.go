@@ -14,8 +14,8 @@ import (
 	"gitee.com/leminewx/leego/middlewares/compress"
 	"gitee.com/leminewx/leego/middlewares/cors"
 	"gitee.com/leminewx/leego/middlewares/limiter"
+	"gitee.com/leminewx/leego/middlewares/session"
 	"gitee.com/leminewx/leego/middlewares/trace"
-	"gitee.com/leminewx/leego/session"
 )
 
 // BenchmarkMiddlewareLogger 测量访问日志中间件的格式化开销。
@@ -126,7 +126,7 @@ func BenchmarkMiddlewareSession(b *testing.B) {
 	b.Cleanup(func() { _ = store.Close() })
 
 	engine := newTestEngine(func(engine *leego.Engine) {
-		engine.UseMiddlewares(session.New(store, session.WithSecret([]byte("bench-secret-0123456789abcdef0123456789"))))
+		engine.UseMiddlewares(session.New(store, session.WithSecret([]byte("bench-secret-0123456789abcdef0123456789"))).AdaptToMiddleware())
 		engine.GET("/login", func(ctx *leego.Context) {
 			current, ok := session.GetFromRequest(ctx.Request)
 			if !ok {

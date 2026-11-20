@@ -73,7 +73,7 @@ go test -race ./...
 | `config/` | 优先级合并、类型转换、兄弟订阅隔离、热更新与停止 |
 | `validate/` | 规则表、嵌套与 `dive`、匿名指针环、并发首次解析 |
 | `problem/` | RFC 7807 输出、校验错误映射、状态码与字段细节 |
-| `session/` `upload/` `job/` | 签名会话、分片与秒传索引、调度器 panic 隔离 |
+| `middlewares/session/` `upload/` `job/` | 签名会话、分片与秒传索引、调度器 panic 隔离 |
 | `gateway/` | 平滑加权轮询、灰度、超时预算、转发头与服务端错误脱敏 |
 | `metrics/` `openapi/` | 环形序列、FileStore 回放、Prometheus 编码、文档缓存 |
 | `middlewares/cache` `middlewares/compress` `middlewares/trace` | 缓存键/Cookie 旁路、压缩阈值与池化复用、traceparent 与未采样快路径 |

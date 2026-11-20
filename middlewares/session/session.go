@@ -7,7 +7,9 @@
 //     防止会话固定攻击；
 //   - 请求结束时统一回写数据；Cookie 在响应头发送前同步，
 //     避免 net/http 在 WriteHeader 之后丢弃响应头修改；
-//   - 只依赖标准库与根包，Store 为接口，可替换为任意外部存储实现。
+//   - 只依赖标准库、根包与 response 包，Store 为接口，可替换为任意外部存储实现；
+//   - 构造与适配分离：New 只创建实例，AdaptToMiddleware 负责生成中间件，
+//     同一实例可在多个路由组复用。
 package session
 
 import (
@@ -185,17 +187,21 @@ func WithSecret(secret []byte) Option {
 // sessionKey 是上下文中的会话键类型，避免与其他包冲突。
 type sessionKey struct{}
 
-// middleware 保存会话中间件的运行期状态。
-type middleware struct {
+// Manager 保存会话中间件的运行期状态。
+//
+// 实例可在多个路由组复用；存储与配置在构造期完成校验，运行期只读。
+type Manager struct {
+	// store 为会话存储实现。
+	store Store
 	// options 为规范化后的配置。
 	options Options
 }
 
-// New 创建会话中间件。
+// New 创建会话中间件实例。
 //
-// 中间件把会话写入请求上下文，业务代码用 From 取回；
+// 实例只持有存储与配置，需要调用 AdaptToMiddleware 才能挂载；
 // store 为 nil 时直接 panic，属于启动期配置错误。
-func New(store Store, options ...Option) leego.MiddlewareFunc {
+func New(store Store, options ...Option) *Manager {
 	if store == nil {
 		panic(ErrNilStore.Error())
 	}
@@ -213,11 +219,16 @@ func New(store Store, options ...Option) leego.MiddlewareFunc {
 		panic(err.Error())
 	}
 
-	own := &middleware{options: settings}
+	return &Manager{store: store, options: settings}
+}
 
+// AdaptToMiddleware 把会话管理器适配为中间件。
+//
+// 中间件把会话写入请求上下文，业务代码用 GetFromContext 取回。
+func (own *Manager) AdaptToMiddleware() leego.MiddlewareFunc {
 	return func(next leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
-			current := own.load(store, ctx)
+			current := own.load(ctx)
 
 			// 包装响应写入器：在响应头真正发送之前同步 Cookie。
 			// 数据持久化发生在处理函数之后，此时再写响应头已不会生效。
@@ -270,16 +281,16 @@ func (own *cookieWriter) Flush() {
 }
 
 // load 读取并校验现有会话，失败时新建。
-func (own *middleware) load(store Store, ctx *leego.Context) *Session {
+func (own *Manager) load(ctx *leego.Context) *Session {
 	cookie, err := ctx.Request.Cookie(own.options.Name)
 	if err == nil {
 		if id, ok := decodeCookie(own.options.Secret, cookie.Value); ok {
-			values, getErr := store.Get(context.WithoutCancel(ctx.Request.Context()), id)
+			values, getErr := own.store.Get(context.WithoutCancel(ctx.Request.Context()), id)
 			if getErr == nil && values != nil {
 				return &Session{
 					id:      id,
 					values:  values,
-					store:   store,
+					store:   own.store,
 					options: own.options,
 				}
 			}
@@ -289,10 +300,10 @@ func (own *middleware) load(store Store, ctx *leego.Context) *Session {
 	id, err := newID()
 	if err != nil {
 		// 随机源不可用时退化为空会话：宁可不持久化，也不生成可预测的 ID。
-		return &Session{values: Values{}, store: store, options: own.options}
+		return &Session{values: Values{}, store: own.store, options: own.options}
 	}
 
-	return &Session{id: id, values: Values{}, store: store, options: own.options, isNew: true}
+	return &Session{id: id, values: Values{}, store: own.store, options: own.options, isNew: true}
 }
 
 // GetFromContext 从请求上下文取回会话。
