@@ -104,10 +104,10 @@ leego/
 ## 三、包依赖图
 
 ```
-                    ┌──────────────────────────────┐
-                    │ harness/cmd/harness（main）   │
-                    └──────────────┬───────────────┘
-                                   │
+                         ┌───────────────────┐
+                         │  harness/cmd/main │
+                         └────────┬──────────┘
+                                  │
    config  validate  problem  session  upload  job  gateway  harness/testutil
         │       │        │        │       │      │       │        │
         └───────┴────────┴────────┴───────┴──────┴───────┴────────┘
@@ -725,7 +725,7 @@ go:embed templates/**   // 工程骨架模板
 实现要点（若后续启动）：`leego new` 生成目录 + 配置模板 + Dockerfile；
 `leego gen handler` 生成 handler/测试/注册片段；
 `leego routes` 通过替换 `main` 中的空壳 `Engine` 调用 `GetRoutes()` 输出表格。
-当前仓库只提供 `harness/cmd/harness` 体验服务，不包含脚手架命令。
+当前仓库只提供 `harness/cmd/main.go` 体验服务，不包含脚手架命令。
 
 ---
 

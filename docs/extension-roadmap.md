@@ -170,7 +170,7 @@ TTL、限流窗口与 JWT 过期断言（限流/熔断/JWT 仍用各自内部时
 - 时钟注入：目前只提供 `FrozenClock`（`Advance` / `Set`）供业务测试使用；
   `limiter`、`breaker`、`jwt.Parser` 仍各自读系统时间，未收敛到 `Clock`（规划中）。
 - `FuzzHandler` 与 `testdata` 约定尚未实现；现有压测靶机为
-  `harness/stresstest/test/base`。
+  `harness/stresstest/test`。
 
 **应用场景**
 业务方写 handler 单测；框架自身的回归测试减少 `time.Sleep`；

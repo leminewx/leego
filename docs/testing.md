@@ -293,10 +293,15 @@ b.RunParallel(func(pb *testing.PB) {
 
 ## 八、基准测试
 
-当前仓库共有 28 个基准，主要集中在热路径：
+基准分为两部分：`bench` 包是覆盖引擎、中间件、组件与端到端的三层套件，
+各功能包内还有贴近实现细节的局部基准。实测数据、环境与结论见
+[performance.md](performance.md)。
 
 | 包 | 基准 |
 | --- | --- |
+| `bench`（引擎层） | `BenchmarkEngineRouting`（静态/参数/通配/404/千条路由表/嵌套分组）、`BenchmarkEngineMiddlewares`（0/1/4 层）、`BenchmarkEngineResponse`（文本/小 JSON/8 KB JSON）、`BenchmarkEngineRequest`（读体/绑定/头与 Cookie/IP）、`BenchmarkEngineParallel` |
+| `bench`（中间件层） | `BenchmarkMiddlewareLogger`、`Recovery`、`CORS`（简单/预检）、`Limiter`、`Breaker`、`Compress`、`Cache`、`Session`、`Trace`、`Chain` |
+| `bench`（组件层） | `BenchmarkResponseWriterPool`、`Collector`、`ValidateCheck`、`Config`、`MetricsStore`、`Dashboard`、`GatewayProxy` |
 | 根包 | `BenchmarkEngineServeHTTP`、`BenchmarkEngineServeHTTPParallel`、`BenchmarkRouterSearchStatic`、`BenchmarkRouterSearchParam`、`BenchmarkRouterSearchWildcard`、`BenchmarkRouterParallelSearch` |
 | `tree` | `BenchmarkTrieSearchStatic`、`BenchmarkTrieSearchParameter`、`BenchmarkTrieSearchParallel` |
 | `middlewares/collector` | `BenchmarkIncreaseDecrease`、`BenchmarkGetSnapshot` |
@@ -323,6 +328,9 @@ go test ./tree/ -run '^$' -bench Trie -count 5 > new.txt
 ```
 
 如需统计显著性，可安装 `golang.org/x/perf/cmd/benchstat` 后执行 `benchstat old.txt new.txt`。
+
+系统化取数与结果解读请参考 [performance.md](performance.md)：那里给出了完整命令、
+三层基准的口径约束（如引擎内置采集恒开、请求体基准含构造开销）以及端到端压测的已知局限。
 
 ---
 

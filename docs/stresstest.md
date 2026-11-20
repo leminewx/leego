@@ -312,6 +312,8 @@ go run ./harness/stresstest/test/base
    单独测一次“开启采集”的损耗。
 6. **复用 Client**：多次 `Run` 复用同一 `Client` 可避免重复建连；不同场景分别创建。
 7. **结束后 `Close()`**：释放空闲连接，避免 `TIME_WAIT` 堆积；重复调用安全。
+8. **交叉核对实测数据**：本仓库用该工具对框架自身的实测结果、取数方式，
+   以及时钟粒度导致分位失真的说明，见 [performance.md](performance.md)。
 
 ---
 

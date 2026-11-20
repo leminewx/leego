@@ -1145,6 +1145,7 @@ leego/
 | [docs/limiter-breaker.md](docs/limiter-breaker.md) | 三种限流算法与熔断状态机 |
 | [docs/stresstest.md](docs/stresstest.md) | 压测配置、执行模型与报告指标 |
 | [docs/testing.md](docs/testing.md) | 测试组织、并发测试技巧与基准 |
+| [docs/performance.md](docs/performance.md) | 性能基线：测试环境与方法、微基准与端到端结果、优化建议与局限 |
 | [docs/harness.md](docs/harness.md) | 体验服务、前端页面、测试客户端与压测入口 |
 | [docs/conventions.md](docs/conventions.md) | 命名、注释、错误处理与 API 命名迁移对照 |
 | [docs/extension-roadmap.md](docs/extension-roadmap.md) | 基于现有架构的拓展方向：功能、方案、场景与可行性分析 |

@@ -12,24 +12,24 @@
 
 ```
 harness/
-├── harness.go              # 体验服务：配置、装配、路由与生命周期
-├── openapi.go              # 结构化 OpenAPI 声明：分组、摘要、模式与多响应
-├── harness_test.go         # 配置归一化、选项与装配单测
+├── harness.go               # 体验服务：配置、装配、路由与生命周期
+├── openapi.go               # 结构化 OpenAPI 声明：分组、摘要、模式与多响应
+├── harness_test.go          # 配置归一化、选项与装配单测
 ├── openapi_internal_test.go # 声明表与真实路由、分组、模式的一致性校验
-├── service_test.go         # 真实 HTTP 集成测试
-├── statics/index.html      # 单页前端（go:embed，无外部 CDN）
-├── testdata/               # 演示与测试数据：data.txt / ws-client.html / stress.html
-├── internal/assetpath/     # 定位 testdata 目录（示例与基准服务共用）
-├── tools/genlogo/main.go   # 品牌图生成器（//go:build ignore，不参与构建）
-├── cmd/harness/main.go     # 可执行入口（flag + 信号关闭）
-├── testutil/               # HTTP 测试客户端、响应断言、冻结时钟
-├── stresstest/             # 压测客户端、分位数与报告
-│   └── test/base/          # 压测基准服务
-└── examples/               # 可运行示例：base / file / sse / websocket / stress
+├── service_test.go          # 真实 HTTP 集成测试
+├── statics/index.html       # 单页前端（go:embed，无外部 CDN）
+├── testdata/                # 演示与测试数据：data.txt / ws-client.html / stress.html
+├── internal/assetpath/      # 定位 testdata 目录（示例与基准服务共用）
+├── tools/generate_logo.go   # 品牌图生成器（//go:build ignore，不参与构建）
+├── cmd/main.go              # 可执行入口（flag + 信号关闭）
+├── testutil/                # HTTP 测试客户端、响应断言、冻结时钟
+├── stresstest/              # 压测客户端、分位数与报告
+│   └── test/                # 压测基准服务
+└── examples/                # 可运行示例：base / file / sse / websocket / stress
 ```
 
 示例与基准服务不再各自携带数据文件：纯文本、WebSocket 调试页与压测说明页
-统一放在 `harness/testdata`，由 `harness/internal/assetpath` 定位。
+统一放在 `harness/testdata`，由 `harness/assetpath` 定位。
 `assetpath.GetDir()` 先按源码位置推断，再依次尝试 `harness/testdata`、
 `../testdata`、`testdata`，因此在仓库根目录 `go run ./harness/examples/base`，
 或在其它工作目录下运行，都能找到同一份数据；`assetpath.Resolve()` 会把
@@ -49,7 +49,7 @@ harness/
 
 ```bash
 # 默认监听 127.0.0.1:8080，数据目录位于系统临时目录
-go run ./harness/cmd/harness
+go run ./harness/cmd
 
 # 自定义监听地址与数据目录
 go run ./harness/cmd/harness -addr :9000 -data ./tmp
@@ -122,7 +122,7 @@ go run ./harness/cmd/harness -addr :9000 -data ./tmp
 
 侧栏顶部的标识是内联 SVG（靛蓝到青绿的渐变圆角方 + 字形 L），与
 `docs/assets/logo.png` 同源：两者都在 48 单位逻辑坐标系里描述，
-修改样式时需要用 `go run ./harness/tools/genlogo/main.go ./docs/assets/logo.png`
+修改样式时需要用 `go run ./harness/tools/generate_logo.go ./docs/assets/logo.png`
 重新生成位图。生成器按 1024 像素渲染后做 4×4 盒式下采样，输出 256 像素，
 既保证边缘平滑，也避免 README 里的图片占满整行。
 
