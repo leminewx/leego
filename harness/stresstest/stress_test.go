@@ -754,9 +754,8 @@ func BenchmarkLatenciesGetPercentile(b *testing.B) {
 	latencies.Sort()
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = latencies.GetPercentile(99)
 	}
 }
@@ -767,9 +766,8 @@ func BenchmarkMetricsRecord(b *testing.B) {
 	latency := time.Millisecond
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		metrics.Record(http.StatusOK, latency, nil)
 	}
 }

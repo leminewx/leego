@@ -672,9 +672,8 @@ func BenchmarkServePage(b *testing.B) {
 
 	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		instance.ServeHTTP(httptest.NewRecorder(), request)
 	}
 }
@@ -688,9 +687,8 @@ func BenchmarkServeReport(b *testing.B) {
 
 	request := httptest.NewRequest(http.MethodGet, "/metrics/api/report", nil)
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		instance.ServeHTTP(httptest.NewRecorder(), request)
 	}
 }
