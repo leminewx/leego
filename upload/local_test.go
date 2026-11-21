@@ -1,6 +1,9 @@
 package upload
 
 import (
+	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -206,5 +209,87 @@ func TestLockSessionSerializes(t *testing.T) {
 	case <-acquired:
 	case <-time.After(time.Second):
 		t.Fatal("释放后等待者未被唤醒")
+	}
+}
+
+// TestSweepRemovesStaleSessions 验证过期会话、孤儿分片目录与遗留临时文件被清理。
+func TestSweepRemovesStaleSessions(t *testing.T) {
+	storage, err := NewLocalStorage(t.TempDir())
+	if err != nil {
+		t.Fatalf("创建 LocalStorage 失败: %v", err)
+	}
+
+	ctx := context.Background()
+	stale, err := storage.Init(ctx, InitRequest{Name: "stale.bin", Size: 4, PartSize: 4})
+	if err != nil {
+		t.Fatalf("创建过期会话失败: %v", err)
+	}
+
+	fresh, err := storage.Init(ctx, InitRequest{Name: "fresh.bin", Size: 4, PartSize: 4})
+	if err != nil {
+		t.Fatalf("创建新会话失败: %v", err)
+	}
+
+	orphan := filepath.Join(storage.partsDir, strings.Repeat("f", _ID_BYTES*2))
+	if err = os.MkdirAll(orphan, _DIR_MODE); err != nil {
+		t.Fatalf("创建孤儿分片目录失败: %v", err)
+	}
+
+	leftover := filepath.Join(storage.filesDir, "merge-1"+_TEMP_SUFFIX)
+	if err = os.WriteFile(leftover, []byte("partial"), _FILE_MODE); err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+
+	old := time.Now().Add(-2 * time.Hour)
+	for _, target := range []string{filepath.Join(storage.sessionsDir, stale.ID+".json"), orphan, leftover} {
+		if err = os.Chtimes(target, old, old); err != nil {
+			t.Fatalf("修改时间失败: %v", err)
+		}
+	}
+
+	removed, err := storage.Sweep(ctx, time.Hour)
+	if err != nil {
+		t.Fatalf("Sweep() error = %v", err)
+	}
+
+	if removed != 1 {
+		t.Fatalf("清理会话数 = %d, want 1", removed)
+	}
+
+	if _, err = storage.GetStatus(ctx, stale.ID); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("过期会话应被清理, got %v", err)
+	}
+
+	if _, err = storage.GetStatus(ctx, fresh.ID); err != nil {
+		t.Fatalf("新会话不应被清理: %v", err)
+	}
+
+	if _, err = os.Stat(orphan); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("孤儿分片目录应被删除, got %v", err)
+	}
+
+	if _, err = os.Stat(leftover); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("遗留临时文件应被删除, got %v", err)
+	}
+}
+
+// TestSweepIgnoresNonPositiveAge 验证非正过期时间时不执行清理。
+func TestSweepIgnoresNonPositiveAge(t *testing.T) {
+	storage, err := NewLocalStorage(t.TempDir())
+	if err != nil {
+		t.Fatalf("创建 LocalStorage 失败: %v", err)
+	}
+
+	session, err := storage.Init(context.Background(), InitRequest{Name: "keep.bin", Size: 4, PartSize: 4})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
+
+	if removed, err := storage.Sweep(context.Background(), 0); err != nil || removed != 0 {
+		t.Fatalf("Sweep(0) = (%d, %v), want (0, nil)", removed, err)
+	}
+
+	if _, err = storage.GetStatus(context.Background(), session.ID); err != nil {
+		t.Fatalf("会话不应被清理: %v", err)
 	}
 }

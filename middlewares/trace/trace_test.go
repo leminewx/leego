@@ -322,3 +322,36 @@ func TestIDsAreRandomHex(t *testing.T) {
 		seen[value] = struct{}{}
 	}
 }
+
+// TestMiddlewareMasksSensitiveQuery 验证导出属性不会携带敏感参数明文。
+func TestMiddlewareMasksSensitiveQuery(t *testing.T) {
+	exporter := trace.NewMemoryExporter(0)
+	tracer := trace.NewTracer(exporter, trace.WithFlushInterval(time.Hour))
+
+	var captured *trace.Span
+	engine := newTracerEngine(tracer, &captured)
+
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/ping?token=secret-value&page=2", nil))
+
+	if err := tracer.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush 失败: %v", err)
+	}
+
+	if captured == nil {
+		t.Fatal("未采集到片段")
+	}
+
+	target := captured.Attrs["http.target"]
+	if strings.Contains(target, "secret-value") {
+		t.Fatalf("敏感参数明文被导出: %q", target)
+	}
+
+	if !strings.Contains(target, "page=2") {
+		t.Fatalf("普通参数应保留: %q", target)
+	}
+
+	if !strings.Contains(target, "token=") {
+		t.Fatalf("敏感参数名应保留: %q", target)
+	}
+}

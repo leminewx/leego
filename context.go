@@ -86,6 +86,12 @@ type Context struct {
 	bodyErr error
 	// bodyRead 标记请求体是否已经读取。
 	bodyRead bool
+	// bodyLimited 标记请求体是否已经套用 MaxBodyBytes 上限。
+	// 表单解析与 ReadBody 共用同一层包装，避免重复包裹导致错误类型嵌套。
+	bodyLimited bool
+	// internal 标记该上下文是框架内部回源（如缓存后台刷新），
+	// 可观测性中间件应跳过它，避免把内部请求计为真实流量。
+	internal bool
 	// pooled 标记当前上下文是否来自对象池；派生上下文不进入对象池。
 	pooled bool
 }
@@ -138,6 +144,8 @@ func (own *Context) reset(engine *Engine, writer response.Writer, req *http.Requ
 	own.releaseBodyCache()
 	own.bodyErr = nil
 	own.bodyRead = false
+	own.bodyLimited = false
+	own.internal = false
 	own.pooled = true
 
 	if req != nil {
@@ -161,6 +169,8 @@ func (own *Context) clear() {
 	own.releaseBodyCache()
 	own.bodyErr = nil
 	own.bodyRead = false
+	own.bodyLimited = false
+	own.internal = false
 	own.pooled = false
 }
 
@@ -199,6 +209,19 @@ func releaseContext(ctx *Context) {
 // GetStartTime 返回上下文创建时间。
 func (own *Context) GetStartTime() time.Time {
 	return own.startTime
+}
+
+// MarkInternal 把上下文标记为框架内部请求（例如缓存后台回源）。
+//
+// 日志、指标、追踪等可观测性中间件应跳过此类上下文，避免把内部
+// 回源计为真实流量，或在访问日志中凭空多出一条“请求”。
+func (own *Context) MarkInternal() {
+	own.internal = true
+}
+
+// IsInternal 返回上下文是否为框架内部请求。
+func (own *Context) IsInternal() bool {
+	return own.internal
 }
 
 // GetEngine 返回创建该上下文的引擎；独立上下文中可能为 nil。
@@ -608,6 +631,7 @@ func (own *Context) IsWebsocket() bool {
 // GetFormValue 返回表单字段值，同时覆盖 URL 查询参数与表单体。
 func (own *Context) GetFormValue(key string) string {
 	if own.Request.Form == nil {
+		own.limitRequestBody()
 		_ = own.Request.ParseForm()
 	}
 
@@ -617,17 +641,33 @@ func (own *Context) GetFormValue(key string) string {
 // GetPostFormValue 仅返回 x-www-form-urlencoded 请求体中的字段值。
 func (own *Context) GetPostFormValue(key string) string {
 	if own.Request.PostForm == nil {
+		own.limitRequestBody()
 		_ = own.Request.ParseForm()
 	}
 
 	return own.Request.PostForm.Get(key)
 }
 
-// GetMultipartFormValue 返回 multipart/form-data 请求体中的字段值。
-func (own *Context) GetMultipartFormValue(key string) string {
-	if own.Request.MultipartForm == nil {
-		_ = own.Request.ParseMultipartForm(own.getMultipartMemory())
+// ParseMultipartForm 解析 multipart/form-data 请求体。
+//
+// 解析前会先为请求体套上 MaxBodyBytes 上限，超限返回 http.MaxBytesError。
+// 需要区分 "字段不存在" 与 "请求体超限" 的调用方应使用本方法，
+// 而不是静默返回零值的 GetMultipartFormValue。
+func (own *Context) ParseMultipartForm() error {
+	if own.Request.MultipartForm != nil {
+		return nil
 	}
+
+	own.limitRequestBody()
+	return own.Request.ParseMultipartForm(own.getMultipartMemory())
+}
+
+// GetMultipartFormValue 返回 multipart/form-data 请求体中的字段值。
+//
+// 解析过程受引擎的 MaxBodyBytes 限制；超限时返回空字符串。需要区分
+// "字段不存在" 与 "请求体超限" 的调用方应改用 ParseMultipartForm 或 BindForm。
+func (own *Context) GetMultipartFormValue(key string) string {
+	_ = own.ParseMultipartForm()
 
 	if own.Request.MultipartForm == nil {
 		return ""
@@ -644,8 +684,8 @@ func (own *Context) GetMultipartFormValue(key string) string {
 //
 // 调用方负责关闭返回的 multipart.File。
 func (own *Context) GetFormFile(filename string) (multipart.File, *multipart.FileHeader, error) {
-	if own.Request.MultipartForm == nil {
-		_ = own.Request.ParseMultipartForm(own.getMultipartMemory())
+	if err := own.ParseMultipartForm(); err != nil {
+		return nil, nil, err
 	}
 
 	return own.Request.FormFile(filename)
@@ -658,6 +698,37 @@ func (own *Context) getMultipartMemory() int64 {
 	}
 
 	return _DEFAULT_MULTIPART_MEMORY
+}
+
+// getMaxBodyBytes 返回请求体允许的最大字节数；返回 0 表示不限制。
+func (own *Context) getMaxBodyBytes() int64 {
+	if own.engine == nil {
+		// NewContext 构造的独立上下文没有引擎配置，按框架默认值兜底，
+		// 避免第三方适配器完全失去请求体上限保护。
+		return _DEFAULT_MAX_BODY_BYTES
+	}
+
+	return own.engine.config.MaxBodyBytes
+}
+
+// limitRequestBody 为请求体套上 MaxBodyBytes 上限。
+//
+// 该方法幂等：重复调用只会包装一次。表单解析（ParseForm /
+// ParseMultipartForm）直接读取 Request.Body，因此必须在解析之前调用，
+// 否则 MaxBodyBytes 形同虚设。
+func (own *Context) limitRequestBody() {
+	if own.bodyLimited || own.Request == nil || own.Request.Body == nil {
+		return
+	}
+
+	own.bodyLimited = true
+
+	limit := own.getMaxBodyBytes()
+	if limit <= 0 {
+		return
+	}
+
+	own.Request.Body = http.MaxBytesReader(own.Response, own.Request.Body, limit)
 }
 
 // SaveUploadedFile 将上传文件保存到指定路径。
@@ -716,12 +787,9 @@ func (own *Context) ReadBody() ([]byte, error) {
 		return nil, nil
 	}
 
-	var reader io.Reader = own.Request.Body
-	if own.engine != nil && own.engine.config.MaxBodyBytes > 0 {
-		reader = http.MaxBytesReader(own.Response, own.Request.Body, own.engine.config.MaxBodyBytes)
-	}
+	own.limitRequestBody()
 
-	data, err := io.ReadAll(reader)
+	data, err := io.ReadAll(own.Request.Body)
 	own.bodyCache = data
 	own.bodyErr = err
 	return data, err
@@ -811,12 +879,16 @@ func (own *Context) BindForm(object any) error {
 		return err
 	}
 
+	// 必须在 ParseForm 之前套上限：x-www-form-urlencoded 的解析同样读取
+	// Request.Body，放到后面会让 MaxBodyBytes 对表单体失效。
+	own.limitRequestBody()
+
 	if err := own.Request.ParseForm(); err != nil {
 		return err
 	}
 
 	if strings.Contains(strings.ToLower(own.GetContentType()), "multipart/form-data") {
-		if err := own.Request.ParseMultipartForm(own.getMultipartMemory()); err != nil {
+		if err := own.ParseMultipartForm(); err != nil {
 			return err
 		}
 	}
@@ -1117,13 +1189,33 @@ func (own *Context) executeTemplate(tmpl *template.Template, templateName string
 
 // ResponseHTML 直接输出一段 HTML 字符串。
 //
-// Content-Type 固定为 text/html; charset=utf-8；内容不做任何转义，
-// 参数含用户输入时必须由调用方自行保证安全。
+// Content-Type 固定为 text/html; charset=utf-8。本方法**不做任何转义**：
+// 内容会被原样写入响应体，参数含用户输入时存在 XSS 风险，
+// 必须改用 ResponseHTMLTemplate（内联模板）或 ResponseTemplate（预加载模板）。
 func (own *Context) ResponseHTML(code int, html string) error {
 	own.SetResponseHeader(headers.CONTENT_TYPE, "text/html; charset=utf-8")
 	own.Response.WriteHeader(code)
 	_, err := own.Response.Write([]byte(html))
 	return err
+}
+
+// ResponseHTMLTemplate 用内联模板字符串渲染 HTML。
+//
+// 模板经 html/template 自动转义后输出，参数含用户输入时优先使用本方法。
+// 每次调用都会重新解析模板，高频场景请改用 Engine.LoadHTMLGlob 配合
+// ResponseTemplate。渲染失败时可能已经写入部分内容，调用方只能记录错误。
+func (own *Context) ResponseHTMLTemplate(source string, data any) error {
+	var funcs template.FuncMap
+	if own.engine != nil {
+		funcs = own.engine.getTemplateFuncs()
+	}
+
+	tmpl, err := template.New("inline").Funcs(funcs).Parse(source)
+	if err != nil {
+		return fmt.Errorf("leego: context: failed to parse inline template: %w", err)
+	}
+
+	return own.executeTemplate(tmpl, "", data)
 }
 
 // ResponseText 输出纯文本响应。

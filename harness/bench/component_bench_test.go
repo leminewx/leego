@@ -160,7 +160,7 @@ func BenchmarkDashboard(b *testing.B) {
 
 	board, err := dashboard.New(dashboard.WithProvider(func() collector.Report {
 		return engine.CollectReport()
-	}))
+	}), dashboard.WithoutAuthorizer())
 	if err != nil {
 		b.Fatalf("创建指标后台失败: %v", err)
 	}

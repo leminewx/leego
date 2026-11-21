@@ -97,6 +97,9 @@ type task struct {
 	job Job
 	// cancelled 标记任务已被取消。
 	cancelled bool
+	// running 标记周期任务的上一轮是否仍在执行。
+	// 周期短于任务耗时时，本轮直接跳过，避免同一任务重叠执行。
+	running bool
 }
 
 // taskHeap 是最小堆，按 next 升序、order 次升序排列。
@@ -143,6 +146,8 @@ type Stats struct {
 	Runs uint64
 	// Dropped 为因并发额度不足被丢弃的执行次数。
 	Dropped uint64
+	// Skipped 为因上一轮未结束而跳过的周期执行次数。
+	Skipped uint64
 	// Pending 为堆中待执行的任务数。
 	Pending int
 	// Started 标记调度器是否已启动。
@@ -177,6 +182,8 @@ type Scheduler struct {
 	runs atomic.Uint64
 	// dropped 为丢弃次数。
 	dropped atomic.Uint64
+	// skipped 为周期任务重叠而跳过的次数。
+	skipped atomic.Uint64
 	// started 标记是否已启动。
 	started bool
 	// stopped 标记是否已停止。
@@ -331,6 +338,7 @@ func (own *Scheduler) GetStats() Stats {
 
 	stats.Runs = own.runs.Load()
 	stats.Dropped = own.dropped.Load()
+	stats.Skipped = own.skipped.Load()
 	return stats
 }
 
@@ -388,7 +396,7 @@ func (own *Scheduler) run(ctx context.Context) {
 // fire 执行所有到期任务，并重新排入周期任务。
 func (own *Scheduler) fire(ctx context.Context, now time.Time) {
 	own.mu.Lock()
-	ready := make([]Job, 0, 4)
+	ready := make([]*task, 0, 4)
 	for len(own.tasks) > 0 {
 		item := own.tasks[0]
 		if item.next.After(now) {
@@ -400,9 +408,20 @@ func (own *Scheduler) fire(ctx context.Context, now time.Time) {
 			continue
 		}
 
-		ready = append(ready, item.job)
-
 		if item.interval > 0 {
+			if item.running {
+				// 上一轮尚未结束：跳过本轮，只推进下一次执行时间，
+				// 避免同一任务重叠执行导致数据竞争或重复处理。
+				own.skipped.Add(1)
+				item.next = item.next.Add(item.interval)
+				if !item.next.After(now) {
+					item.next = now.Add(item.interval)
+				}
+
+				heap.Push(&own.tasks, item)
+				continue
+			}
+
 			item.next = item.next.Add(item.interval)
 			if !item.next.After(now) {
 				// 避免长时间停顿后的补跑风暴：从当前时刻重新计时。
@@ -411,16 +430,18 @@ func (own *Scheduler) fire(ctx context.Context, now time.Time) {
 
 			heap.Push(&own.tasks, item)
 		}
+
+		ready = append(ready, item)
 	}
 	own.mu.Unlock()
 
-	for _, current := range ready {
-		own.dispatch(ctx, current)
+	for _, item := range ready {
+		own.dispatch(ctx, item)
 	}
 }
 
 // dispatch 在并发额度内异步执行任务。
-func (own *Scheduler) dispatch(ctx context.Context, current Job) {
+func (own *Scheduler) dispatch(ctx context.Context, item *task) {
 	select {
 	case own.slots <- struct{}{}:
 	default:
@@ -428,6 +449,11 @@ func (own *Scheduler) dispatch(ctx context.Context, current Job) {
 		own.dropped.Add(1)
 		return
 	}
+
+	// 先置位再启动协程，确保下一轮 fire 能看到“正在运行”。
+	own.mu.Lock()
+	item.running = true
+	own.mu.Unlock()
 
 	own.running.Add(1)
 	own.runs.Add(1)
@@ -437,18 +463,22 @@ func (own *Scheduler) dispatch(ctx context.Context, current Job) {
 		defer func() {
 			<-own.slots
 			own.running.Done()
+
+			own.mu.Lock()
+			item.running = false
+			own.mu.Unlock()
 		}()
 
 		// 业务任务 panic 不能传染到调度器：转为错误上报后归还额度，
 		// 否则会直接杀死进程，并让 Stop 永远等不到在途任务结束。
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				own.report(current, fmt.Errorf("job: task panicked: %v\n%s", recovered, debug.Stack()))
+				own.report(item.job, fmt.Errorf("job: task panicked: %v\n%s", recovered, debug.Stack()))
 			}
 		}()
 
-		if err := current.Run(ctx); err != nil {
-			own.report(current, err)
+		if err := item.job.Run(ctx); err != nil {
+			own.report(item.job, err)
 		}
 	}()
 }

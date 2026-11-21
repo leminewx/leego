@@ -238,6 +238,9 @@ func parseRules(tags string) ([]ruleSpec, bool, []ruleSpec, error) {
 		rules        []ruleSpec
 		elementRules []ruleSpec
 		dive         bool
+		// seenRule 标记是否已经出现过规则（含 dive）。
+		// omitempty 必须排在首位，否则会静默失效，因此在解析期直接报错。
+		seenRule bool
 	)
 
 	for _, token := range strings.Split(tags, ",") {
@@ -248,6 +251,7 @@ func parseRules(tags string) ([]ruleSpec, bool, []ruleSpec, error) {
 
 		if token == _RULE_DIVE {
 			dive = true
+			seenRule = true
 			continue
 		}
 
@@ -260,6 +264,13 @@ func parseRules(tags string) ([]ruleSpec, bool, []ruleSpec, error) {
 		if _, ok := lookupRule(name); !ok {
 			return nil, false, nil, fmt.Errorf("validate: unknown rule %q", name)
 		}
+
+		if name == _RULE_OMITEMPTY && seenRule {
+			// omitempty 只能作为首条规则；放在后面会让它静默不生效。
+			return nil, false, nil, fmt.Errorf("validate: %q must be the first rule in %q", name, tags)
+		}
+
+		seenRule = true
 
 		spec := ruleSpec{name: name, param: strings.TrimSpace(param)}
 		if dive {

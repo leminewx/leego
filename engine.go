@@ -949,6 +949,12 @@ func (own *Engine) logStartup(addr, scheme string) {
 		logging.LogInfo("%s", routes)
 	}
 
+	// 长连接提示：写超时到点会直接断开 SSE/WebSocket 连接，
+	// 而症状（连接使用一段时间后静默断开）很难让人联想到超时配置。
+	if own.config.WriteTimeout > 0 {
+		logging.LogInfo("Hint: WriteTimeout=%s will close long-lived responses; use leego.WithWriteTimeout(0) for SSE/WebSocket", own.config.WriteTimeout)
+	}
+
 	logging.LogInfo("Listening and serving %s on %s ...", strings.ToUpper(scheme), addr)
 }
 

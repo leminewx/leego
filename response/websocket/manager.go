@@ -54,11 +54,27 @@ var (
 	ErrManagerShuttingDown = errors.New("leego: websocket: manager is shutting down")
 )
 
+// MessageHandler 处理客户端发来的业务消息。
+//
+// 返回 true 表示消息已被业务处理，框架不再执行内置分发；
+// 返回 false 时按内置规则继续处理。除 PING 外，强烈建议业务
+// 通过该回调自行实现消息路由与权限校验，而不是依赖内置的
+// “客户端可触发全员广播/自报身份”语义。
+type MessageHandler func(client *Client, message Message) bool
+
+// messageHandlerHolder 让 atomic.Value 可以存放函数值。
+type messageHandlerHolder struct {
+	handler MessageHandler
+}
+
 /*
 Manager 管理全部 WebSocket 连接。
 
 Manager 是并发安全的，可被多个 HTTP 处理协程同时使用；
 创建后即可直接 Serve，无需额外的 Start。
+
+安全默认值：客户端消息触发的全员广播与自报身份默认关闭，
+需要时由业务显式开启，或用 SetMessageHandler 接管消息处理。
 */
 type Manager struct {
 	// clients 保存全部在线连接，键为客户端 ID。
@@ -75,6 +91,13 @@ type Manager struct {
 	closeOnce sync.Once
 	// isClosed 表示管理器是否已关闭。
 	isClosed atomic.Bool
+
+	// allowClientBroadcast 控制客户端能否通过消息触发全员广播。
+	allowClientBroadcast atomic.Bool
+	// allowClientIdentify 控制客户端能否自报身份。
+	allowClientIdentify atomic.Bool
+	// messageHandler 存放业务消息处理器（messageHandlerHolder）。
+	messageHandler atomic.Value
 }
 
 /*
@@ -98,6 +121,41 @@ func (own *Manager) SetPingInterval(interval time.Duration) {
 	}
 
 	own.pingInterval = interval
+}
+
+// SetAllowClientBroadcast 设置是否允许客户端通过消息触发全员广播。
+//
+// 默认关闭：任意建立连接的客户端都能向全部在线用户推送任意内容，
+// 这很容易被用于刷屏、钓鱼与放大攻击。需要该能力时应先在业务层
+// 完成鉴权，再显式开启。
+func (own *Manager) SetAllowClientBroadcast(allow bool) {
+	own.allowClientBroadcast.Store(allow)
+}
+
+// SetAllowClientIdentify 设置是否允许客户端自报 user_id 作为身份。
+//
+// 默认关闭：客户端自报的身份不可信，应由服务端根据握手凭证写入。
+// 确需使用时应配合业务鉴权，例如在 SetMessageHandler 中校验令牌。
+func (own *Manager) SetAllowClientIdentify(allow bool) {
+	own.allowClientIdentify.Store(allow)
+}
+
+// SetMessageHandler 注册业务消息处理器。
+//
+// 处理器返回 true 时框架不再执行内置分发；传 nil 表示注销。
+// 该方法可在运行期调用。
+func (own *Manager) SetMessageHandler(handler MessageHandler) {
+	own.messageHandler.Store(messageHandlerHolder{handler: handler})
+}
+
+// getMessageHandler 返回当前业务消息处理器。
+func (own *Manager) getMessageHandler() MessageHandler {
+	value := own.messageHandler.Load()
+	if value == nil {
+		return nil
+	}
+
+	return value.(messageHandlerHolder).handler
 }
 
 // GetPingInterval 返回心跳间隔。
@@ -240,11 +298,24 @@ func (own *Manager) handleMessage(client *Client, payload []byte) {
 		return
 	}
 
+	// 业务处理器优先；返回 true 表示已接管本次消息。
+	if handler := own.getMessageHandler(); handler != nil && handler(client, message) {
+		return
+	}
+
 	switch message.Type {
 	case MSG_TYPE_PING:
 		own.reply(client, NewPongMessage())
 
 	case MSG_TYPE_BROADCAST:
+		if !own.allowClientBroadcast.Load() {
+			own.reply(client, NewSimpleMessage("forbidden_message_type", map[string]any{
+				"message": "Client-triggered broadcast is disabled",
+			}))
+
+			return
+		}
+
 		if err := own.Broadcast(MSG_TYPE_BROADCAST, message.Data); err != nil {
 			log.Printf("leego: websocket: broadcast failed: %v", err)
 		}
@@ -262,6 +333,14 @@ func (own *Manager) handleMessage(client *Client, payload []byte) {
 		}
 
 	case MSG_TYPE_IDENTIFY:
+		if !own.allowClientIdentify.Load() {
+			own.reply(client, NewSimpleMessage("forbidden_message_type", map[string]any{
+				"message": "Client-provided identity is disabled",
+			}))
+
+			return
+		}
+
 		own.identifyClient(client, message.Data)
 
 	default:

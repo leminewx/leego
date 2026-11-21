@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -11,6 +12,36 @@ import (
 
 	"gitee.com/leminewx/leego"
 )
+
+// 访问日志单字段的长度上限，防御超长 URL 撑爆日志文件。
+const _LOG_FIELD_LIMIT = 2048
+
+// _SENSITIVE_QUERY_KEYS 列出查询串中需要掩码的敏感键（小写）。
+//
+// 键名按 URL 解码后归一化后再比较，避免 %74oken 之类的绕过；
+// 命中时只保留键名，值统一替换为 ***。
+var _SENSITIVE_QUERY_KEYS = map[string]struct{}{
+	"access_token":  {},
+	"apikey":        {},
+	"api_key":       {},
+	"auth":          {},
+	"authorization": {},
+	"client_secret": {},
+	"code":          {},
+	"credential":    {},
+	"id_token":      {},
+	"key":           {},
+	"password":      {},
+	"passwd":        {},
+	"pwd":           {},
+	"refresh_token": {},
+	"secret":        {},
+	"session":       {},
+	"sessionid":     {},
+	"sig":           {},
+	"signature":     {},
+	"token":         {},
+}
 
 // 颜色与样式常量
 const (
@@ -101,35 +132,135 @@ func (own *Logger) AdaptToMiddleware() leego.MiddlewareFunc {
 
 	return func(handle leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
+			request := ctx.Request
+			startTime := ctx.GetStartTime()
+
+			// 必须用 defer：handler panic 时访问日志同样是排查依据，
+			// 不能因为异常路径而丢弃。
+			defer func() {
+				// 框架内部回源（如缓存后台刷新）不计入访问日志。
+				if ctx.IsInternal() {
+					return
+				}
+
+				// 检查是否跳过当前 path
+				if config.shouldSkip(request.URL.Path) {
+					return
+				}
+
+				// 检查输出
+				out := config.Output
+				if out == nil {
+					out = os.Stdout
+				}
+
+				// 获取响应信息；panic 路径下尚未写响应时按 500 记录，
+				// 与引擎兜底行为保持一致。
+				status := ctx.GetStatusCode()
+				if status == 0 {
+					status = http.StatusInternalServerError
+				}
+				latency := time.Since(startTime)
+				path := sanitizeLogField(request.URL.Path)
+				if config.WithQuery && request.URL.RawQuery != "" {
+					path += "?" + sanitizeQuery(request.URL.RawQuery)
+				}
+
+				// 是否启用颜色：显式配置优先；未显式设置时按终端能力自动判定
+				withColor := config.WithColor || isColorAllowed(out, config.WithColor)
+
+				renderLog(out, withColor, status, latency, request.Method, path, sanitizeLogField(ctx.GetClientIP()))
+			}()
+
 			// 调用下一个处理器
 			handle(ctx)
-
-			// 检查是否跳过当前 path
-			request := ctx.Request
-			if config.shouldSkip(request.URL.Path) {
-				return
-			}
-
-			// 检查输出
-			out := config.Output
-			if out == nil {
-				out = os.Stdout
-			}
-
-			// 获取响应信息
-			status := ctx.GetStatusCode()
-			latency := time.Since(ctx.GetStartTime())
-			path := request.URL.Path
-			if config.WithQuery && request.URL.RawQuery != "" {
-				path += "?" + request.URL.RawQuery
-			}
-
-			// 是否启用颜色：显式配置优先；未显式设置时按终端能力自动判定
-			withColor := config.WithColor || isColorAllowed(out, config.WithColor)
-
-			renderLog(out, withColor, status, latency, request.Method, path, ctx.GetClientIP())
 		}
 	}
+}
+
+// sanitizeLogField 清理写入日志的单行字段。
+//
+// 处理内容：
+//   - 换行、回车、制表符统一替换为空格，防止伪造日志行；
+//   - 其余控制字符（含 ESC）直接剔除，防止 ANSI 序列注入终端；
+//   - 超长字段截断，防止超长 URL 撑爆日志文件。
+func sanitizeLogField(value string) string {
+	if value == "" {
+		return value
+	}
+
+	cleaned := strings.Map(func(char rune) rune {
+		switch char {
+		case '\n', '\r', '\t':
+			return ' '
+		}
+
+		if char < 0x20 || char == 0x7f {
+			return -1
+		}
+
+		return char
+	}, value)
+
+	if len(cleaned) > _LOG_FIELD_LIMIT {
+		return cleaned[:_LOG_FIELD_LIMIT] + "..."
+	}
+
+	return cleaned
+}
+
+// sanitizeQuery 清理查询串并对敏感键做掩码。
+//
+// 渲染日志时保留键与值的对应关系，但 token/password/secret 等键的值
+// 一律替换为 ***，避免凭证随访问日志落盘。
+func sanitizeQuery(rawQuery string) string {
+	if rawQuery == "" {
+		return ""
+	}
+
+	if len(rawQuery) > _LOG_FIELD_LIMIT {
+		rawQuery = rawQuery[:_LOG_FIELD_LIMIT]
+	}
+
+	parts := strings.Split(rawQuery, "&")
+	for index, part := range parts {
+		if part == "" {
+			continue
+		}
+
+		key := part
+		value := ""
+		hasValue := false
+		if position := strings.IndexByte(part, '='); position >= 0 {
+			key, value, hasValue = part[:position], part[position+1:], true
+		}
+
+		if isSensitiveQueryKey(key) {
+			if hasValue {
+				parts[index] = key + "=***"
+			}
+			continue
+		}
+
+		parts[index] = sanitizeLogField(key)
+		if hasValue {
+			parts[index] += "=" + sanitizeLogField(value)
+		}
+	}
+
+	return strings.Join(parts, "&")
+}
+
+// isSensitiveQueryKey 判断查询键是否属于敏感字段。
+func isSensitiveQueryKey(key string) bool {
+	decoded, err := url.QueryUnescape(key)
+	if err != nil {
+		decoded = key
+	}
+
+	_, exists := _SENSITIVE_QUERY_KEYS[strings.ToLower(strings.TrimSpace(decoded))]
+
+	return exists
 }
 
 // renderLog 按统一列布局渲染一行访问日志
@@ -253,7 +384,7 @@ func isColorAllowed(out io.Writer, explicit bool) bool {
 type LoggerConfig struct {
 	Output            io.Writer           // 输出接口，若未指定，则输出到 os.Stdout
 	WithColor         bool                // 是否携带颜色
-	WithQuery         bool                // 是否携带查询参数
+	WithQuery         bool                // 是否携带查询参数（敏感键的值会被掩码为 ***）
 	SkipWildcardPaths []string            // 跳过通配路径
 	SkipAbsolutePaths map[string]struct{} // 跳过绝对路径
 }

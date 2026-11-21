@@ -44,7 +44,9 @@ func (own *countingStore) Destroy(ctx context.Context, id string) error {
 // newSessionEngine 构造带会话中间件的引擎。
 func newSessionEngine(store Store, options ...Option) *leego.Engine {
 	engine := leego.NewEngine(leego.DisableStartupLog())
-	engine.UseMiddlewares(New(store, options...).AdaptToMiddleware())
+	// 默认注入测试密钥；调用方显式传入的选项排在后面，可以覆盖默认值。
+	settings := append([]Option{WithSecret([]byte(_TEST_SECRET))}, options...)
+	engine.UseMiddlewares(New(store, settings...).AdaptToMiddleware())
 	return engine
 }
 

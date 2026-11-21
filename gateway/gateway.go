@@ -20,6 +20,8 @@ var (
 	ErrNoUpstream = errors.New("gateway: at least one upstream is required")
 	// ErrInvalidUpstream 表示上游配置非法。
 	ErrInvalidUpstream = errors.New("gateway: invalid upstream")
+	// ErrUpstreamNotFound 表示要删除的上游不存在。
+	ErrUpstreamNotFound = errors.New("gateway: upstream not found")
 )
 
 // Upstream 描述一个上游服务。
@@ -46,12 +48,14 @@ type node struct {
 
 // Balancer 是并发安全的平滑加权轮询负载均衡器。
 type Balancer struct {
-	// mu 保护 nodes。
+	// mu 保护 nodes、tags 与 generation。
 	mu sync.Mutex
 	// nodes 为全部上游。
 	nodes []*node
 	// tags 记录出现过的灰度标签，便于快速判断命中。
 	tags map[string]struct{}
+	// generation 为上游变更代数，供反向代理判断是否需要重建缓存。
+	generation uint64
 }
 
 // NewBalancer 创建负载均衡器。
@@ -114,6 +118,105 @@ func (own *Balancer) CountUpstreams() int {
 	own.mu.Unlock()
 
 	return length
+}
+
+// GetGeneration 返回上游变更代数。
+//
+// 每次 Upsert / Remove 成功后自增；反向代理据此判断本地缓存的上游
+// 是否过期，无需在热路径上加额外的回调或订阅。
+func (own *Balancer) GetGeneration() uint64 {
+	own.mu.Lock()
+	generation := own.generation
+	own.mu.Unlock()
+
+	return generation
+}
+
+// Upsert 新增上游；已存在同一地址时更新权重与标签。
+//
+// 运行期可安全调用：只操作内部切片与标签表，不持有任何请求级状态。
+func (own *Balancer) Upsert(upstream Upstream) error {
+	if upstream.URL == nil || upstream.URL.Scheme == "" || upstream.URL.Host == "" || upstream.Weight <= 0 {
+		return ErrInvalidUpstream
+	}
+
+	target := *upstream.URL
+
+	own.mu.Lock()
+	defer own.mu.Unlock()
+
+	for _, item := range own.nodes {
+		if *item.url == target {
+			item.weight = upstream.Weight
+			item.tag = upstream.Tag
+			own.rebuildTagsLocked()
+			own.generation++
+			return nil
+		}
+	}
+
+	own.nodes = append(own.nodes, &node{
+		url:    &target,
+		weight: upstream.Weight,
+		tag:    upstream.Tag,
+	})
+	own.rebuildTagsLocked()
+	own.generation++
+
+	return nil
+}
+
+// Remove 删除指定地址的上游。
+//
+// 删除后会重建标签表，最后一个上游不允许删除，返回 ErrNoUpstream，
+// 保证代理在任何时刻都有可用的转发目标。
+func (own *Balancer) Remove(target *url.URL) error {
+	if target == nil || target.Scheme == "" || target.Host == "" {
+		return ErrInvalidUpstream
+	}
+
+	setting := *target
+
+	own.mu.Lock()
+	defer own.mu.Unlock()
+
+	index := -1
+	for position, item := range own.nodes {
+		if *item.url == setting {
+			index = position
+			break
+		}
+	}
+
+	if index < 0 {
+		return ErrUpstreamNotFound
+	}
+
+	if len(own.nodes) == 1 {
+		return ErrNoUpstream
+	}
+
+	own.nodes = append(own.nodes[:index], own.nodes[index+1:]...)
+	own.rebuildTagsLocked()
+	own.generation++
+
+	return nil
+}
+
+// rebuildTagsLocked 按当前上游重建标签表。
+//
+// 上游数量通常很小，全量重建比逐增逐删更不容易漏；
+// 删除最后一个同标签上游时，标签也会从表中消失，
+// 后续灰度请求自然回落到全量轮询。
+func (own *Balancer) rebuildTagsLocked() {
+	tags := make(map[string]struct{}, len(own.nodes))
+	for _, item := range own.nodes {
+		if item.tag != "" {
+			tags[item.tag] = struct{}{}
+		}
+	}
+
+	own.tags = tags
 }
 
 // nodesSnapshot 返回内部节点的浅拷贝。

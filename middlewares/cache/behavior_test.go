@@ -230,21 +230,23 @@ func TestCacheExpiresAfterTTL(t *testing.T) {
 }
 
 func TestCacheServesStaleAndRefreshes(t *testing.T) {
+	// 新鲜窗口留足余量：窗口过短时，轮询请求可能在刷新完成前就再次
+	// 进入陈旧期，导致合法地触发第二次刷新，断言会随机器负载抖动。
 	engine, count := newEngine(cache.Config{
-		TTL:   10 * time.Millisecond,
+		TTL:   100 * time.Millisecond,
 		Stale: 2 * time.Second,
 	})
 	client := testutil.NewClient(engine)
 
 	client.Get("/data").AssertHeader(t, "X-Cache", "MISS")
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 
 	stale := client.Get("/data")
 	stale.AssertHeader(t, "X-Cache", "STALE")
 	stale.AssertContains(t, "leego")
 
 	// 后台刷新完成后应重新变为 HIT，且处理器只多执行一次。
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for {
 		hit := client.Get("/data")
 		if hit.Header.Get("X-Cache") == "HIT" {

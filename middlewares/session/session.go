@@ -44,6 +44,13 @@ const (
 // ErrNilStore 表示创建中间件时未提供存储。
 var ErrNilStore = errors.New("session: store must not be nil")
 
+// ErrMissingSecret 表示未配置 Cookie 签名密钥。
+//
+// 未配置密钥时只能退化为进程内随机密钥，重启即失效且多实例无法共享，
+// 生产环境几乎必然是错误的。因此默认拒绝启动；本地开发与测试可显式
+// 使用 WithEphemeralSecret() 允许临时密钥。
+var ErrMissingSecret = errors.New("session: secret must be configured (use WithSecret, or opt in to an ephemeral secret with WithEphemeralSecret)")
+
 // ErrRandomSource 表示系统随机源不可用。
 //
 // 此时既不能生成会话 ID，也不能生成签名密钥；
@@ -81,9 +88,16 @@ type Options struct {
 	HTTPOnly bool
 	// SameSite 为 Cookie 的 SameSite 策略，零值使用 Lax。
 	SameSite http.SameSite
-	// Secret 为 Cookie 签名密钥；为空时自动生成随机密钥，
-	// 此时进程重启后已有 Cookie 全部失效。
+	// Secret 为 Cookie 签名密钥；生产环境必须配置。
 	Secret []byte
+	// AllowEphemeralSecret 为 true 时允许 Secret 为空，
+	// 此时自动生成随机密钥：进程重启后已有 Cookie 全部失效，
+	// 且多实例之间无法共享会话。仅建议用于本地开发与测试。
+	AllowEphemeralSecret bool
+	// FixedExpiration 为 true 时关闭滑动续期：Cookie 与存储的过期时间
+	// 只在创建时确定，不随请求活跃而延长。
+	// 默认启用滑动续期，即活跃会话在有效期过半时同时刷新 Cookie 与存储。
+	FixedExpiration bool
 }
 
 // NewDefaultOptions 返回推荐配置。
@@ -121,6 +135,10 @@ func (own Options) normalize() (Options, error) {
 	}
 
 	if len(own.Secret) == 0 {
+		if !own.AllowEphemeralSecret {
+			return own, ErrMissingSecret
+		}
+
 		secret := make([]byte, _SECRET_BYTES)
 		if _, err := rand.Read(secret); err != nil {
 			return own, fmt.Errorf("%w: %v", ErrRandomSource, err)
@@ -167,6 +185,22 @@ func WithDomain(domain string) Option {
 func WithSecure(secure bool) Option {
 	return func(options *Options) {
 		options.Secure = secure
+	}
+}
+
+// WithEphemeralSecret 允许未配置 Secret 时使用进程内随机密钥。
+//
+// 仅建议本地开发与测试使用；生产环境请显式传入 WithSecret。
+func WithEphemeralSecret() Option {
+	return func(options *Options) {
+		options.AllowEphemeralSecret = true
+	}
+}
+
+// WithFixedExpiration 设置是否关闭滑动续期。
+func WithFixedExpiration(fixed bool) Option {
+	return func(options *Options) {
+		options.FixedExpiration = fixed
 	}
 }
 
@@ -282,16 +316,25 @@ func (own *cookieWriter) Flush() {
 
 // load 读取并校验现有会话，失败时新建。
 func (own *Manager) load(ctx *leego.Context) *Session {
+	secure := own.isSecureRequest(ctx.Request)
+
 	cookie, err := ctx.Request.Cookie(own.options.Name)
 	if err == nil {
-		if id, ok := decodeCookie(own.options.Secret, cookie.Value); ok {
+		if id, issued, ok := decodeCookieWithIssue(own.options.Secret, cookie.Value); ok {
 			values, getErr := own.store.Get(context.WithoutCancel(ctx.Request.Context()), id)
 			if getErr == nil && values != nil {
+				if issued.IsZero() {
+					// 不含签发时间的旧格式 Cookie：下一次响应立即续期。
+					issued = time.Now().Add(-own.options.TTL)
+				}
+
 				return &Session{
-					id:      id,
-					values:  values,
-					store:   own.store,
-					options: own.options,
+					id:       id,
+					values:   values,
+					store:    own.store,
+					options:  own.options,
+					issuedAt: issued,
+					secure:   secure,
 				}
 			}
 		}
@@ -300,10 +343,23 @@ func (own *Manager) load(ctx *leego.Context) *Session {
 	id, err := newID()
 	if err != nil {
 		// 随机源不可用时退化为空会话：宁可不持久化，也不生成可预测的 ID。
-		return &Session{values: Values{}, store: own.store, options: own.options}
+		return &Session{values: Values{}, store: own.store, options: own.options, secure: secure}
 	}
 
-	return &Session{id: id, values: Values{}, store: own.store, options: own.options, isNew: true}
+	return &Session{id: id, values: Values{}, store: own.store, options: own.options, isNew: true, issuedAt: time.Now(), secure: secure}
+}
+
+// isSecureRequest 判断当前响应是否应下发 Secure Cookie。
+//
+// 显式配置优先；未显式配置时，只要请求走 TLS 就自动加 Secure，
+// 避免 HTTPS 站点误发不安全的 Cookie。TLS 终止于反向代理的场景
+// 仍需显式调用 WithSecure(true)。
+func (own *Manager) isSecureRequest(request *http.Request) bool {
+	if own.options.Secure {
+		return true
+	}
+
+	return request != nil && request.TLS != nil
 }
 
 // GetFromContext 从请求上下文取回会话。
@@ -346,6 +402,12 @@ type Session struct {
 	destroyed bool
 	// isNew 标记会话尚未写入存储。
 	isNew bool
+	// issuedAt 记录当前 Cookie 的签发时间，用于滑动续期。
+	issuedAt time.Time
+	// renewed 标记本次响应已因续期而下发 Cookie，需要同步刷新存储过期时间。
+	renewed bool
+	// secure 记录本次请求是否应下发 Secure Cookie。
+	secure bool
 	// lastCookie 记录本次响应中已写入的会话 ID，避免重复 Set-Cookie。
 	lastCookie string
 	// cookieCleared 标记本次响应已写入清除 Cookie。
@@ -470,6 +532,7 @@ func (own *Session) Regenerate(ctx context.Context) error {
 	own.id = id
 	own.isNew = true
 	own.modified = true
+	own.issuedAt = time.Now()
 	own.mu.Unlock()
 
 	if oldID == "" {
@@ -497,7 +560,7 @@ func (own *Session) persist(ctx *leego.Context, requestCtx context.Context) {
 		return
 	}
 
-	if !own.modified && !own.isNew {
+	if !own.modified && !own.isNew && !own.renewed {
 		own.mu.Unlock()
 		return
 	}
@@ -525,8 +588,9 @@ func (own *Session) persist(ctx *leego.Context, requestCtx context.Context) {
 
 // syncCookie 把会话状态同步到响应头。
 //
-// 只有“新建/轮换”的会话需要下发 Cookie；数据修改不改变 ID，
-// 沿用浏览器已有 Cookie 即可。销毁会话时写入过期 Cookie。
+// 下发时机：新建/轮换的会话；以及启用滑动续期时，有效期已过半的活跃会话。
+// 续期必须同时刷新 Cookie 与存储过期时间，否则会出现“Cookie 已续期、存储已过期”
+// 或“存储已续期、Cookie 已过期”的不一致。销毁会话时写入过期 Cookie。
 func (own *Session) syncCookie(resp response.Writer) {
 	if resp == nil {
 		return
@@ -541,31 +605,55 @@ func (own *Session) syncCookie(resp response.Writer) {
 
 		own.cookieCleared = true
 		own.mu.Unlock()
-		replaceCookie(resp, own.buildCookie("", -1))
+		replaceCookie(resp, own.buildCookie("", -1, time.Time{}))
 		return
 	}
 
 	id := own.id
-	if id == "" || !own.isNew || own.lastCookie == id {
+	if id == "" || own.lastCookie == id {
+		own.mu.Unlock()
+		return
+	}
+
+	now := time.Now()
+	if !own.isNew && !own.needsRenewLocked(now) {
 		own.mu.Unlock()
 		return
 	}
 
 	own.lastCookie = id
+	own.issuedAt = now
+	if !own.isNew {
+		own.renewed = true
+	}
+	maxAge := int(own.options.TTL / time.Second)
 	own.mu.Unlock()
 
-	replaceCookie(resp, own.buildCookie(id, int(own.options.TTL/time.Second)))
+	replaceCookie(resp, own.buildCookie(id, maxAge, now))
+}
+
+// needsRenewLocked 判断会话是否需要滑动续期；调用方必须持有 own.mu。
+func (own *Session) needsRenewLocked(now time.Time) bool {
+	if own.options.FixedExpiration {
+		return false
+	}
+
+	if own.issuedAt.IsZero() {
+		return true
+	}
+
+	return now.Sub(own.issuedAt) >= own.options.TTL/2
 }
 
 // buildCookie 构造会话 Cookie；id 为空时返回过期 Cookie。
-func (own *Session) buildCookie(id string, maxAge int) *http.Cookie {
+func (own *Session) buildCookie(id string, maxAge int, issued time.Time) *http.Cookie {
 	cookie := &http.Cookie{
 		Name:     own.options.Name,
 		Path:     own.options.Path,
 		Domain:   own.options.Domain,
 		MaxAge:   maxAge,
 		HttpOnly: own.options.HTTPOnly,
-		Secure:   own.options.Secure,
+		Secure:   own.options.Secure || own.secure,
 		SameSite: own.options.SameSite,
 	}
 
@@ -574,8 +662,8 @@ func (own *Session) buildCookie(id string, maxAge int) *http.Cookie {
 		return cookie
 	}
 
-	cookie.Value = encodeCookie(own.options.Secret, id)
-	cookie.Expires = time.Now().Add(own.options.TTL)
+	cookie.Value = encodeCookieAt(own.options.Secret, id, issued)
+	cookie.Expires = issued.Add(own.options.TTL)
 	return cookie
 }
 

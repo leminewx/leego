@@ -184,6 +184,43 @@ func TestDropsWhenWorkersBusy(t *testing.T) {
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
 
+	blocking := JobFunc(func(context.Context) error {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+
+		<-release
+		return nil
+	})
+
+	// 两个一次性任务同时到期：并发额度只有 1，后一个必须被丢弃。
+	scheduler.ScheduleAfter(0, blocking)
+	scheduler.ScheduleAfter(0, blocking)
+
+	scheduler.Start(context.Background())
+	waitEvent(t, started, 2*time.Second)
+
+	if dropped := scheduler.GetStats().Dropped; dropped < 1 {
+		t.Fatalf("丢弃次数 = %d, want >= 1", dropped)
+	}
+
+	close(release)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := scheduler.Stop(ctx); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+// TestPeriodicSkipsWhileRunning 验证周期任务上一轮未结束时跳过本轮。
+func TestPeriodicSkipsWhileRunning(t *testing.T) {
+	scheduler := NewScheduler(WithWorkers(2))
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+
 	scheduler.ScheduleEvery(5*time.Millisecond, JobFunc(func(context.Context) error {
 		select {
 		case started <- struct{}{}:
@@ -197,17 +234,17 @@ func TestDropsWhenWorkersBusy(t *testing.T) {
 	scheduler.Start(context.Background())
 	waitEvent(t, started, 2*time.Second)
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if scheduler.GetStats().Dropped >= 2 {
+		if scheduler.GetStats().Skipped >= 1 {
 			break
 		}
 
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	if dropped := scheduler.GetStats().Dropped; dropped < 2 {
-		t.Fatalf("丢弃次数 = %d, want >= 2", dropped)
+	if skipped := scheduler.GetStats().Skipped; skipped < 1 {
+		t.Fatalf("跳过次数 = %d, want >= 1", skipped)
 	}
 
 	close(release)

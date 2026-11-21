@@ -5,6 +5,83 @@
 
 ---
 
+## v1.0.0.0 — 正式首发
+
+> 发布日期：2026-11-21
+> 要求：Go 1.27.4+
+
+本版本是 leego 的首个正式版本。在 v0.20.0.0 的基础上完成一轮安全、稳定性与
+易用性审计，共落地 16 项修复，其中 7 项属于**行为收紧**：默认更安全，
+需要显式放行才能恢复旧行为。核心路由、上下文与中间件 API 保持兼容。
+
+### 一、安全（行为收紧）
+
+1. **请求体上限覆盖表单解析**：`GetFormValue` / `GetPostFormValue` /
+   `GetMultipartFormValue` / `GetFormFile` / `BindForm` 解析前统一套用
+   `MaxBodyBytes`（`http.MaxBytesReader`），不再能通过 urlencoded 或 multipart
+   绕过上限；新增 `ParseMultipartForm` 显式返回解析错误（如 `http.MaxBytesError`），
+   `GetFormFile` 也不再忽略 `ParseMultipartForm` 的错误。
+2. **访问日志加固**：改为 `defer` 记录，panic 路径不再丢日志（未写状态码记 500）；
+   路径与客户端 IP 先清洗换行、回车、制表与 ESC 等控制字符，杜绝日志注入与
+   终端转义注入；`WithQuery` 开启时对 20 个敏感查询键统一掩码为 `***`。
+3. **Session 安全默认值**：`Secret` 改为必填，缺失时返回 `ErrMissingSecret`；
+   需要进程内临时密钥必须显式 `WithEphemeralSecret()`；TLS 请求自动为 Cookie
+   设置 `Secure`。
+4. **Dashboard 默认拒绝**：未配置 `Authorizer` 时所有请求返回 401；确需开放
+   （如本地调试）时显式传入 `dashboard.WithoutAuthorizer()`。
+5. **WebSocket 权限收回**：客户端发起的 `BROADCAST` / `IDENTIFY` 默认拒绝并回
+   `forbidden_message_type`；需要时显式调用 `SetAllowClientBroadcast(true)` /
+   `SetAllowClientIdentify(true)`，或用 `SetMessageHandler` 接管全部业务消息。
+6. **上传会话回收**：新增 `LocalStorage.Sweep` 与 `StartSweeper`，清理超时会话、
+   孤儿分片目录与合并临时文件；秒传索引条目超过上限时清理失效记录并重写
+   `index.jsonl`，内存占用有界。
+7. **链路数据脱敏**：`http.target` 导出前对敏感查询参数掩码；查询串无法解析时
+   直接丢弃，宁可少采集也不泄露凭据。
+
+### 二、会话过期语义统一
+
+Cookie 载荷改为 `id|签发时间` 加签名，过期时间与存储 TTL 严格对齐：
+
+| 行为 | 说明 |
+| --- | --- |
+| 滑动续期 | 签发超过 `TTL/2` 时同时续期 Cookie 与存储，避免“Cookie 活着、会话已过期” |
+| 固定过期 | `WithFixedExpiration(true)` 后不再续期，Cookie 过期即失效 |
+| 平滑升级 | 旧格式 Cookie（无时间戳）首次访问时立即续期，不需清理历史会话 |
+
+### 三、稳定性与可观测性
+
+- **缓存后台刷新不再污染指标**：内部回源使用 `Context.MarkInternal()` 标记，
+  logger / monitor / trace 均跳过，不再虚增请求数与伪造访问日志；
+- **job 周期任务单飞**：上一轮未结束时跳过本轮并计入 `Stats.Skipped`，
+  周期短于任务耗时也不会重叠执行；
+- **长连接提示**：启动日志在 `WriteTimeout > 0` 时提示 SSE / WebSocket 会被切断；
+- **openapi 启动期校验**：新增 `NewHandlerWithError`，`RegisterOpenAPI` 在注册期
+  返回序列化错误，不再等到首个请求才 500；
+- **网关上游可热更新**：新增 `Balancer.Upsert` / `Remove` / `GetGeneration`，
+  反向代理按代数失效缓存，新增上游下一个请求即生效，删除上游会重建标签表并丢弃
+  对应 ReverseProxy；最后一个上游禁止删除（返回 `ErrNoUpstream`）。
+
+### 四、易用性
+
+- `validate`：`omitempty` 必须是标签中的首条规则，否则解析期直接报错，
+  避免规则静默失效；
+- `Context.ResponseHTMLTemplate(source, data)`：内联模板渲染并自动转义，
+  含用户输入的场景不再需要手写 `html/template`；`ResponseHTML` 的文档明确
+  标注“不转义”；
+- 版本号统一为 `v1.0.0.0`，`ShowLogo` 输出的版本与发布日期同发布说明一致。
+
+### 五、升级检查清单
+
+1. `session.New` 补 `WithSecret`（或 `WithEphemeralSecret`）；需要旧固定过期语义时
+   补 `WithFixedExpiration(true)`；
+2. `RegisterDashboard` 补 `WithAuthorizer`，确需开放时显式 `WithoutAuthorizer()`；
+3. WebSocket 若依赖客户端广播或自报身份，显式开启开关或改用 `SetMessageHandler`；
+4. 生产环境为 `upload` 增加 `StartSweeper`（或自行定时调用 `Sweep`）；
+5. 把 `validate` 标签中的 `omitempty` 移到首位；
+6. `gofmt -l .`、`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全部通过。
+
+---
+
 ## v0.20.0.0 — 中间件归位
 
 > 发布日期：2026-11-20

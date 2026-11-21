@@ -11,6 +11,59 @@ import (
 	"gitee.com/leminewx/leego"
 )
 
+// TestProxySeesRuntimeUpstreamChanges 验证运行期增删上游无需重建代理。
+func TestProxySeesRuntimeUpstreamChanges(t *testing.T) {
+	newUpstream := func(name string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, _ *http.Request) {
+			_, _ = resp.Write([]byte(name))
+		}))
+	}
+
+	first := newUpstream("first")
+	defer first.Close()
+	second := newUpstream("second")
+	defer second.Close()
+
+	firstURL, _ := url.Parse(first.URL)
+	secondURL, _ := url.Parse(second.URL)
+
+	balancer, err := NewBalancer(Upstream{URL: firstURL, Weight: 1})
+	if err != nil {
+		t.Fatalf("NewBalancer() error = %v", err)
+	}
+
+	engine := newProxyEngine(balancer)
+
+	if body := perform(engine, http.MethodGet, "/api/ping", nil, nil).Body.String(); body != "first" {
+		t.Fatalf("初始上游 = %q, want first", body)
+	}
+
+	// 新增上游后，代理应在下个请求就感知到并参与轮询。
+	if err = balancer.Upsert(Upstream{URL: secondURL, Weight: 1}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	seen := make(map[string]int, 2)
+	for index := 0; index < 4; index++ {
+		seen[perform(engine, http.MethodGet, "/api/ping", nil, nil).Body.String()]++
+	}
+
+	if seen["first"] != 2 || seen["second"] != 2 {
+		t.Fatalf("新增后的流量分布 = %v, want 2/2", seen)
+	}
+
+	// 删除上游后，代理不应再把流量转发到它。
+	if err = balancer.Remove(firstURL); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+
+	for index := 0; index < 3; index++ {
+		if body := perform(engine, http.MethodGet, "/api/ping", nil, nil).Body.String(); body != "second" {
+			t.Fatalf("删除后的上游 = %q, want second", body)
+		}
+	}
+}
+
 // TestProxyOptionsNormalize 验证零值与负数配置回退到安全值。
 func TestProxyOptionsNormalize(t *testing.T) {
 	options := Options{Timeout: -time.Second}.normalize()

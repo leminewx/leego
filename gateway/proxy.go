@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gitee.com/leminewx/leego"
@@ -124,11 +125,15 @@ type proxy struct {
 	balancer *Balancer
 	// options 为规范化后的配置。
 	options Options
+	// mu 保护 proxies 与 generation。
+	mu sync.Mutex
 	// proxies 按上游地址指针缓存 ReverseProxy，复用底层连接池。
 	//
 	// 以 *url.URL 指针而不是 String() 作键：节点地址在均衡器生命周期内不变，
 	// 既省掉每个请求的字符串拼接，也避免了聚合分配。
 	proxies map[*url.URL]*httputil.ReverseProxy
+	// generation 为构建 proxies 时的上游代数，与均衡器不一致时重建。
+	generation uint64
 }
 
 // NewProxy 创建反向代理处理器。
@@ -154,9 +159,7 @@ func NewProxy(balancer *Balancer, options ...Option) leego.HandleFunc {
 		proxies:  make(map[*url.URL]*httputil.ReverseProxy, balancer.CountUpstreams()),
 	}
 
-	for _, item := range balancer.nodesSnapshot() {
-		own.proxies[item.url] = own.newReverseProxy(item.url)
-	}
+	own.syncProxiesLocked()
 
 	return own.serve
 }
@@ -187,6 +190,50 @@ func (own *proxy) newReverseProxy(target *url.URL) *httputil.ReverseProxy {
 	}
 }
 
+// getReverseProxy 返回上游对应的 ReverseProxy。
+//
+// 上游可在运行期增删：均衡器代数变化时重建缓存，
+// 复用仍然有效的 ReverseProxy（连同底层连接池），只创建新增的、
+// 丢弃已删除的，避免旧连接泄漏。
+func (own *proxy) getReverseProxy(target *url.URL) *httputil.ReverseProxy {
+	own.mu.Lock()
+	defer own.mu.Unlock()
+
+	if own.proxies == nil {
+		own.proxies = make(map[*url.URL]*httputil.ReverseProxy, own.balancer.CountUpstreams()+1)
+	}
+
+	if current, ok := own.proxies[target]; ok {
+		return current
+	}
+
+	own.syncProxiesLocked()
+
+	return own.proxies[target]
+}
+
+// syncProxiesLocked 根据均衡器当前上游重建缓存。调用方必须已持有锁。
+func (own *proxy) syncProxiesLocked() {
+	generation := own.balancer.GetGeneration()
+	if generation == own.generation && len(own.proxies) > 0 {
+		return
+	}
+
+	nodes := own.balancer.nodesSnapshot()
+	proxies := make(map[*url.URL]*httputil.ReverseProxy, len(nodes))
+	for _, item := range nodes {
+		if current, ok := own.proxies[item.url]; ok {
+			proxies[item.url] = current
+			continue
+		}
+
+		proxies[item.url] = own.newReverseProxy(item.url)
+	}
+
+	own.proxies = proxies
+	own.generation = generation
+}
+
 // serve 选择上游并转发请求。
 func (own *proxy) serve(ctx *leego.Context) {
 	target := own.selectUpstream(ctx)
@@ -195,7 +242,7 @@ func (own *proxy) serve(ctx *leego.Context) {
 		return
 	}
 
-	current := own.proxies[target]
+	current := own.getReverseProxy(target)
 	if current == nil {
 		ctx.ResponseError(http.StatusServiceUnavailable, "no upstream available")
 		return

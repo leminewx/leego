@@ -18,30 +18,41 @@ const _UI_PAGE = "assets/index.html"
 // spec 为 nil 时输出只含版本号的最小文档，便于在未接线时快速排查。
 // 文档在创建处理器时一次性序列化：运行期只读，可直接复用字节，
 // 避免每个请求都重新编码整份文档。
+//
+// 序列化失败不会在创建期暴露；启动阶段应优先使用 NewHandlerWithError。
 func NewHandler(spec *Spec) http.Handler {
+	handler, err := NewHandlerWithError(spec)
+	if err != nil {
+		return http.HandlerFunc(func(resp http.ResponseWriter, _ *http.Request) {
+			http.Error(resp, "openapi: failed to marshal document", http.StatusInternalServerError)
+		})
+	}
+
+	return handler
+}
+
+// NewHandlerWithError 创建 openapi.json 处理器，并在创建期返回序列化错误。
+//
+// 文档序列化失败属于配置错误，应在启动阶段直接失败，
+// 而不是等第一个请求到达时才返回 500。
+func NewHandlerWithError(spec *Spec) (http.Handler, error) {
 	payload := []byte("{\"openapi\":\"" + _OPENAPI_VERSION + "\"}")
-	var marshalErr error
 
 	if spec != nil {
 		data, err := spec.MarshalJSON()
 		if err != nil {
-			marshalErr = err
-		} else {
-			payload = data
+			return nil, err
 		}
+
+		payload = data
 	}
 
 	return http.HandlerFunc(func(resp http.ResponseWriter, _ *http.Request) {
-		if marshalErr != nil {
-			http.Error(resp, "openapi: failed to marshal document", http.StatusInternalServerError)
-			return
-		}
-
 		resp.Header().Set("Content-Type", "application/json; charset=utf-8")
 		resp.Header().Set("Cache-Control", "no-store")
 		resp.WriteHeader(http.StatusOK)
 		_, _ = resp.Write(payload)
-	})
+	}), nil
 }
 
 // NewUIHandler 创建文档浏览页面处理器。

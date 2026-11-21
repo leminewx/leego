@@ -190,8 +190,9 @@ Referrer-Policy: no-referrer
 Cache-Control: no-store
 ```
 
-`Authorizer` 返回 `false` 时统一响应 `401`。默认不鉴权，**生产环境必须配置**，
-或把后台挂到内网/独立端口。
+`Authorizer` 返回 `false` 时统一响应 `401`。未配置 `Authorizer` 时默认拒绝所有请求；
+确需开放（如本地调试）时显式传入 `dashboard.WithoutAuthorizer()`，
+生产环境必须接真鉴权，或把后台挂到内网/独立端口。
 
 ---
 

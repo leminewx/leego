@@ -554,6 +554,8 @@ func (own *Service) registerPlatformRoutes() error {
 
 	if err := own.engine.RegisterDashboard(
 		"/dashboard",
+		// harness 仅监听本地回环，显式关闭鉴权以便直接查看指标。
+		dashboard.WithoutAuthorizer(),
 		dashboard.WithTitle("leego harness"),
 		dashboard.WithRefreshInterval(2*time.Second),
 	); err != nil {

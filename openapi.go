@@ -1,6 +1,7 @@
 package leego
 
 import (
+	"fmt"
 	"strings"
 
 	"gitee.com/leminewx/leego/openapi"
@@ -58,7 +59,11 @@ func (own *Engine) RegisterOpenAPI(prefix string, options ...openapi.Option) err
 	source := &routeAdapter{routes: own.GetRoutes()}
 	spec := openapi.NewSpec(source, options...)
 
-	document := openapi.NewHandler(spec)
+	document, err := openapi.NewHandlerWithError(spec)
+	if err != nil {
+		return fmt.Errorf("leego: build openapi document: %w", err)
+	}
+
 	own.GET(prefix+_OPENAPI_JSON_PATH, func(ctx *Context) {
 		document.ServeHTTP(ctx.Response, ctx.Request)
 	}, "openapi")

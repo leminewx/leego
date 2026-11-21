@@ -883,6 +883,7 @@ func TestHandleMessageAnswersPing(t *testing.T) {
 func TestHandleMessageBroadcasts(t *testing.T) {
 	manager := NewManager(nil)
 	defer manager.Close()
+	manager.SetAllowClientBroadcast(true)
 
 	client := NewClient("client-1", "", nil)
 	manager.clients.Store(client.Id, client)
@@ -891,6 +892,34 @@ func TestHandleMessageBroadcasts(t *testing.T) {
 	message := readQueuedMessage(t, client)
 	if message.Type != MSG_TYPE_BROADCAST || message.Data != "hello" {
 		t.Fatalf("消息 = %+v", message)
+	}
+}
+
+// TestHandleMessageBroadcastDisabledByDefault 验证默认禁止客户端触发全员广播。
+func TestHandleMessageBroadcastDisabledByDefault(t *testing.T) {
+	manager := NewManager(nil)
+	defer manager.Close()
+
+	client := NewClient("client-1", "", nil)
+	manager.clients.Store(client.Id, client)
+	manager.handleMessage(client, []byte(`{"type":"broadcast","data":"hello"}`))
+
+	message := readQueuedMessage(t, client)
+	if message.Type != MessageType("forbidden_message_type") {
+		t.Fatalf("消息类型 = %q, want forbidden_message_type", message.Type)
+	}
+}
+
+// TestHandleMessageIdentifyDisabledByDefault 验证默认禁止客户端自报身份。
+func TestHandleMessageIdentifyDisabledByDefault(t *testing.T) {
+	manager := NewManager(nil)
+	defer manager.Close()
+
+	client := NewClient("client-1", "", nil)
+	manager.handleMessage(client, []byte(`{"type":"identify","data":"user-42"}`))
+
+	if got := client.GetUserId(); got != "" {
+		t.Fatalf("UserId = %q, want 空", got)
 	}
 }
 
@@ -951,6 +980,7 @@ func TestHandleMessagePrivateIgnoresMissingRecipient(t *testing.T) {
 func TestHandleMessageIdentifyWithString(t *testing.T) {
 	manager := NewManager(nil)
 	defer manager.Close()
+	manager.SetAllowClientIdentify(true)
 
 	client := NewClient("client-1", "", nil)
 	manager.handleMessage(client, []byte(`{"type":"identify","data":"user-42"}`))
@@ -978,6 +1008,7 @@ func TestHandleMessageIdentifyWithString(t *testing.T) {
 func TestHandleMessageIdentifyWithMap(t *testing.T) {
 	manager := NewManager(nil)
 	defer manager.Close()
+	manager.SetAllowClientIdentify(true)
 
 	client := NewClient("client-1", "", nil)
 	manager.handleMessage(client, []byte(`{"type":"identify","data":{"user_id":"user-42","name":"alice"}}`))
@@ -1005,6 +1036,7 @@ func TestHandleMessageIdentifyWithMap(t *testing.T) {
 func TestHandleMessageIdentifyRejectsMissingId(t *testing.T) {
 	manager := NewManager(nil)
 	defer manager.Close()
+	manager.SetAllowClientIdentify(true)
 
 	client := NewClient("client-1", "", nil)
 	manager.handleMessage(client, []byte(`{"type":"identify","data":{"name":"alice"}}`))
@@ -1027,6 +1059,7 @@ func TestHandleMessageIdentifyRejectsMissingId(t *testing.T) {
 func TestHandleMessageIdentifyIgnoresUnknownDataType(t *testing.T) {
 	manager := NewManager(nil)
 	defer manager.Close()
+	manager.SetAllowClientIdentify(true)
 
 	client := NewClient("client-1", "", nil)
 	manager.handleMessage(client, []byte(`{"type":"identify","data":42}`))

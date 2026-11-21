@@ -60,8 +60,17 @@ type Provider func() collector.Report
 // Authorizer 定义后台访问鉴权函数。
 //
 // 返回 false 时后台响应 401；返回 true 时继续处理。
-// 传 nil 表示不鉴权（仅建议在内网或本地调试时使用）。
+// 未配置（nil）时默认拒绝所有请求，避免误将指标后台暴露到公网；
+// 确实需要公开访问时，请显式使用 WithoutAuthorizer()。
 type Authorizer func(req *http.Request) bool
+
+// AllowAll 是一个无条件放行的 Authorizer。
+//
+// 仅用于内网、本地调试或已由前置网关完成鉴权的场景；
+// 使用它意味着指标后台对任何可达客户端开放。
+func AllowAll(*http.Request) bool {
+	return true
+}
 
 // Options 定义指标后台的可配置项。
 type Options struct {
@@ -75,7 +84,7 @@ type Options struct {
 	EnableExport bool
 	// Provider 为指标数据提供函数；为 nil 时返回空报告。
 	Provider Provider
-	// Authorizer 为访问鉴权函数；为 nil 时不鉴权。
+	// Authorizer 为访问鉴权函数；为 nil 时默认拒绝所有请求。
 	Authorizer Authorizer
 }
 
@@ -132,6 +141,15 @@ func WithProvider(provider Provider) Option {
 func WithAuthorizer(authorizer Authorizer) Option {
 	return func(options *Options) {
 		options.Authorizer = authorizer
+	}
+}
+
+// WithoutAuthorizer 显式关闭鉴权，允许任何可达客户端访问后台。
+//
+// 默认（未配置 Authorizer）是拒绝访问；只有明确调用本选项才开放。
+func WithoutAuthorizer() Option {
+	return func(options *Options) {
+		options.Authorizer = AllowAll
 	}
 }
 
@@ -212,7 +230,13 @@ func (own *Dashboard) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if own.options.Authorizer != nil && !own.options.Authorizer(req) {
+	if own.options.Authorizer == nil {
+		// 默认拒绝：未配置鉴权时不暴露任何指标数据。
+		http.Error(resp, "dashboard: authorizer is required; use dashboard.WithoutAuthorizer() to expose metrics intentionally", http.StatusUnauthorized)
+		return
+	}
+
+	if !own.options.Authorizer(req) {
 		http.Error(resp, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		return
 	}

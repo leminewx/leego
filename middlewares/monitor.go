@@ -34,6 +34,12 @@ func (own *Monitor) AdaptToMiddleware() leego.MiddlewareFunc {
 
 	return func(next leego.HandleFunc) leego.HandleFunc {
 		return func(ctx *leego.Context) {
+			// 框架内部回源不计入指标，避免一次真实请求被重复计数。
+			if ctx.IsInternal() {
+				next(ctx)
+				return
+			}
+
 			monitor.Increase()
 			start := time.Now()
 

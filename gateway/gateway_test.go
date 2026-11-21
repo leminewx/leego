@@ -78,6 +78,69 @@ func TestNewBalancerValidation(t *testing.T) {
 	}
 }
 
+// TestBalancerUpsertAndRemove 验证运行期增删上游与标签表维护。
+func TestBalancerUpsertAndRemove(t *testing.T) {
+	first := mustParseURL(t, "http://one.example")
+	second := mustParseURL(t, "http://two.example:8080")
+
+	balancer, err := NewBalancer(Upstream{URL: first, Weight: 1})
+	if err != nil {
+		t.Fatalf("NewBalancer() error = %v", err)
+	}
+
+	// 同一地址再次 Upsert 只更新权重与标签，不新增节点。
+	if err = balancer.Upsert(Upstream{URL: first, Weight: 3}); err != nil {
+		t.Fatalf("Upsert(已存在) error = %v", err)
+	}
+
+	if err = balancer.Upsert(Upstream{URL: second, Weight: 1, Tag: "v2"}); err != nil {
+		t.Fatalf("Upsert(新增) error = %v", err)
+	}
+
+	if count := balancer.CountUpstreams(); count != 2 {
+		t.Fatalf("上游数量 = %d, want 2", count)
+	}
+
+	if generation := balancer.GetGeneration(); generation != 2 {
+		t.Fatalf("变更代数 = %d, want 2", generation)
+	}
+
+	if host := balancer.PickNextFor("v2").Host; host != second.Host {
+		t.Fatalf("灰度命中 = %q, want %q", host, second.Host)
+	}
+
+	// 非法参数与不存在的上游都应返回明确错误。
+	if err = balancer.Upsert(Upstream{URL: second, Weight: 0}); !errors.Is(err, ErrInvalidUpstream) {
+		t.Fatalf("零权重 Upsert 错误 = %v, want ErrInvalidUpstream", err)
+	}
+
+	if err = balancer.Remove(nil); !errors.Is(err, ErrInvalidUpstream) {
+		t.Fatalf("nil Remove 错误 = %v, want ErrInvalidUpstream", err)
+	}
+
+	if err = balancer.Remove(mustParseURL(t, "http://missing.example")); !errors.Is(err, ErrUpstreamNotFound) {
+		t.Fatalf("未知上游 Remove 错误 = %v, want ErrUpstreamNotFound", err)
+	}
+
+	// 删除唯一同标签上游后，标签表同步清理，灰度请求回落到全量。
+	if err = balancer.Remove(second); err != nil {
+		t.Fatalf("Remove(灰度) error = %v", err)
+	}
+
+	if host := balancer.PickNextFor("v2").Host; host != first.Host {
+		t.Fatalf("标签回落 = %q, want %q", host, first.Host)
+	}
+
+	// 最后一个上游不允许删除，避免代理进入无目标状态。
+	if err = balancer.Remove(first); !errors.Is(err, ErrNoUpstream) {
+		t.Fatalf("删除最后一个上游错误 = %v, want ErrNoUpstream", err)
+	}
+
+	if count := balancer.CountUpstreams(); count != 1 {
+		t.Fatalf("拒绝删除后上游数量 = %d, want 1", count)
+	}
+}
+
 func TestBalancerWeightedDistribution(t *testing.T) {
 	balancer, err := NewBalancer(
 		Upstream{URL: mustParseURL(t, "http://a.example"), Weight: 3},

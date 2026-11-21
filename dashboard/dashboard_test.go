@@ -70,7 +70,7 @@ func createTestReport() collector.Report {
 func createTestDashboard(t *testing.T, options ...Option) *Dashboard {
 	t.Helper()
 
-	options = append([]Option{WithProvider(createTestReport)}, options...)
+	options = append([]Option{WithProvider(createTestReport), WithoutAuthorizer()}, options...)
 	instance, err := New(options...)
 	if err != nil {
 		t.Fatalf("创建后台失败: %v", err)
@@ -534,7 +534,8 @@ func TestWriteCSVDisabled(t *testing.T) {
 
 // TestWriteReportWithoutProvider 验证未配置 Provider 时返回空报告。
 func TestWriteReportWithoutProvider(t *testing.T) {
-	instance, err := New()
+	// 鉴权默认拒绝，这里显式放行，只验证空报告的内容。
+	instance, err := New(WithoutAuthorizer())
 	if err != nil {
 		t.Fatalf("创建后台失败: %v", err)
 	}

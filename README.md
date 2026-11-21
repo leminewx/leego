@@ -7,7 +7,7 @@ Leego 是一个构建在 Go 标准库 `net/http` 之上的轻量级 Web 框架�
 参数绑定、指标采集、内置指标分析后台、SSE / WebSocket、JWT、限流、熔断
 与压测工具等能力，并提供零第三方依赖的工程化拓展包与开发者体验服务。
 
-> 版本：`v0.17.0.0`（要求 Go 1.27.4+）
+> 版本：`v1.0.0.0`（正式首发，要求 Go 1.27.4+）
 
 ---
 
@@ -305,7 +305,8 @@ for _, route := range engine.GetRoutes() {
 ctx.GetQueryValue("id")           // 仅查询串：?id=xxx
 ctx.GetFormValue("name")          // 查询串 + form-urlencoded
 ctx.GetPostFormValue("name")      // 仅请求体中的 form-urlencoded
-ctx.GetMultipartFormValue("name") // multipart 表单字段
+ctx.GetMultipartFormValue("name") // multipart 表单字段（解析失败返回空串）
+ctx.ParseMultipartForm()          // multipart 解析错误显式返回（如请求体超限）
 ctx.GetPathValue("id")            // 路由参数
 ctx.GetPathValues()               // 全部路由参数
 ```
@@ -381,7 +382,8 @@ value, err := ctx.GetCookieValue("sid")
 | `ResponseJSON(code, data)` | `application/json` |
 | `ResponseXML(code, data)` | `application/xml` |
 | `ResponseText(code, text)` | `text/plain` |
-| `ResponseHTML(code, html)` | `text/html` |
+| `ResponseHTML(code, html)` | `text/html`，原样输出，**不做转义** |
+| `ResponseHTMLTemplate(source, data)` | 内联模板渲染 `text/html`，自动转义 |
 | `ResponseBytes(code, data)` | 原始字节 |
 | `ResponseError(code, message)` | 记录错误链 + 状态码 + 纯文本错误体 |
 | `Fail(err)` | 记录错误并交给 `Engine.SetErrorHandler` 或默认 JSON 错误格式 |
@@ -482,7 +484,7 @@ engine.UseMiddlewares(authMiddleware)
 | `cache.New(cache.Config{...})` | 响应缓存：LRU 容量控制、`X-Cache` 标记与 stale-while-revalidate，默认跳过带 Cookie 的请求 |
 | `compress.New(compress.Config{...})` | gzip 压缩：按内容类型与最小长度阈值决定是否压缩 |
 | `trace.NewTracer(exporter, ...)` | 链路追踪：解析/生成 W3C `traceparent`，批量异步导出 |
-| `session.New(store, options...)` | 服务端会话：签名 Cookie + 可替换存储，支持轮换与销毁 |
+| `session.New(store, options...)` | 服务端会话：签名 Cookie + 可替换存储，支持轮换与销毁；`WithSecret` 必填 |
 
 除包装/解包工具函数外，上表中的构造器只负责创建实例；要用作中间件需再调用
 实例的 `AdaptToMiddleware()` 得到 `leego.MiddlewareFunc`。
@@ -545,12 +547,12 @@ engine.GET("/risky", func(ctx *leego.Context) {
 | `validate` | 结构体标签校验，规则表可扩展，元信息按类型缓存 | `Check`、`CheckVar`、`RegisterRule` |
 | `problem` | RFC 7807 风格的统一错误响应 | `New`、`NewFromValidation`、`Write` |
 | `middlewares/session` | 签名 Cookie 会话，存储接口可替换，支持轮换与销毁 | `session.New`、`AdaptToMiddleware`、`GetFromContext` |
-| `upload` | 分片上传：断点续传、乱序/重复分片、SHA-256 秒传（JSONL 追加索引，重启可恢复） | `NewLocalStorage`、`NewHandler` |
+| `upload` | 分片上传：断点续传、乱序/重复分片、SHA-256 秒传（JSONL 追加索引，重启可恢复）与陈旧会话回收 | `NewLocalStorage`、`NewHandler`、`Sweep` |
 | `job` | 最小堆调度：周期/延迟任务、并发槽位与运行统计，单任务 panic 隔离 | `NewScheduler`、`ScheduleEvery`、`ScheduleAfter` |
-| `gateway` | 反向代理与平滑加权轮询，支持标签灰度与超时预算 | `NewBalancer`、`NewProxy` |
+| `gateway` | 反向代理与平滑加权轮询，支持标签灰度、超时预算与运行期上游增删 | `NewBalancer`、`NewProxy`、`Upsert` |
 | `middlewares/cache` | 响应缓存：LRU 容量、`X-Cache` 标记、stale-while-revalidate，默认跳过带 Cookie 的请求 | `cache.New` |
 | `middlewares/compress` | 按内容类型与最小长度阈值决定是否 gzip | `compress.New` |
-| `middlewares/trace` | W3C `traceparent` 解析/生成与异步批量导出，未采样且不传播时零分配 | `trace.NewTracer` |
+| `middlewares/trace` | W3C `traceparent` 解析/生成与异步批量导出；未采样且不传播时零分配，导出前对敏感查询参数掩码 | `trace.NewTracer` |
 | `metrics` | 指标存储抽象、内存实现与 Prometheus 文本输出 | `NewMemoryStore`、`RegisterMetrics` |
 | `openapi` | 从已注册路由快照生成 OpenAPI 3.1 文档与浏览页，支持分组、安全方案、命名模式、请求体与多响应 | `NewSpec`、`WithOperation`、`RegisterOpenAPI` |
 
@@ -567,9 +569,11 @@ store := session.NewMemoryStore()
 defer store.Close() // 停掉后台清理协程
 
 // 中间件负责读取 Cookie、恢复会话，并在请求结束时写回。
-// WithSecure(true) 给 Cookie 打上 Secure 标记（仅 HTTPS 下发送），本地 http 调试传 false。
+// WithSecret 为必填的签名密钥，未配置时启动直接报错；
+// WithSecure(true) 给 Cookie 打上 Secure 标记（仅 HTTPS 下发送），TLS 请求会自动启用。
 engine.UseMiddlewares(session.New(
 	store,
+	session.WithSecret([]byte("replace-with-a-random-32-byte-secret")),
 	session.WithTTL(30*time.Minute),
 	session.WithSecure(true),
 ).AdaptToMiddleware())
@@ -602,6 +606,12 @@ engine.POST("/login", func(ctx *leego.Context) {
 storage, err := upload.NewLocalStorage("./data")
 if err != nil {
 	log.Fatal(err)
+}
+
+// 每小时清理一次超过 24 小时仍未完成的会话与孤儿分片，避免磁盘被半途上传耗尽；
+// 也可以手动调用 storage.Sweep(ctx, 24*time.Hour)。
+if sweeper := storage.StartSweeper(context.Background(), time.Hour, 24*time.Hour); sweeper != nil {
+	defer sweeper.Stop(context.Background())
 }
 
 // 上限 1 GiB、默认分片 4 MiB、最多 1024 片；分片体直接读原始字节。
@@ -815,8 +825,8 @@ _ = engine.RegisterDashboard("/metrics",
 	dashboard.WithMaxRoutes(200), // 单次返回的最大路由数
 	dashboard.EnableExport(true), // 开放 export.csv
 	dashboard.WithAuthorizer(func(req *http.Request) bool {
-		// 返回 false 时统一回 401；不配置 Authorizer 则端点完全开放，
-		// 生产环境必须补上，或把端点限制在内网。
+		// 返回 false 时统一回 401。未配置 Authorizer 时默认拒绝所有请求，
+		// 本地调试可显式传 dashboard.WithoutAuthorizer()；生产环境必须接真鉴权或限制内网。
 		return req.Header.Get("Authorization") == "Bearer admin"
 	}),
 )
@@ -939,6 +949,18 @@ engine.GET("/ws", func(ctx *leego.Context) {
 
 自行升级连接时使用 `upgrader.New(config).Upgrade(req, writer, header)`；
 `Config` 支持读/写超时、最大读字节、来源校验与子协议协商。
+
+客户端发起的 `BROADCAST` / `IDENTIFY` 消息默认拒绝（回 `forbidden_message_type`），
+避免任意连接触发全员广播或自报身份。需要这类能力时显式开启，或直接接管全部业务消息：
+
+```go
+manager.SetAllowClientBroadcast(true) // 允许客户端触发广播
+manager.SetAllowClientIdentify(true)  // 允许客户端自报身份
+manager.SetMessageHandler(func(client *websocket.Client, message websocket.Message) bool {
+	// 返回 true 表示已处理，框架不再按内置语义分发。
+	return true
+})
+```
 
 ---
 

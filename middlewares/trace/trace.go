@@ -10,6 +10,8 @@ package trace
 import (
 	"context"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +31,32 @@ const (
 	// _DEFAULT_EXPORT_TIMEOUT 为默认单次导出超时。
 	_DEFAULT_EXPORT_TIMEOUT = 2 * time.Second
 )
+
+// _SENSITIVE_QUERY_KEYS 为导出时需要掩码的查询参数名。
+//
+// 链路数据通常会进入第三方系统，凭据类参数不能以明文形式导出。
+var _SENSITIVE_QUERY_KEYS = map[string]struct{}{
+	"access_token":  {},
+	"api_key":       {},
+	"apikey":        {},
+	"auth":          {},
+	"authorization": {},
+	"client_secret": {},
+	"code":          {},
+	"credential":    {},
+	"id_token":      {},
+	"key":           {},
+	"password":      {},
+	"passwd":        {},
+	"pwd":           {},
+	"refresh_token": {},
+	"secret":        {},
+	"session":       {},
+	"sessionid":     {},
+	"sig":           {},
+	"signature":     {},
+	"token":         {},
+}
 
 // Span 描述一次请求的链路片段。
 type Span struct {
@@ -297,6 +325,12 @@ func (own *Tracer) handle(next leego.HandleFunc, ctx *leego.Context) {
 		return
 	}
 
+	// 框架内部回源（如缓存后台刷新）不生成独立的追踪记录。
+	if ctx.IsInternal() {
+		next(ctx)
+		return
+	}
+
 	sampled := true
 	if own.options.Sampler != nil {
 		sampled = own.options.Sampler(request)
@@ -331,7 +365,7 @@ func (own *Tracer) handle(next leego.HandleFunc, ctx *leego.Context) {
 			Start:    time.Now(),
 			Attrs: map[string]string{
 				"http.method":    request.Method,
-				"http.target":    request.URL.RequestURI(),
+				"http.target":    sanitizeTarget(request.URL.RequestURI()),
 				"http.user_ip":   request.RemoteAddr,
 				"http.user_host": request.Host,
 			},
@@ -461,6 +495,34 @@ func (own *Tracer) export(spans []Span) {
 	cancel()
 
 	_ = err
+}
+
+// sanitizeTarget 返回可安全导出的请求目标。
+//
+// 保留路径与参数结构，只把敏感参数的值替换为 ***；
+// 参数无法解析时丢弃整个查询串，宁可少采集也不泄露凭据。
+func sanitizeTarget(target string) string {
+	path, raw, found := strings.Cut(target, "?")
+	if !found || raw == "" {
+		return target
+	}
+
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return path
+	}
+
+	for key := range values {
+		if _, ok := _SENSITIVE_QUERY_KEYS[strings.ToLower(key)]; ok {
+			values[key] = []string{"***"}
+		}
+	}
+
+	if encoded := values.Encode(); encoded != "" {
+		return path + "?" + encoded
+	}
+
+	return path
 }
 
 // spanName 返回片段名称，优先使用路由 pattern。

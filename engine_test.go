@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"gitee.com/leminewx/leego/dashboard"
 	"gitee.com/leminewx/leego/middlewares/collector"
 )
 
@@ -442,7 +443,7 @@ func TestEngineDashboard(t *testing.T) {
 		_ = ctx.ResponseText(http.StatusOK, "pong")
 	})
 
-	if err := engine.RegisterDashboard("/dashboard"); err != nil {
+	if err := engine.RegisterDashboard("/dashboard", dashboard.WithoutAuthorizer()); err != nil {
 		t.Fatalf("RegisterDashboard() error = %v", err)
 	}
 

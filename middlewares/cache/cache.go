@@ -291,7 +291,11 @@ func (own *Cache) doRefresh(next leego.HandleFunc, request *http.Request, key st
 	cloned.Body = http.NoBody
 
 	writer := newCaptureWriter(own.options.MaxBody)
-	next(leego.NewContext(writer, cloned))
+	derived := leego.NewContext(writer, cloned)
+	// 标记为内部回源：日志、指标、追踪必须跳过这次执行，
+	// 否则一个真实请求会被计成两次，日志里也会凭空多出一条记录。
+	derived.MarkInternal()
+	next(derived)
 
 	item := &entry{
 		key:    key,

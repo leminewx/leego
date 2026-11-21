@@ -12,9 +12,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"gitee.com/leminewx/leego/job"
+	"gitee.com/leminewx/leego/logging"
 )
 
 const (
@@ -40,6 +45,11 @@ const (
 	_MAX_EXTENSION = 16
 	// _TEMP_SUFFIX 为临时文件后缀。
 	_TEMP_SUFFIX = ".tmp"
+	// _MAX_INDEX_ENTRIES 为秒传索引的内存条目上限。
+	//
+	// 索引是追加日志，长期运行后会随删除的文件不断累积；超过上限时
+	// 清理指向已不存在文件的条目并重写索引文件，保证内存占用有界。
+	_MAX_INDEX_ENTRIES = 100000
 )
 
 // ErrInvalidRoot 表示存储根目录非法。
@@ -368,6 +378,130 @@ func (own *LocalStorage) Complete(ctx context.Context, id string, parts []Part) 
 	return relative, nil
 }
 
+// Sweep 清理超过 maxAge 仍未完成的上传会话，返回清理的会话数量。
+//
+// 清理范围：
+//   - 会话元信息最后修改时间超过 maxAge 的会话及其分片目录；
+//   - 没有对应会话元信息的孤儿分片目录（进程在删除中途退出时可能残留）；
+//   - 文件目录下遗留的合并临时文件。
+//
+// maxAge 非正时不做任何清理。该方法是幂等的，可在后台周期调用。
+func (own *LocalStorage) Sweep(ctx context.Context, maxAge time.Duration) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	if maxAge <= 0 {
+		return 0, nil
+	}
+
+	cutoff := time.Now().Add(-maxAge)
+	removed := 0
+
+	entries, err := os.ReadDir(own.sessionsDir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return removed, err
+	}
+
+	live := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return removed, err
+		}
+
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		id := strings.TrimSuffix(entry.Name(), ".json")
+		if !isSafeID(id) {
+			continue
+		}
+
+		info, statErr := entry.Info()
+		if statErr != nil || info.ModTime().After(cutoff) {
+			live[id] = struct{}{}
+			continue
+		}
+
+		unlock := own.lockSession(id)
+		own.removeSession(id)
+		unlock()
+		removed++
+	}
+
+	directories, err := os.ReadDir(own.partsDir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return removed, err
+	}
+
+	for _, directory := range directories {
+		if err := ctx.Err(); err != nil {
+			return removed, err
+		}
+
+		if !directory.IsDir() {
+			continue
+		}
+
+		if _, ok := live[directory.Name()]; ok {
+			continue
+		}
+
+		info, statErr := directory.Info()
+		if statErr != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+
+		_ = os.RemoveAll(filepath.Join(own.partsDir, directory.Name()))
+	}
+
+	files, err := os.ReadDir(own.filesDir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return removed, err
+	}
+
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), _TEMP_SUFFIX) {
+			continue
+		}
+
+		info, statErr := file.Info()
+		if statErr != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+
+		_ = os.Remove(filepath.Join(own.filesDir, file.Name()))
+	}
+
+	return removed, nil
+}
+
+// StartSweeper 启动后台清理协程，每隔 interval 清理一次超过 maxAge 的会话。
+//
+// 返回的调度器已经启动；进程退出时应调用 Stop，或直接取消 ctx。
+// interval 或 maxAge 非正时返回 nil，表示不启用后台清理。
+func (own *LocalStorage) StartSweeper(ctx context.Context, interval, maxAge time.Duration) *job.Scheduler {
+	if interval <= 0 || maxAge <= 0 {
+		return nil
+	}
+
+	scheduler := job.NewScheduler(
+		job.WithWorkers(1),
+		job.WithErrorHandler(func(_ job.Job, err error) {
+			logging.LogWarn("upload: sweep stale sessions: %v", err)
+		}),
+	)
+
+	scheduler.ScheduleEvery(interval, job.JobFunc(func(inner context.Context) error {
+		_, err := own.Sweep(inner, maxAge)
+		return err
+	}))
+	scheduler.Start(ctx)
+
+	return scheduler
+}
+
 // Abort 丢弃全部分片与会话，可重复调用。
 func (own *LocalStorage) Abort(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
@@ -488,6 +622,7 @@ func (own *LocalStorage) rememberIndex(sum, relative string) error {
 	}
 
 	own.index[sum] = relative
+	own.compactIndexLocked()
 	return nil
 }
 
@@ -526,7 +661,67 @@ func (own *LocalStorage) loadIndexLocked() error {
 
 	own.index = index
 	own.loaded = true
+	own.compactIndexLocked()
 	return nil
+}
+
+// compactIndexLocked 在条目数超限时清理失效条目并重写索引文件。
+//
+// 只保留指向仍存在文件的记录；索引只是秒传优化，
+// 丢弃记录不影响正确性，只会让下次上传重新写入文件。
+// 调用方必须已持有锁。
+func (own *LocalStorage) compactIndexLocked() {
+	if len(own.index) <= _MAX_INDEX_ENTRIES {
+		return
+	}
+
+	keys := make([]string, 0, len(own.index))
+	for sum := range own.index {
+		keys = append(keys, sum)
+	}
+	sort.Strings(keys)
+
+	trimmed := make(map[string]string, _MAX_INDEX_ENTRIES)
+	for _, sum := range keys {
+		if len(trimmed) >= _MAX_INDEX_ENTRIES {
+			break
+		}
+
+		relative := own.index[sum]
+		if _, err := os.Stat(filepath.Join(own.root, filepath.FromSlash(relative))); err != nil {
+			continue
+		}
+
+		trimmed[sum] = relative
+	}
+
+	own.index = trimmed
+	if err := own.rewriteIndexLocked(); err != nil {
+		// 重写失败不影响内存索引可用，下次超限时再试。
+		logging.LogWarn("upload: rewrite transfer index: %v", err)
+	}
+}
+
+// rewriteIndexLocked 用当前内存索引重建 JSONL 文件。调用方必须已持有锁。
+func (own *LocalStorage) rewriteIndexLocked() error {
+	keys := make([]string, 0, len(own.index))
+	for sum := range own.index {
+		keys = append(keys, sum)
+	}
+	sort.Strings(keys)
+
+	var buffer bytes.Buffer
+	for _, sum := range keys {
+		data, err := json.Marshal(indexEntry{Sum: sum, Path: own.index[sum]})
+		if err != nil {
+			return err
+		}
+
+		buffer.Write(data)
+		buffer.WriteByte('\n')
+	}
+
+	return writeFile(own.indexPath, buffer.Bytes())
 }
 
 // discardTemp 关闭并删除临时文件。
@@ -635,6 +830,11 @@ func writeJSON(path string, value any) error {
 		return err
 	}
 
+	return writeFile(path, data)
+}
+
+// writeFile 以"临时文件 + 重命名"方式原子写入文件。
+func writeFile(path string, data []byte) error {
 	temp, err := os.CreateTemp(filepath.Dir(path), "*.json"+_TEMP_SUFFIX)
 	if err != nil {
 		return err

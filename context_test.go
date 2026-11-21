@@ -187,6 +187,52 @@ func TestContextReadBodyRespectsMaxBytes(t *testing.T) {
 	}
 }
 
+// TestContextBindFormRespectsMaxBytes 验证表单体同样受 MaxBodyBytes 限制。
+//
+// x-www-form-urlencoded 的请求体是在 ParseForm 内部读取的，上限必须在那之前
+// 生效，否则表单体可以绕过 MaxBodyBytes。
+func TestContextBindFormRespectsMaxBytes(t *testing.T) {
+	engine := NewEngine(WithMaxBodyBytes(8), DisableStartupLog())
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("name="+strings.Repeat("a", 64)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	ctx, _ := createTestContext(req)
+	ctx.engine = engine
+
+	var bound struct {
+		Name string `form:"name"`
+	}
+
+	var maxErr *http.MaxBytesError
+	if err := ctx.BindForm(&bound); !errors.As(err, &maxErr) {
+		t.Fatalf("BindForm() error = %v, want *http.MaxBytesError", err)
+	}
+}
+
+// TestContextParseMultipartFormRespectsMaxBytes 验证 multipart 解析显式返回超限错误。
+func TestContextParseMultipartFormRespectsMaxBytes(t *testing.T) {
+	engine := NewEngine(WithMaxBodyBytes(16), DisableStartupLog())
+
+	var payload bytes.Buffer
+	writer := multipart.NewWriter(&payload)
+	if err := writer.WriteField("note", strings.Repeat("b", 64)); err != nil {
+		t.Fatalf("WriteField() error = %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/", &payload)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	ctx, _ := createTestContext(req)
+	ctx.engine = engine
+
+	var maxErr *http.MaxBytesError
+	if err := ctx.ParseMultipartForm(); !errors.As(err, &maxErr) {
+		t.Fatalf("ParseMultipartForm() error = %v, want *http.MaxBytesError", err)
+	}
+}
+
 // TestContextBindJSON 验证 JSON 绑定与非法输入处理。
 func TestContextBindJSON(t *testing.T) {
 	type payload struct {
@@ -654,6 +700,28 @@ func TestContextRenderHTML(t *testing.T) {
 	empty.engine = emptyEngine
 	if err := empty.ResponseTemplate("index.html", nil); err == nil {
 		t.Fatal("未加载模板时必须返回错误")
+	}
+}
+
+// TestContextResponseHTMLTemplate 验证内联模板会自动转义用户输入。
+func TestContextResponseHTMLTemplate(t *testing.T) {
+	ctx, recorder := createTestContext(httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if err := ctx.ResponseHTMLTemplate("<p>{{.Name}}</p>", map[string]string{"Name": "<script>alert(1)</script>"}); err != nil {
+		t.Fatalf("ResponseHTMLTemplate() error = %v", err)
+	}
+
+	body := recorder.Body.String()
+	if strings.Contains(body, "<script>") {
+		t.Fatalf("内联模板未转义: %q", body)
+	}
+
+	if !strings.Contains(body, "&lt;script&gt;") {
+		t.Fatalf("转义结果异常: %q", body)
+	}
+
+	if err := ctx.ResponseHTMLTemplate("{{.Broken", nil); err == nil {
+		t.Fatal("非法模板必须返回错误")
 	}
 }
 
