@@ -482,7 +482,7 @@ func TestEngineDashboard(t *testing.T) {
 func TestEngineShutdownWithoutServer(t *testing.T) {
 	engine := createTestEngine()
 
-	if err := engine.Shutdown(nil); err != nil {
+	if err := engine.Shutdown(context.Background()); err != nil {
 		t.Fatalf("Shutdown(nil) error = %v", err)
 	}
 
@@ -793,7 +793,7 @@ func TestEngineRunReportsStartupErrors(t *testing.T) {
 	}
 
 	// 未启动时 Shutdown 必须安全返回。
-	if err := createTestEngine().Shutdown(nil); err != nil {
+	if err := createTestEngine().Shutdown(context.Background()); err != nil {
 		t.Fatalf("未启动时 Shutdown() = %v, want nil", err)
 	}
 
@@ -985,9 +985,8 @@ func BenchmarkEngineServeHTTP(b *testing.B) {
 	request := httptest.NewRequest(http.MethodGet, "/users/42", nil)
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for index := 0; index < b.N; index++ {
+	for b.Loop() {
 		recorder := httptest.NewRecorder()
 		engine.ServeHTTP(recorder, request)
 	}

@@ -546,7 +546,7 @@ func TestContextDeriveContext(t *testing.T) {
 	}
 
 	// nil 上下文按 Background 处理。
-	if derivedNil := parent.DeriveContext(nil); derivedNil.Request.Context() == nil {
+	if derivedNil := parent.DeriveContext(context.Background()); derivedNil.Request.Context() == nil {
 		t.Fatal("DeriveContext(nil) 必须回退为 Background")
 	}
 }

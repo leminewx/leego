@@ -43,7 +43,7 @@ func TestRunShutdownHooksRunsInReverseOrder(t *testing.T) {
 		t.Fatalf("钩子数量 = %d, want 3", count)
 	}
 
-	err := engine.RunShutdownHooks(nil)
+	err := engine.RunShutdownHooks(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "second failed") {
 		t.Fatalf("RunShutdownHooks() error = %v, want 包含 second failed", err)
 	}

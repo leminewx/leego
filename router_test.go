@@ -183,9 +183,8 @@ func BenchmarkRouterSearchStatic(b *testing.B) {
 	path := "/static/path/500"
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for index := 0; index < b.N; index++ {
+	for b.Loop() {
 		if _, _, ok := router.Search(http.MethodGet, path); !ok {
 			b.Fatalf("未命中 %s", path)
 		}
@@ -201,9 +200,8 @@ func BenchmarkRouterSearchParam(b *testing.B) {
 	router.Freeze()
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for index := 0; index < b.N; index++ {
+	for index := 0; b.Loop(); index++ {
 		path := "/api/v1/users/" + strconv.Itoa(index%100)
 		if _, _, ok := router.Search(http.MethodGet, path); !ok {
 			b.Fatalf("未命中 %s", path)
@@ -218,9 +216,8 @@ func BenchmarkRouterSearchWildcard(b *testing.B) {
 	router.Freeze()
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for index := 0; index < b.N; index++ {
+	for index := 0; b.Loop(); index++ {
 		path := "/files/documents/reports/" + strconv.Itoa(index) + ".pdf"
 		if _, _, ok := router.Search(http.MethodGet, path); !ok {
 			b.Fatalf("未命中 %s", path)
