@@ -16,4 +16,3 @@
 
 # 集成测试生成的 SQLite 真库与 WAL 文件
 harness/testdata/
-harness/testdata/sqlite/
