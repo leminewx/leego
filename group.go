@@ -255,21 +255,23 @@ func (own *group) addRoute(method, pattern string, handle HandleFunc, descriptio
 	key := method + " " + pattern
 
 	own.engine.handlersMu.Lock()
+	defer own.engine.handlersMu.Unlock()
+
 	if _, ok := own.engine.handlers[key]; ok {
-		own.engine.handlersMu.Unlock()
 		panic("leego: duplicate route: " + key)
 	}
 
 	handler := newHandler(own, method, pattern, handle, tags...)
+	// 先写入路由树，成功后再登记索引：若 Insert 因模式冲突 panic，
+	// 不会在 handlers 中留下一条“未进树”的半注册路由。
+	own.engine.router.Insert(method, pattern, handler)
 	own.engine.handlers[key] = handler
+
 	if description == "" {
 		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Create | %-7s %s\n", method, pattern))
 	} else {
 		own.engine.printBuilder.WriteString(fmt.Sprintf("       - Create | %-7s %s  -  filepath: %s\n", method, pattern, description))
 	}
-	own.engine.handlersMu.Unlock()
-
-	own.engine.router.Insert(method, pattern, handler)
 }
 
 // joinRoutePath 拼接路由前缀与模式，并做规范化。

@@ -396,6 +396,12 @@ func (own *Scheduler) run(ctx context.Context) {
 // fire 执行所有到期任务，并重新排入周期任务。
 func (own *Scheduler) fire(ctx context.Context, now time.Time) {
 	own.mu.Lock()
+	if own.stopped {
+		// Stop 与 tick 同时就绪时 select 可能选中 tick：停止后不得再派发。
+		own.mu.Unlock()
+		return
+	}
+
 	ready := make([]*task, 0, 4)
 	for len(own.tasks) > 0 {
 		item := own.tasks[0]
@@ -442,6 +448,14 @@ func (own *Scheduler) fire(ctx context.Context, now time.Time) {
 
 // dispatch 在并发额度内异步执行任务。
 func (own *Scheduler) dispatch(ctx context.Context, item *task) {
+	own.mu.Lock()
+	stopped := own.stopped
+	own.mu.Unlock()
+	if stopped {
+		// 停止后不再启动新任务，“已注册但未执行”的任务就此作废。
+		return
+	}
+
 	select {
 	case own.slots <- struct{}{}:
 	default:

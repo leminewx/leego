@@ -13,11 +13,13 @@
 package session
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -277,10 +279,15 @@ func (own *Manager) AdaptToMiddleware() leego.MiddlewareFunc {
 			requestCtx := context.WithValue(ctx.Request.Context(), sessionKey{}, current)
 			ctx.Request = ctx.Request.WithContext(requestCtx)
 
-			next(ctx)
+			// 必须用 defer：next panic 时由上层 Recovery 接管，若正常返回才持久化，
+			// 已轮换的会话（旧 ID 已销毁、新 ID 尚未落库）会丢失。
+			// 该 defer 晚于上面还原 ctx.Response 的 defer 注册，因此先于它执行，
+			// 保证 persist 仍能通过 cookieWriter 同步 Cookie。
+			defer func() {
+				current.persist(ctx, context.WithoutCancel(ctx.Request.Context()))
+			}()
 
-			// 请求已结束，后续处理不能再依赖请求上下文（可能已被取消）。
-			current.persist(ctx, context.WithoutCancel(ctx.Request.Context()))
+			next(ctx)
 		}
 	}
 }
@@ -312,6 +319,15 @@ func (own *cookieWriter) Write(data []byte) (int, error) {
 func (own *cookieWriter) Flush() {
 	own.session.syncCookie(own.Writer)
 	own.Writer.Flush()
+}
+
+// Hijack 在劫持连接前同步 Cookie。
+//
+// response.Writer 内嵌了 http.Hijacker，若不显式重写，Hijack 会被提升而
+// 绕过本包装器，导致 WebSocket 等升级响应丢失更新的 Set-Cookie。
+func (own *cookieWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	own.session.syncCookie(own.Writer)
+	return own.Writer.Hijack()
 }
 
 // load 读取并校验现有会话，失败时新建。

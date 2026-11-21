@@ -59,7 +59,8 @@ path := ctx.GetPathValue("filepath")
 
 1. **同一位置不能使用不同参数名**。先注册 `/users/:id`，再注册
    `/users/:name` 会 panic：`tree: conflicting route parameter`。参数名影响
-   `GetPathValue` 的键，因此必须全局一致。
+   `GetPathValue` 的键，因此必须全局一致。注册失败不会在处理器索引中留下半成品，
+   已注册路由继续可用；但不应依赖 `recover` 继续注册，冲突仍需在启动期修正。
 2. **通配段必须位于模式末尾**。`/files/*path/edit` 虽然能注册成功，但通配节点
    自身没有挂载路由，永远不会被命中（匹配器只在通配节点已注册路由时才走通配
    分支）。把通配段放在中间属于无效路由。

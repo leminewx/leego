@@ -187,7 +187,41 @@ func TestCompressDetectsContentType(t *testing.T) {
 		t.Fatal("JSON 数据应被嗅探并压缩")
 	}
 
+	// 压缩后必须把嗅探到原始内容的类型回写到响应头，
+	// 否则底层会对 gzip 字节重新嗅探出 application/x-gzip 等错误类型。
+	contentType := response.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "text/plain") {
+		t.Fatalf("Content-Type = %q, want text/plain（嗅探结果回写）", contentType)
+	}
+
+	if strings.Contains(contentType, "gzip") {
+		t.Fatalf("Content-Type = %q, 不得把压缩后字节的类型当作原类型", contentType)
+	}
+
 	if !strings.Contains(gunzip(t, response.Body), "leego") {
 		t.Fatal("解压内容异常")
+	}
+}
+
+// TestCompressHonorsRejectedQuality 验证 Accept-Encoding: gzip;q=0 不压缩。
+//
+// 仅匹配到 gzip 字样就压缩会违背客户端明确拒绝的语义，
+// 客户端可能因此拿到无法处理的内容。
+func TestCompressHonorsRejectedQuality(t *testing.T) {
+	client := testutil.NewClient(newEngine())
+
+	rejected := client.Get("/json", testutil.WithHeader("Accept-Encoding", "gzip;q=0, deflate"))
+	rejected.AssertStatus(t, http.StatusOK)
+
+	if rejected.Header.Get("Content-Encoding") != "" {
+		t.Fatalf("q=0 时不应压缩，Content-Encoding = %q", rejected.Header.Get("Content-Encoding"))
+	}
+
+	rejected.AssertContains(t, "message")
+
+	// 通配符标记 q=0 同样视为拒绝。
+	wildcard := client.Get("/json", testutil.WithHeader("Accept-Encoding", "*;q=0"))
+	if wildcard.Header.Get("Content-Encoding") != "" {
+		t.Fatalf("*;q=0 时不应压缩，Content-Encoding = %q", wildcard.Header.Get("Content-Encoding"))
 	}
 }

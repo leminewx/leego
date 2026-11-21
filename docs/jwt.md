@@ -35,7 +35,7 @@ if err != nil {
 `NewHMACSigner` 的校验：
 
 - 算法必须是 `HS256` / `HS384` / `HS512`；
-- 密钥不能为空；
+- 密钥长度必须满足 RFC 7518：HS256 至少 32 字节、HS384 至少 48 字节、HS512 至少 64 字节；
 - 返回 `Signer` 接口：`GetHeader()`、`Sign(claims)`、`Verify(src, dst)`。
 
 签名流程：
@@ -204,7 +204,8 @@ func authenticate(signer jwt.Signer, parser jwt.Parser) leego.MiddlewareFunc {
 
 			claims := &jwt.StandardClaims{}
 			if err := parser.ParseAndValidateStandardClaims(signer, token, claims); err != nil {
-				ctx.ResponseError(http.StatusUnauthorized, "令牌无效: "+err.Error())
+				// 不拼接 err.Error()：不同失败原因会泄露令牌结构信息。
+				ctx.ResponseError(http.StatusUnauthorized, "令牌无效")
 				return
 			}
 
@@ -256,7 +257,8 @@ if claims, ok := ctx.GetJWTClaims().(*jwt.StandardClaims); ok {
 
 ## 安全注意事项
 
-1. **密钥强度**：HMAC-SHA256 建议至少 32 字节随机密钥；不要把密钥写进代码库，
+1. **密钥强度**：框架按 RFC 7518 强制最小长度——HS256 至少 32 字节、HS384 至少 48 字节、
+   HS512 至少 64 字节，过短的密钥会在创建签名器时直接报错。不要把密钥写进代码库，
    使用环境变量或配置中心。
 2. **不要信任 `alg`**：框架要求头部算法与签名器一致，禁止客户端选择算法。
 3. **校验 `iss` / `aud`**：多租户或多服务场景必须校验，避免令牌跨服务复用。

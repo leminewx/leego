@@ -85,16 +85,10 @@ func (own *Recovery) AdaptToMiddleware() leego.MiddlewareFunc {
 				// 输出错误信息
 				const skip = 3
 				if config.DumpRequest {
-					var req []byte
-					if config.DumpRequestBody {
-						req, _ = httputil.DumpRequest(ctx.Request, true)
-					} else {
-						req, _ = httputil.DumpRequest(ctx.Request, false)
-					}
-
-					logger.Printf("[Recovery] panic recovered:\n%s\n%s\n%s\033[0m", req, err, captureTrace(skip))
+					req := dumpRequest(ctx.Request, config.DumpRequestBody)
+					logger.Printf("[Recovery] panic recovered:\n%s\n%v\n%s\033[0m", req, err, captureTrace(skip))
 				} else {
-					logger.Printf("[Recovery] panic recovered:\n%s\n%s\033[0m", err, captureTrace(skip))
+					logger.Printf("[Recovery] panic recovered:\n%v\n%s\033[0m", err, captureTrace(skip))
 				}
 
 				// 自定义处理
@@ -123,6 +117,41 @@ type RecoveryConfig struct {
 	DumpRequestBody bool
 	// HandleFunc 为自定义善后函数，可为 nil。
 	HandleFunc func(ctx *leego.Context, err any)
+}
+
+// sensitiveHeaders 列出转储前需要脱敏的请求头，避免把凭据写入日志。
+var sensitiveHeaders = []string{
+	"Authorization",
+	"Proxy-Authorization",
+	"Cookie",
+	"Set-Cookie",
+	"X-Api-Key",
+	"X-Auth-Token",
+}
+
+// dumpRequest 转储请求，但先抹除敏感头部。
+//
+// 直接 DumpRequest 会把 Authorization、Cookie 等凭据原文写进日志，
+// 因此这里基于副本脱敏后再转储，不修改原始请求。
+func dumpRequest(request *http.Request, withBody bool) []byte {
+	if request == nil {
+		return nil
+	}
+
+	clone := request.Clone(request.Context())
+	clone.Header = request.Header.Clone()
+	for _, name := range sensitiveHeaders {
+		if _, ok := clone.Header[name]; ok {
+			clone.Header.Set(name, "[REDACTED]")
+		}
+	}
+
+	if !withBody {
+		clone.Body = nil
+	}
+
+	data, _ := httputil.DumpRequest(clone, withBody)
+	return data
 }
 
 // captureTrace 追踪调用信息

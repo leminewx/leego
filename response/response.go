@@ -66,7 +66,13 @@ func (own *response) Reset(resp http.ResponseWriter) {
 // Flush 将缓冲区数据发送给客户端。
 //
 // 若底层实现不支持 http.Flusher，则静默忽略，保持与标准库一致的容错行为。
+// 与 net/http 语义一致，Flush 会隐式发送 200 状态行，因此这里先同步记录
+// 状态码，避免日志与指标把它误判为“未写响应”。
 func (own *response) Flush() {
+	if !own.wroteHeader {
+		own.WriteHeader(http.StatusOK)
+	}
+
 	if flusher, ok := own.writer.(http.Flusher); ok {
 		flusher.Flush()
 	}
@@ -76,11 +82,21 @@ func (own *response) Flush() {
 //
 // 若底层实现不支持 http.Hijacker，返回 errNotHijack。
 func (own *response) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if hijacker, ok := own.writer.(http.Hijacker); ok {
-		return hijacker.Hijack()
+	hijacker, ok := own.writer.(http.Hijacker)
+	if !ok {
+		return nil, nil, errNotHijack
 	}
 
-	return nil, nil, errNotHijack
+	connection, readWriter, err := hijacker.Hijack()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 劫持后由上层协议自行写响应（如 WebSocket 101 握手），
+	// 因此只记录状态码，不调用底层 WriteHeader。
+	own.wroteHeader = true
+	own.status = http.StatusSwitchingProtocols
+	return connection, readWriter, nil
 }
 
 // Header 返回底层响应头集合。

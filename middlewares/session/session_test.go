@@ -1,10 +1,13 @@
 package session
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -350,5 +353,102 @@ func TestMemoryStoreExpiry(t *testing.T) {
 
 	if err = store.Save(ctx, "", Values{}, time.Second); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("空 ID 写入错误 = %v, want ErrNotFound", err)
+	}
+}
+
+// TestSessionPersistsOnPanic 验证处理器 panic 时仍持久化会话。
+//
+// 若只在正常返回路径调用 persist，处理器在轮换会话后 panic，
+// 旧 ID 已销毁而新 ID 尚未落库，会话会彻底丢失。
+func TestSessionPersistsOnPanic(t *testing.T) {
+	store := NewMemoryStore()
+	t.Cleanup(func() { _ = store.Close() })
+
+	engine := leego.NewEngine(leego.DisableStartupLog())
+	engine.UseMiddlewares(New(store, WithSecret([]byte(_TEST_SECRET))).AdaptToMiddleware())
+	engine.GET("/panic", func(ctx *leego.Context) {
+		current, ok := GetFromContext(ctx.Request.Context())
+		if !ok {
+			t.Error("处理函数中缺少会话")
+			return
+		}
+
+		current.Set("user", "panicked")
+		panic("boom")
+	})
+
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/panic", nil))
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("状态码 = %d, want 500", recorder.Code)
+	}
+
+	cookie := findCookie(t, recorder, _DEFAULT_NAME)
+	if cookie == nil {
+		t.Fatal("panic 后仍必须下发会话 Cookie")
+	}
+
+	id, ok := decodeCookie([]byte(_TEST_SECRET), cookie.Value)
+	if !ok {
+		t.Fatal("无法解码会话 Cookie")
+	}
+
+	values, err := store.Get(context.Background(), id)
+	if err != nil || values["user"] != "panicked" {
+		t.Fatalf("存储中的会话 = (%v, %v), want user=panicked", values, err)
+	}
+}
+
+// hijackWriter 模拟支持连接劫持的底层 ResponseWriter。
+type hijackWriter struct {
+	*httptest.ResponseRecorder
+	conn net.Conn
+	// cookieAtHijack 记录劫持时已存在的 Set-Cookie，用于断言同步时机。
+	cookieAtHijack []string
+}
+
+// Hijack 在返回连接前记录当前响应头中的 Set-Cookie。
+func (own *hijackWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	own.cookieAtHijack = append([]string(nil), own.Header().Values("Set-Cookie")...)
+	return own.conn, bufio.NewReadWriter(bufio.NewReader(own.conn), bufio.NewWriter(own.conn)), nil
+}
+
+// TestSessionCookieSyncedBeforeHijack 验证劫持前已同步会话 Cookie。
+//
+// response.Writer 内嵌 http.Hijacker，cookieWriter 必须显式重写 Hijack，
+// 否则 WebSocket 升级路径会绕过 Cookie 同步，丢失新建/轮换的会话。
+func TestSessionCookieSyncedBeforeHijack(t *testing.T) {
+	store := NewMemoryStore()
+	t.Cleanup(func() { _ = store.Close() })
+
+	server, client := net.Pipe()
+	defer func() { _ = server.Close() }()
+	defer func() { _ = client.Close() }()
+
+	writer := &hijackWriter{ResponseRecorder: httptest.NewRecorder(), conn: server}
+	ctx := leego.NewContext(writer, httptest.NewRequest(http.MethodGet, "/ws", nil))
+
+	handle := New(store, WithSecret([]byte(_TEST_SECRET))).AdaptToMiddleware()(func(ctx *leego.Context) {
+		current, ok := GetFromContext(ctx.Request.Context())
+		if !ok {
+			t.Error("处理函数中缺少会话")
+			return
+		}
+
+		current.Set("user", "hijacked")
+		if _, _, err := ctx.Response.Hijack(); err != nil {
+			t.Errorf("Hijack() error = %v", err)
+		}
+	})
+
+	handle(ctx)
+
+	if len(writer.cookieAtHijack) == 0 {
+		t.Fatal("劫持前必须已写入会话 Cookie")
+	}
+
+	if !strings.Contains(strings.Join(writer.cookieAtHijack, ";"), _DEFAULT_NAME+"=") {
+		t.Fatalf("劫持时的 Set-Cookie = %v", writer.cookieAtHijack)
 	}
 }

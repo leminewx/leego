@@ -69,7 +69,7 @@ func TestErrorSentinelsAreDistinct(t *testing.T) {
 
 // TestSignAndParseRoundTrip 验证完整闭环：签发 → 解析 → 校验 → 声明还原。
 func TestSignAndParseRoundTrip(t *testing.T) {
-	signer, err := NewHMACSigner(HS384, []byte("0123456789abcdef"))
+	signer, err := NewHMACSigner(HS384, []byte(testHMACKey))
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestSignWithDifferentAlgorithmsCanBeParsed(t *testing.T) {
 
 	for _, algorithm := range []Algorithm{HS256, HS384, HS512} {
 		t.Run(string(algorithm), func(t *testing.T) {
-			signer, err := NewHMACSigner(algorithm, []byte("secret-key"))
+			signer, err := NewHMACSigner(algorithm, []byte(testHMACKey))
 			if err != nil {
 				t.Fatalf("创建签名器失败: %v", err)
 			}
@@ -139,7 +139,7 @@ func TestSignWithDifferentAlgorithmsCanBeParsed(t *testing.T) {
 // TestSigningIsDeterministic 验证同一密钥、同一声明（时间字段固定）签发的令牌完全一致，
 // 便于跨进程比对与缓存。
 func TestSigningIsDeterministic(t *testing.T) {
-	signer, err := NewHMACSigner(HS256, []byte("secret-key"))
+	signer, err := NewHMACSigner(HS256, []byte(testHMACKey))
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}

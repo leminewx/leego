@@ -5,6 +5,45 @@
 
 ---
 
+## v1.0.1.0 — 第二轮审计修复
+
+> 基于 v1.0.0.0，核心 API 保持兼容，
+> 但 JWT 密钥长度校验属于**破坏性收紧**。
+
+### 一、安全（行为收紧）
+
+1. **默认错误响应脱敏**：`Fail` 的非 `*HTTPError` 分支不再回显 `err.Error()`，
+   统一返回 `500` + `{"error":{"code":"internal_error","message":"Internal Server Error"}}`；
+   `*HTTPError` 仍按其 `Status` / `Code` / `Message` 输出；`*http.MaxBytesError`
+   自动映射为 `413` + `request_entity_too_large`。
+2. **JWT 密钥最小长度**：按 RFC 7518 强制 HS256 ≥ 32、HS384 ≥ 48、HS512 ≥ 64 字节，
+   过短时 `NewHMACSigner` 直接返回错误。升级前需检查并替换所有短密钥。
+3. **恢复日志脱敏**：`NewRecovery` 在克隆出的 Header 上把 `Authorization`、
+   `Cookie`、`Set-Cookie`、`X-Api-Key`、`X-Auth-Token`、`Proxy-Authorization`
+   替换为 `[REDACTED]`，不修改原始请求头。
+4. **WebSocket 握手与限制**：手工拼接的 101 响应头按 RFC 7230 校验头名 token 与值
+   （拒绝 CR / LF / NUL），非法项丢弃；超过 `MaxReadLimit` 时向对端发送 1009 关闭帧。
+
+### 二、正确性
+
+- **引擎配置并发安全**：配置与可信代理改为 `atomic.Pointer` + 写时复制，
+  `SetName` / `SetMaxMultipartMemory` / `SetTrustedProxies` 可运行期调用，读取无锁；
+- **在途计数回收**：handler panic 时 `Flights` 也会归还，不再只增不减；
+- **响应状态码口径**：`Flush` 未写头时隐式回填 200，`Hijack` 成功后记 101，
+  访问日志与指标不再出现状态码 0；
+- **会话收尾**：panic 路径同样持久化会话；WebSocket 升级前先同步 `Set-Cookie`；
+- **压缩协商**：`q=0`（含 `*;q=0`）视为客户端拒绝；嗅探出的 `Content-Type`
+  在压缩时回写，避免被重嗅成 `application/x-gzip`；
+- **网关请求头隔离**：改写 `X-Request-Timeout` 前先 `Clone`，不污染调用链共享的原始头；
+- **路由注册原子性**：先插入 Trie、成功后再登记处理器索引，冲突 panic 不留半成品。
+
+### 三、稳定性
+
+- `job.Stop` 后已注册但未执行的任务不再派发；
+- `config.OnChange` 回调改为单协程有序批次执行，避免无界协程与同批乱序。
+
+---
+
 ## v1.0.0.0 — 正式首发
 
 > 发布日期：2026-11-21

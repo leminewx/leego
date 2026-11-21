@@ -155,3 +155,42 @@ func TestSelectUpstreamPrefersTag(t *testing.T) {
 		t.Fatalf("target = %q, want 灰度上游 %q", payload["target"], canaryURL.String())
 	}
 }
+
+// TestProxyDoesNotMutateOriginalHeaders 验证代理改写超时头不会污染原始请求。
+//
+// 复用请求对象（如中间件链上的 ctx.Request）时，直接修改 Header 会影响
+// 同一请求的其他中间件与日志；因此代理必须先在副本上改写。
+func TestProxyDoesNotMutateOriginalHeaders(t *testing.T) {
+	seen := make(chan string, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, request *http.Request) {
+		seen <- request.Header.Get(_DEFAULT_TIMEOUT_HEADER)
+		_, _ = resp.Write([]byte("ok"))
+	}))
+	defer upstream.Close()
+
+	target, _ := url.Parse(upstream.URL)
+	balancer, err := NewBalancer(Upstream{URL: target, Weight: 1})
+	if err != nil {
+		t.Fatalf("NewBalancer() error = %v", err)
+	}
+
+	engine := newProxyEngine(balancer, WithTimeout(1500*time.Millisecond))
+
+	request := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
+	request.Header.Set(_DEFAULT_TIMEOUT_HEADER, "1")
+
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d, want 200", recorder.Code)
+	}
+
+	if got := <-seen; got != "1500" {
+		t.Fatalf("上游收到的超时头 = %q, want 1500", got)
+	}
+
+	if got := request.Header.Get(_DEFAULT_TIMEOUT_HEADER); got != "1" {
+		t.Fatalf("原始请求头被改写 = %q, want 1", got)
+	}
+}

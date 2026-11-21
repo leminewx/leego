@@ -14,7 +14,7 @@ import (
 func createTestSigner(t *testing.T) Signer {
 	t.Helper()
 
-	signer, err := NewHMACSigner(HS256, []byte("secret-key"))
+	signer, err := NewHMACSigner(HS256, []byte(testHMACKey))
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestParserRejectsInvalidHeader(t *testing.T) {
 func TestParserRejectsAlgorithmConfusion(t *testing.T) {
 	parser := NewParser()
 
-	hs512Signer, err := NewHMACSigner(HS512, []byte("secret-key"))
+	hs512Signer, err := NewHMACSigner(HS512, []byte(testHMACKey))
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
@@ -476,7 +476,7 @@ func TestParserConcurrentUse(t *testing.T) {
 // BenchmarkParserParse 测量解析（含验签）的耗时与内存分配。
 func BenchmarkParserParse(b *testing.B) {
 	parser := NewParser()
-	signer, err := NewHMACSigner(HS256, []byte("secret-key"))
+	signer, err := NewHMACSigner(HS256, []byte(testHMACKey))
 	if err != nil {
 		b.Fatalf("创建签名器失败: %v", err)
 	}

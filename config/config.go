@@ -369,6 +369,7 @@ func (own *Config) apply(next map[string]any) {
 	}
 	own.subsMu.RUnlock()
 
+	notifications := make([]func(), 0, 8)
 	for key, callbacks := range subscribers {
 		newValue, exists := next[key]
 		oldValue, hadOld := (*previous)[key]
@@ -381,9 +382,23 @@ func (own *Config) apply(next map[string]any) {
 		}
 
 		for _, callback := range callbacks {
-			go safelyNotify(callback.notify, newValue)
+			notify := callback.notify
+			value := newValue
+			notifications = append(notifications, func() { safelyNotify(notify, value) })
 		}
 	}
+
+	if len(notifications) == 0 {
+		return
+	}
+
+	// 在单个协程内按收集顺序执行：避免“每个回调一个 goroutine”造成
+	// 的回调乱序（旧值回调晚于新值到达）与 goroutine 数量膨胀。
+	go func() {
+		for _, notify := range notifications {
+			notify()
+		}
+	}()
 }
 
 // safelyNotify 执行回调并吞掉 panic，避免订阅者拖垮配置刷新。

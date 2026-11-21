@@ -85,7 +85,9 @@ cached, _ := ctx.GetRequestBody() // 只读取缓存
 
 - 首次调用 `ReadBody` 才会真正读取 `Request.Body`；
 - 结果（含错误）被缓存，后续调用返回同一份数据或错误；
-- 引擎设置 `MaxBodyBytes` 时使用 `http.MaxBytesReader` 限制读取量，超限返回错误；
+- 引擎设置 `MaxBodyBytes` 时使用 `http.MaxBytesReader` 限制读取量，超限返回
+  `*http.MaxBytesError`；交给 `ctx.Fail` 时会自动映射为 `413` +
+  `request_entity_too_large`，无需调用方手动判断错误类型；
 - 不会关闭 `Request.Body`，由 `net/http` 负责关闭；
 - 缓存缓冲在上下文复位时保留容量，但超过 64 KiB 时直接丢弃，避免一次大请求体
   长期占用对象池。
@@ -182,8 +184,15 @@ ctx.Fail(errors.New("下游不可用"))                  // 交给统一错误�
    无效写入；
 4. 否则调用 `http.Error` 输出纯文本。
 
-`Fail` 的行为：写入错误链 → 引擎自定义 `ErrorHandlerFunc` → 默认 JSON 格式
-`{"error":{"message":"..."}}`。
+`Fail` 的行为：写入错误链 → 引擎自定义 `ErrorHandlerFunc` → 默认 JSON
+`{"error":{"code":"internal_error","message":"Internal Server Error"}}`。
+
+- 默认实现**不回显 `err.Error()`**，避免把数据库地址、文件路径等内部细节返回给
+  客户端；原始错误仍保留在错误链与日志中；
+- `*HTTPError` 使用其 `Status` / `Code` / `Message`；`Message` 为空时回落到
+  `http.StatusText(status)`；
+- `*http.MaxBytesError` 自动映射为 `413` + `request_entity_too_large`；
+- 响应已写入时只记录错误，不再改变响应内容。
 
 ### 重定向与文件
 
@@ -211,7 +220,8 @@ engine.SetTemplateFuncs(template.FuncMap{"upper": strings.ToUpper})
 
 engine.GET("/home", func(ctx *leego.Context) {
 	if err := ctx.ResponseTemplate("home.html", data); err != nil {
-		ctx.ResponseError(http.StatusInternalServerError, err.Error())
+		// 模板错误可能包含文件路径，只写日志，对客户端返回固定文案。
+		ctx.ResponseError(http.StatusInternalServerError, "模板渲染失败")
 	}
 })
 

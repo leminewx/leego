@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+// testHMACKey 是满足 HS512 最小密钥长度（64 字节）的测试密钥。
+const testHMACKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 // createTestClaims 构造一份时间字段均合法的测试声明。
 func createTestClaims() *StandardClaims {
 	now := time.Now().Unix()
@@ -34,6 +37,26 @@ func TestNewHMACSignerRejectsEmptyKey(t *testing.T) {
 	}
 }
 
+// TestNewHMACSignerRejectsShortKey 验证低于 RFC 7518 最小长度的密钥被拒绝。
+func TestNewHMACSignerRejectsShortKey(t *testing.T) {
+	cases := []struct {
+		algorithm Algorithm
+		key       string
+	}{
+		{algorithm: HS256, key: strings.Repeat("a", 31)},
+		{algorithm: HS384, key: strings.Repeat("a", 47)},
+		{algorithm: HS512, key: strings.Repeat("a", 63)},
+	}
+
+	for _, testCase := range cases {
+		t.Run(string(testCase.algorithm), func(t *testing.T) {
+			if _, err := NewHMACSigner(testCase.algorithm, []byte(testCase.key)); err == nil {
+				t.Fatalf("%s 短密钥必须返回错误", testCase.algorithm)
+			}
+		})
+	}
+}
+
 // TestNewHMACSignerUsesExpectedAlgorithm 验证三种受支持算法生成的头部算法。
 func TestNewHMACSignerUsesExpectedAlgorithm(t *testing.T) {
 	cases := []struct {
@@ -47,7 +70,7 @@ func TestNewHMACSignerUsesExpectedAlgorithm(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			signer, err := NewHMACSigner(testCase.algorithm, []byte("secret-key"))
+			signer, err := NewHMACSigner(testCase.algorithm, []byte(testHMACKey))
 			if err != nil {
 				t.Fatalf("创建签名器失败: %v", err)
 			}
@@ -75,7 +98,7 @@ func TestNewHMACSignerRejectsUnsupportedAlgorithm(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			signer, err := NewHMACSigner(testCase.algorithm, []byte("secret-key"))
+			signer, err := NewHMACSigner(testCase.algorithm, []byte(testHMACKey))
 			if !errors.Is(err, ErrUnsupportedMethod) {
 				t.Fatalf("err = %v, want ErrUnsupportedMethod", err)
 			}
@@ -88,7 +111,7 @@ func TestNewHMACSignerRejectsUnsupportedAlgorithm(t *testing.T) {
 
 // TestHMACSignerRejectsNilClaims 验证签发 nil 声明返回 ErrNilClaims。
 func TestHMACSignerRejectsNilClaims(t *testing.T) {
-	signer, err := NewHMACSigner(HS256, []byte("secret-key"))
+	signer, err := NewHMACSigner(HS256, []byte(testHMACKey))
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
@@ -100,7 +123,7 @@ func TestHMACSignerRejectsNilClaims(t *testing.T) {
 
 // TestHMACSignerProducesThreeSegments 验证令牌是标准的三段式结构。
 func TestHMACSignerProducesThreeSegments(t *testing.T) {
-	signer, err := NewHMACSigner(HS256, []byte("secret-key"))
+	signer, err := NewHMACSigner(HS256, []byte(testHMACKey))
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
@@ -119,7 +142,7 @@ func TestHMACSignerProducesThreeSegments(t *testing.T) {
 func TestHMACSignerVerifyRoundTrip(t *testing.T) {
 	for _, algorithm := range []Algorithm{HS256, HS384, HS512} {
 		t.Run(string(algorithm), func(t *testing.T) {
-			signer, err := NewHMACSigner(algorithm, []byte("secret-key"))
+			signer, err := NewHMACSigner(algorithm, []byte(testHMACKey))
 			if err != nil {
 				t.Fatalf("创建签名器失败: %v", err)
 			}
@@ -141,7 +164,7 @@ func TestHMACSignerVerifyRoundTrip(t *testing.T) {
 
 // TestHMACSignerVerifyRejectsTamperedData 验证载荷被篡改后验签失败。
 func TestHMACSignerVerifyRejectsTamperedData(t *testing.T) {
-	signer, err := NewHMACSigner(HS256, []byte("secret-key"))
+	signer, err := NewHMACSigner(HS256, []byte(testHMACKey))
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
@@ -168,11 +191,11 @@ func TestHMACSignerVerifyRejectsTamperedData(t *testing.T) {
 
 // TestHMACSignerVerifyRejectsDifferentKey 验证不同密钥签发的令牌无法互相验签。
 func TestHMACSignerVerifyRejectsDifferentKey(t *testing.T) {
-	signerA, err := NewHMACSigner(HS256, []byte("key-a"))
+	signerA, err := NewHMACSigner(HS256, []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
-	signerB, err := NewHMACSigner(HS256, []byte("key-b"))
+	signerB, err := NewHMACSigner(HS256, []byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
@@ -193,7 +216,7 @@ func TestHMACSignerVerifyRejectsDifferentKey(t *testing.T) {
 // TestHMACSignerConcurrentUse 验证签名器通过 sync.Pool 复用哈希对象时并发安全，
 // 且并发签发结果完全一致（HMAC 是确定性算法）。
 func TestHMACSignerConcurrentUse(t *testing.T) {
-	signer, err := NewHMACSigner(HS512, []byte("secret-key"))
+	signer, err := NewHMACSigner(HS512, []byte(testHMACKey))
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
@@ -236,7 +259,7 @@ func TestHMACSignerConcurrentUse(t *testing.T) {
 
 // BenchmarkHMACSignerSign 测量签发吞吐与内存分配。
 func BenchmarkHMACSignerSign(b *testing.B) {
-	signer, err := NewHMACSigner(HS256, []byte("secret-key"))
+	signer, err := NewHMACSigner(HS256, []byte(testHMACKey))
 	if err != nil {
 		b.Fatalf("创建签名器失败: %v", err)
 	}

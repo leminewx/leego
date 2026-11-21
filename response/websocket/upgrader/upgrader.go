@@ -195,6 +195,12 @@ func buildHandshakeResponse(req *http.Request, respHeader http.Header, subprotoc
 		}
 
 		for _, value := range values {
+			// 手写字节拼接必须逐项校验：标准库 Header 写入会拒绝含 CR/LF 的
+			// 非法头，而这里绕过了该保护，不校验即形成响应头注入面。
+			if !isValidHeaderField(key, value) {
+				continue
+			}
+
 			builder.WriteString(key)
 			builder.WriteString(": ")
 			builder.WriteString(value)
@@ -205,6 +211,45 @@ func buildHandshakeResponse(req *http.Request, respHeader http.Header, subprotoc
 	builder.WriteString("\r\n")
 
 	return builder.String()
+}
+
+// isValidHeaderField 判断响应头名与值是否可安全写入裸报文。
+//
+// 头部名称必须是 RFC 7230 的 token，值不得包含 CR、LF 或 NUL，
+// 避免注入额外的响应行或头。
+func isValidHeaderField(name, value string) bool {
+	if name == "" {
+		return false
+	}
+
+	for index := 0; index < len(name); index++ {
+		if !isTokenChar(name[index]) {
+			return false
+		}
+	}
+
+	for index := 0; index < len(value); index++ {
+		switch value[index] {
+		case '\r', '\n', 0:
+			return false
+		}
+	}
+
+	return true
+}
+
+// isTokenChar 判断字节是否为 HTTP token 允许的字符。
+func isTokenChar(char byte) bool {
+	if char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' {
+		return true
+	}
+
+	switch char {
+	case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+		return true
+	}
+
+	return false
 }
 
 // keySalt 为 RFC 6455 定义的固定 GUID。

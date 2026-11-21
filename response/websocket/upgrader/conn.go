@@ -358,7 +358,15 @@ func (own *Conn) readFrame() (*frame, error) {
 	}
 
 	if limit := own.GetMaxReadLimit(); int64(payloadLength) > limit {
-		return nil, fmt.Errorf("leego: websocket: message of %d bytes exceeds limit of %d bytes", payloadLength, limit)
+		text := fmt.Sprintf("message of %d bytes exceeds limit of %d bytes", payloadLength, limit)
+		// 服务端主动告知对端“消息过大”（1009），再以错误结束读取，
+		// 使对端不必继续发送剩余数据。仅在连接已完整初始化时写关闭帧，
+		// 避免在未绑定底层连接的场景下解引用空指针。
+		if own.isServer && own.conn != nil && own.writer != nil {
+			own.closeWithCodeQuietly(CLOSE_CODE_MESSAGE_TOO_BIG, text)
+		}
+
+		return nil, fmt.Errorf("leego: websocket: %s", text)
 	}
 
 	var maskKey [4]byte

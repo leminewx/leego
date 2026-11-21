@@ -160,7 +160,7 @@ leego.ShowLogo()
 
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `WithEngineName(name)` | `"leego"` | 服务名称，出现在日志、指标后台与错误响应中 |
+| `WithEngineName(name)` | `"leego"` | 服务名称，出现在日志与指标后台中 |
 | `WithMultipartMemory(bytes)` | 32 MiB | multipart 表单解析可用的最大内存 |
 | `WithMaxBodyBytes(bytes)` | 8 MiB | 单个请求体上限；`<= 0` 表示不限制 |
 | `WithStrictJSON(strict)` | `false` | 为 `true` 时 JSON 绑定拒绝未知字段 |
@@ -187,7 +187,9 @@ engine.SetTrustedProxies("10.0.0.0/8") // 只有这些网段传来的转发头�
 engine.SetErrorHandler(func(ctx *leego.Context, err error) {
 	// ctx.Fail(err) 的最后一步会走到这里；未设置时输出默认 JSON 错误。
 	// 处理器负责写出响应，返回后框架不会再补响应体。
-	_ = ctx.ResponseJSON(http.StatusInternalServerError, leego.JSON{"error": err.Error()})
+	// 默认实现不会回显 err.Error()：原始错误可能含数据库地址、文件路径等
+	// 内部细节，只应写日志；对外始终返回固定文案。
+	_ = ctx.ResponseJSON(http.StatusInternalServerError, leego.JSON{"error": "internal"})
 })
 ```
 
@@ -318,7 +320,9 @@ ctx.GetPathValues()               // 全部路由参数
 // 超限时返回 http.MaxBytesError，Request.Body 仍由 net/http 负责关闭。
 raw, err := ctx.ReadBody()
 if err != nil {
-	ctx.ResponseError(http.StatusRequestEntityTooLarge, err.Error())
+	// http.MaxBytesError 会被 Fail 自动映射为 413 + request_entity_too_large；
+	// 默认错误体只含通用文案，不透出字节上限等内部细节。
+	ctx.Fail(err)
 	return
 }
 
@@ -328,7 +332,8 @@ verifySignature(raw)
 var payload User
 // 绑定复用上面的缓存，不会二次读取请求体；失败通常是 JSON 语法或类型不匹配。
 if err := ctx.BindJSON(&payload); err != nil {
-	ctx.ResponseError(http.StatusBadRequest, "JSON 无效: "+err.Error())
+	// 对外只返回固定文案，解码细节写日志，避免泄露结构体字段等内部信息。
+	ctx.ResponseError(http.StatusBadRequest, "JSON 无效")
 	return
 }
 
@@ -386,7 +391,7 @@ value, err := ctx.GetCookieValue("sid")
 | `ResponseHTMLTemplate(source, data)` | 内联模板渲染 `text/html`，自动转义 |
 | `ResponseBytes(code, data)` | 原始字节 |
 | `ResponseError(code, message)` | 记录错误链 + 状态码 + 纯文本错误体 |
-| `Fail(err)` | 记录错误并交给 `Engine.SetErrorHandler` 或默认 JSON 错误格式 |
+| `Fail(err)` | 记录错误并交给 `Engine.SetErrorHandler`；默认 JSON 不透出内部错误，请求体超限自动映射为 413 |
 | `ResponseRedirect(code, location)` | 重定向；`code` 必须落在 300–308，否则 panic |
 | `ResponseTemplate(name, data)` | 渲染已加载模板 |
 | `ResponseTemplateFile(file, name, data)` | 渲染指定模板文件 |
@@ -470,19 +475,19 @@ engine.UseMiddlewares(authMiddleware)
 | 入口 | 说明 |
 | --- | --- |
 | `middlewares.NewLogger()` / `NewLoggerWithConfig(cfg)` | 访问日志：方法、路径、状态码、耗时、客户端 IP，可配色、可跳过指定路径 |
-| `middlewares.NewRecovery()` / `NewRecoveryWithConfig(cfg)` | panic 恢复：输出堆栈与可选请求内容，默认返回 500 |
+| `middlewares.NewRecovery()` / `NewRecoveryWithConfig(cfg)` | panic 恢复：输出堆栈与可选请求内容（敏感头自动脱敏），默认返回 500 |
 | `middlewares.NewMonitor(collector)` | 为手工挂载的第三方处理器补充指标采集（路由级采集已内建，勿重复叠加） |
 | `middlewares.WrapFromHTTPHandler(h)` | 把 `http.Handler` 包装成中间件 |
 | `middlewares.WrapFromHTTPHandlerFunc(f)` | 把 `http.HandlerFunc` 包装成中间件 |
 | `middlewares.UnwrapFromMiddlewareFuncToHTTPHandler(m)` | 把中间件解包为 `http.Handler` |
 | `cors.New()` | CORS：源、方法、头、凭据、`Max-Age` 与预检处理 |
-| `jwt.NewHMACSigner(alg, key)` / `jwt.NewParser()` | JWT 签发与解析（HS256/384/512） |
+| `jwt.NewHMACSigner(alg, key)` / `jwt.NewParser()` | JWT 签发与解析（HS256/384/512，密钥须满足 RFC 7518 最小长度） |
 | `limiter.NewFixedWindowLimiter(limit, window)` | 固定窗口限流 |
 | `limiter.NewSlidingWindowLimiter(limit, buckets, window)` | 滑动窗口限流 |
 | `limiter.NewTokenBucketLimiter(limit, burst)` | 令牌桶限流 |
 | `breaker.NewCircuitBreaker(config)` | 熔断器：失败率窗口 + 半开探测 |
 | `cache.New(cache.Config{...})` | 响应缓存：LRU 容量控制、`X-Cache` 标记与 stale-while-revalidate，默认跳过带 Cookie 的请求 |
-| `compress.New(compress.Config{...})` | gzip 压缩：按内容类型与最小长度阈值决定是否压缩 |
+| `compress.New(compress.Config{...})` | gzip 压缩：按内容类型与最小长度阈值决定是否压缩，`q=0` 视为客户端拒绝 |
 | `trace.NewTracer(exporter, ...)` | 链路追踪：解析/生成 W3C `traceparent`，批量异步导出 |
 | `session.New(store, options...)` | 服务端会话：签名 Cookie + 可替换存储，支持轮换与销毁；`WithSecret` 必填 |
 
@@ -521,7 +526,8 @@ engine.GET("/risky", func(ctx *leego.Context) {
 	if err := circuitBreaker.ExecuteWithContext(ctx, func(ctx *leego.Context) error {
 		return callDownstream(ctx)
 	}); err != nil {
-		ctx.ResponseError(http.StatusServiceUnavailable, err.Error())
+		// 下游错误只写日志；对外统一固定文案，不泄露上游地址等信息。
+		ctx.ResponseError(http.StatusServiceUnavailable, "service unavailable")
 	}
 })
 ```
@@ -568,7 +574,8 @@ import (
 store := session.NewMemoryStore()
 defer store.Close() // 停掉后台清理协程
 
-// 中间件负责读取 Cookie、恢复会话，并在请求结束时写回。
+// 中间件负责读取 Cookie、恢复会话，并在请求结束时写回；
+// panic 路径同样会持久化会话，升级 WebSocket 前先同步 Set-Cookie。
 // WithSecret 为必填的签名密钥，未配置时启动直接报错；
 // WithSecure(true) 给 Cookie 打上 Secure 标记（仅 HTTPS 下发送），TLS 请求会自动启用。
 engine.UseMiddlewares(session.New(
@@ -589,7 +596,7 @@ engine.POST("/login", func(ctx *leego.Context) {
 	current.Set("user", "leminewx")
 	// 登录成功必须轮换 ID，避免会话固定攻击。
 	if err := current.Regenerate(ctx.Request.Context()); err != nil {
-		ctx.ResponseError(http.StatusInternalServerError, err.Error())
+		ctx.ResponseError(http.StatusInternalServerError, "session unavailable")
 		return
 	}
 
@@ -727,9 +734,10 @@ type CreateUser struct {
 
 engine.POST("/users", func(ctx *leego.Context) {
 	var request CreateUser
-	// 绑定失败属于请求格式问题，用 400 + RFC 7807 结构返回。
+	// 绑定失败属于请求格式问题，用 400 + RFC 7807 结构返回；
+	// 对外用固定说明，不把解析器的原始错误透出给客户端。
 	if err := ctx.BindJSON(&request); err != nil {
-		problem.New(http.StatusBadRequest, "invalid_json", err.Error()).Write(ctx)
+		problem.New(http.StatusBadRequest, "invalid_json", "请求体不是合法 JSON").Write(ctx)
 		return
 	}
 

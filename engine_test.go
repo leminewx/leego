@@ -3,6 +3,7 @@ package leego
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -972,6 +974,84 @@ func TestEngineRecoversHandlerPanic(t *testing.T) {
 	// 后续请求仍能正常处理，说明上下文与写入器已归还对象池。
 	if recorder := performRequest(engine, http.MethodGet, "/ping", nil); recorder.Code != http.StatusOK {
 		t.Fatalf("后续请求状态码 = %d, want 200", recorder.Code)
+	}
+}
+
+// TestEngineCollectorReleasesFlightsOnPanic 验证处理器 panic 时在途计数仍被回收。
+//
+// 修复前 serveMatched 只在正常返回路径调用 Decrease，panic 会让 flights
+// 永久停留在 1，故障恢复后指标后台显示的并发数持续偏高。
+func TestEngineCollectorReleasesFlightsOnPanic(t *testing.T) {
+	engine := createTestEngine()
+	engine.GET("/panic", func(*Context) {
+		panic("boom")
+	}, "panic")
+
+	recorder := performRequest(engine, http.MethodGet, "/panic", nil)
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("状态码 = %d, want 500", recorder.Code)
+	}
+
+	handler, ok := engine.GetHandler(http.MethodGet, "/panic")
+	if !ok {
+		t.Fatal("未检索到处理器")
+	}
+
+	snapshot := handler.GetCollector().GetSnapshot()
+	if snapshot.Flights != 0 {
+		t.Fatalf("在途请求数 = %d, want 0（panic 后必须回收）", snapshot.Flights)
+	}
+
+	if snapshot.Total != 1 || snapshot.Failed != 1 {
+		t.Fatalf("快照 = %+v, want total=1, failed=1", snapshot)
+	}
+}
+
+// TestEngineConfigConcurrentAccess 验证配置读写并发安全。
+//
+// 该用例需配合 -race 运行：修复前 SetName/GetConfig/SetTrustedProxies 直接读写
+// 普通字段，与请求期读取并发时会产生 data race。
+func TestEngineConfigConcurrentAccess(t *testing.T) {
+	engine := NewEngine(WithTrustedProxies("10.0.0.0/8"), DisableStartupLog())
+
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.RemoteAddr = "10.0.0.1:1234"
+	request.Header.Set("X-Forwarded-For", "203.0.113.7")
+
+	const rounds = 50
+
+	var waitGroup sync.WaitGroup
+	for index := 0; index < 3; index++ {
+		index := index
+
+		waitGroup.Add(2)
+		go func() {
+			defer waitGroup.Done()
+			for round := 0; round < rounds; round++ {
+				engine.SetName(fmt.Sprintf("svc-%d-%d", index, round))
+				engine.SetMaxMultipartMemory(int64(1024 + round))
+				_ = engine.SetTrustedProxies("10.0.0.0/8")
+			}
+		}()
+
+		go func() {
+			defer waitGroup.Done()
+			ctx := NewContext(httptest.NewRecorder(), request)
+			ctx.engine = engine
+			for round := 0; round < rounds; round++ {
+				_ = engine.GetName()
+				_ = engine.GetConfig()
+				_ = engine.GetTrustedProxies()
+				_ = ctx.GetClientIP()
+				_ = ctx.GetServiceName()
+			}
+		}()
+	}
+
+	waitGroup.Wait()
+
+	if len(engine.GetTrustedProxies()) != 1 {
+		t.Fatalf("可信代理数量 = %d, want 1", len(engine.GetTrustedProxies()))
 	}
 }
 

@@ -235,7 +235,7 @@ func (own *Context) GetServiceName() string {
 		return ""
 	}
 
-	return own.engine.config.Name
+	return own.engine.getConfig().Name
 }
 
 // GetRemoteIP 返回直连对端 IP。
@@ -243,6 +243,10 @@ func (own *Context) GetServiceName() string {
 // 与 GetClientIP 不同，该函数不会读取任何代理头，适合在未配置可信代理时
 // 作为安全的兜底值。解析失败时返回去除首尾空白后的 RemoteAddr。
 func (own *Context) GetRemoteIP() string {
+	if own.Request == nil {
+		return ""
+	}
+
 	addr := strings.TrimSpace(own.Request.RemoteAddr)
 	if addr == "" {
 		return ""
@@ -310,10 +314,13 @@ func WriteDefaultError(ctx *Context, err error) {
 
 	var httpErr *HTTPError
 	status := http.StatusInternalServerError
-	message := err.Error()
+	// 默认文案不透出原始错误，避免把数据库地址、文件路径等内部细节返回给客户端；
+	// 原始错误仍保留在错误链与日志中，便于服务端排障。
+	message := http.StatusText(http.StatusInternalServerError)
 	code := "internal_error"
 
-	if errors.As(err, &httpErr) {
+	switch {
+	case errors.As(err, &httpErr):
 		status = httpErr.Status
 		message = httpErr.Message
 		if message == "" {
@@ -322,6 +329,11 @@ func WriteDefaultError(ctx *Context, err error) {
 		if httpErr.Code != "" {
 			code = httpErr.Code
 		}
+	case isBodyTooLarge(err):
+		// 请求体超过 MaxBodyBytes 属于客户端错误，应按 413 返回而非 500。
+		status = http.StatusRequestEntityTooLarge
+		message = http.StatusText(status)
+		code = "request_entity_too_large"
 	}
 
 	if ctx.GetStatusCode() != 0 {
@@ -336,6 +348,12 @@ func WriteDefaultError(ctx *Context, err error) {
 			"message": message,
 		},
 	})
+}
+
+// isBodyTooLarge 判断错误是否由请求体超过 MaxBodyBytes 引起。
+func isBodyTooLarge(err error) bool {
+	var magnitude *http.MaxBytesError
+	return errors.As(err, &magnitude)
 }
 
 // HTTPError 定义可映射为 HTTP 响应的业务错误。
@@ -452,6 +470,7 @@ func (own *Context) DeriveContext(ctx context.Context) *Context {
 		jwtClaims:  own.jwtClaims,
 		sameSite:   own.sameSite,
 		startTime:  own.startTime,
+		internal:   own.internal,
 		errorChain: errorChain,
 		pathValues: pathValues,
 		bodyCache:  own.bodyCache,
@@ -532,7 +551,7 @@ func (own *Context) GetClientIP() string {
 	}
 
 	remote := own.GetRemoteIP()
-	if own.engine == nil || len(own.engine.trustedProxies) == 0 || !own.isTrustedProxy(remote) {
+	if own.engine == nil || len(own.engine.getTrustedProxies()) == 0 || !own.isTrustedProxy(remote) {
 		// 直连对端不可信：代理头由客户端自行携带，采信即可被伪造 IP。
 		own.clientIP = remote
 		return own.clientIP
@@ -582,7 +601,7 @@ func (own *Context) isTrustedProxy(ip string) bool {
 		return false
 	}
 
-	for _, prefix := range own.engine.trustedProxies {
+	for _, prefix := range own.engine.getTrustedProxies() {
 		if prefix.Contains(addr) {
 			return true
 		}
@@ -708,7 +727,7 @@ func (own *Context) getMaxBodyBytes() int64 {
 		return _DEFAULT_MAX_BODY_BYTES
 	}
 
-	return own.engine.config.MaxBodyBytes
+	return own.engine.getConfig().MaxBodyBytes
 }
 
 // limitRequestBody 为请求体套上 MaxBodyBytes 上限。
@@ -752,12 +771,19 @@ func (own *Context) SaveUploadedFile(file *multipart.FileHeader, target string, 
 	}
 
 	dir := filepath.Dir(target)
-	if err = os.MkdirAll(dir, mode); err != nil {
-		return err
-	}
+	if _, statErr := os.Stat(dir); statErr != nil {
+		if !os.IsNotExist(statErr) {
+			return statErr
+		}
 
-	if err = os.Chmod(dir, mode); err != nil {
-		return err
+		if err = os.MkdirAll(dir, mode); err != nil {
+			return err
+		}
+
+		// 仅收紧本次新建目录的权限，避免误改业务既有目录（如共享上传根）的权限。
+		if err = os.Chmod(dir, mode); err != nil {
+			return err
+		}
 	}
 
 	dst, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
@@ -839,8 +865,10 @@ func (own *Context) BindJSON(object any) error {
 	// 直接用字节切片构造解码器：转成 string 会额外拷贝一份请求体，
 	// 对接近 MaxBodyBytes 的大请求相当于双倍内存峰值。
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	if own.engine != nil && own.engine.config.StrictJSON {
-		decoder.DisallowUnknownFields()
+	if own.engine != nil {
+		if config := own.engine.getConfig(); config.StrictJSON {
+			decoder.DisallowUnknownFields()
+		}
 	}
 
 	if err := decoder.Decode(object); err != nil {

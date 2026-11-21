@@ -1,8 +1,10 @@
 package response
 
 import (
+	"bufio"
 	"bytes"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -151,6 +153,56 @@ func TestReadFromDelegates(t *testing.T) {
 	}
 }
 
+// hijackRecorder 模拟支持连接劫持的底层 ResponseWriter。
+type hijackRecorder struct {
+	*httptest.ResponseRecorder
+	conn net.Conn
+}
+
+// Hijack 返回预先建立的管道连接与缓冲读写器。
+func (own *hijackRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return own.conn, bufio.NewReadWriter(bufio.NewReader(own.conn), bufio.NewWriter(own.conn)), nil
+}
+
+// TestFlushRecordsStatus 验证 Flush 隐式写入的 200 会被记录。
+//
+// 修复前 Flush 只转发到底层，访问日志与指标会把 SSE 响应误判为“未写响应”。
+func TestFlushRecordsStatus(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writer := NewWriter(recorder)
+
+	writer.Flush()
+
+	if writer.GetStatusCode() != http.StatusOK {
+		t.Fatalf("Flush 后状态码 = %d, want 200", writer.GetStatusCode())
+	}
+
+	if !recorder.Flushed {
+		t.Fatal("Flush 必须转发到底层写入器")
+	}
+}
+
+// TestHijackRecordsSwitchingProtocols 验证劫持成功后记录 101。
+//
+// 劫持后由上层协议（如 WebSocket）自行写响应行，因此只记录状态码；
+// 不记录会让访问日志与指标把升级请求当成 0 状态。
+func TestHijackRecordsSwitchingProtocols(t *testing.T) {
+	server, client := net.Pipe()
+	defer func() { _ = server.Close() }()
+	defer func() { _ = client.Close() }()
+
+	writer := NewWriter(&hijackRecorder{ResponseRecorder: httptest.NewRecorder(), conn: server})
+
+	connection, readWriter, err := writer.Hijack()
+	if err != nil || connection == nil || readWriter == nil {
+		t.Fatalf("Hijack() = (%v, %v, %v)", connection, readWriter, err)
+	}
+
+	if writer.GetStatusCode() != http.StatusSwitchingProtocols {
+		t.Fatalf("劫持后状态码 = %d, want 101", writer.GetStatusCode())
+	}
+}
+
 // TestHijackUnsupported 验证底层不支持劫持时返回约定错误。
 func TestHijackUnsupported(t *testing.T) {
 	writer := NewWriter(httptest.NewRecorder())
@@ -162,6 +214,11 @@ func TestHijackUnsupported(t *testing.T) {
 
 	if connection != nil || readWriter != nil {
 		t.Fatal("失败时必须返回 nil 连接与 nil 读写器")
+	}
+
+	// 劫持失败不得记录 101，否则日志会把普通响应误判为协议升级。
+	if writer.GetStatusCode() != 0 {
+		t.Fatalf("劫持失败后状态码 = %d, want 0", writer.GetStatusCode())
 	}
 }
 

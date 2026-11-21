@@ -2,6 +2,7 @@ package middlewares
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -110,6 +111,45 @@ func TestRecoverPassesThrough(t *testing.T) {
 
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("状态码 = %d, want 204", recorder.Code)
+	}
+}
+
+// TestRecoverRedactsSensitiveHeaders 验证请求转储不会泄露凭据。
+//
+// httputil.DumpRequest 会把 Authorization/Cookie 等头原文写进日志；
+// 恢复中间件必须基于副本脱敏后再转储，且不修改原始请求。
+func TestRecoverRedactsSensitiveHeaders(t *testing.T) {
+	output := &bytes.Buffer{}
+	handle := NewRecoveryWithConfig(&RecoveryConfig{Output: output, DumpRequest: true}).AdaptToMiddleware()(func(*leego.Context) {
+		// 使用非字符串 panic 值，同时验证 %v 能正确格式化任意值。
+		panic(errors.New("boom"))
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/secure", nil)
+	request.Header.Set("Authorization", "Bearer super-secret-token")
+	request.Header.Set("Cookie", "session=top-secret-cookie")
+	request.Header.Set("X-Api-Key", "api-key-value")
+
+	handle(leego.NewContext(httptest.NewRecorder(), request))
+
+	logged := output.String()
+	for _, secret := range []string{"super-secret-token", "top-secret-cookie", "api-key-value"} {
+		if strings.Contains(logged, secret) {
+			t.Fatalf("日志泄露敏感值 %q: %s", secret, logged)
+		}
+	}
+
+	if !strings.Contains(logged, "[REDACTED]") {
+		t.Fatalf("日志缺少脱敏占位符: %s", logged)
+	}
+
+	if !strings.Contains(logged, "boom") {
+		t.Fatalf("日志缺少 panic 值: %s", logged)
+	}
+
+	// 脱敏只能基于副本，不能改写调用方请求。
+	if got := request.Header.Get("Authorization"); got != "Bearer super-secret-token" {
+		t.Fatalf("原始请求头被改写 = %q", got)
 	}
 }
 

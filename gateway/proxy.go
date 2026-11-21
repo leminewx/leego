@@ -253,6 +253,8 @@ func (own *proxy) serve(ctx *leego.Context) {
 		own.handleError(ctx, target, err)
 	})
 	request := ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), errorKey{}, reporter))
+	// 克隆请求头：后续对超时头等的改写不应污染调用链共享的原始 Header。
+	request.Header = ctx.Request.Header.Clone()
 
 	if own.options.Timeout > 0 {
 		requestCtx, cancel := context.WithTimeout(request.Context(), own.options.Timeout)
@@ -260,7 +262,7 @@ func (own *proxy) serve(ctx *leego.Context) {
 		defer cancel()
 
 		request = request.WithContext(requestCtx)
-		ctx.SetRequestHeader(own.options.TimeoutHeader, strconv.FormatInt(own.options.Timeout.Milliseconds(), 10))
+		request.Header.Set(own.options.TimeoutHeader, strconv.FormatInt(own.options.Timeout.Milliseconds(), 10))
 	}
 
 	ctx.Request = request

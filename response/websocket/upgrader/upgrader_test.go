@@ -404,6 +404,59 @@ func TestBuildHandshakeResponse(t *testing.T) {
 	}
 }
 
+// TestBuildHandshakeResponseRejectsInjectedHeaders 验证手写报文不会发生响应头注入。
+//
+// 握手响应是裸字节拼接，绕过了 net/http 的头部校验；
+// 若不对头名与头值做 token/CRLF 校验，攻击者可通过 Header 注入额外响应。
+func TestBuildHandshakeResponseRejectsInjectedHeaders(t *testing.T) {
+	request := createHandshakeRequest(t)
+
+	header := http.Header{
+		"X-Safe":   {"ok"},
+		"X-Inject": {"value\r\nInjected: 1"},
+		"Bad Name": {"value"},
+	}
+
+	response := buildHandshakeResponse(request, header, "")
+
+	if !strings.Contains(response, "X-Safe: ok\r\n") {
+		t.Fatalf("合法响应头丢失：\n%s", response)
+	}
+
+	if strings.Contains(response, "Injected: 1") {
+		t.Fatalf("CRLF 注入未被拦截：\n%s", response)
+	}
+
+	if strings.Contains(response, "Bad Name") {
+		t.Fatalf("非法头名未被拦截：\n%s", response)
+	}
+}
+
+// TestIsValidHeaderField 验证头名校验的边界。
+func TestIsValidHeaderField(t *testing.T) {
+	cases := []struct {
+		name  string
+		key   string
+		value string
+		want  bool
+	}{
+		{name: "合法 token", key: "X-Trace", value: "abc", want: true},
+		{name: "空头名", key: "", value: "abc", want: false},
+		{name: "头名含空格", key: "X Trace", value: "abc", want: false},
+		{name: "值含换行", key: "X-Trace", value: "a\nb", want: false},
+		{name: "值含回车", key: "X-Trace", value: "a\rb", want: false},
+		{name: "值含 NUL", key: "X-Trace", value: "a\x00b", want: false},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := isValidHeaderField(testCase.key, testCase.value); got != testCase.want {
+				t.Fatalf("isValidHeaderField(%q, %q) = %v, want %v", testCase.key, testCase.value, got, testCase.want)
+			}
+		})
+	}
+}
+
 // TestComputeAcceptKey 验证 Sec-WebSocket-Accept 计算与 RFC 6455 示例一致。
 func TestComputeAcceptKey(t *testing.T) {
 	const expected = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="

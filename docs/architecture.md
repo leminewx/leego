@@ -39,7 +39,7 @@
 | `Group` | 前缀拼接、中间件继承、路由注册 | 只在注册期使用 |
 | `Handler` | 折叠后的处理链、启停状态、指标采集器 | 链只折叠一次 |
 | `Context` | 单请求状态与全部请求/响应能力 | 池化对象，禁止跨请求持有 |
-| `response.Writer` | 状态码、字节数、`Flush`/`Hijack` 透传 | 池化对象，随请求归还 |
+| `response.Writer` | 状态码、字节数、`Flush`/`Hijack` 透传 | 池化对象，随请求归还；`Flush` 未写头时隐式回填 200，`Hijack` 成功后记 101 |
 
 ---
 
@@ -97,6 +97,7 @@ Engine.UseMiddlewares        │ 不再接受中间件变更
 | 数据 | 保护方式 | 说明 |
 | --- | --- | --- |
 | 路由表 | 注册期 `sync.RWMutex` + 冻结后只读 | 冻结后不再加锁 |
+| 引擎配置与可信代理 | `atomic.Pointer` + 写时复制 | `SetName` / `SetMaxMultipartMemory` / `SetTrustedProxies` 可在运行期更新，读取无锁 |
 | 路由中间件链 | `atomic.Pointer` + `sync.Once` | 折叠一次，读取无锁 |
 | 全局中间件链 | `atomic.Pointer` + `sync.Once` | 同上 |
 | 路由启停 | `atomic.Bool` | 运行期可切换 |

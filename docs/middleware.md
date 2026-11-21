@@ -116,9 +116,9 @@ stdHandlerFunc := middlewares.UnwrapFromMiddlewareFuncToHTTPHandleFunc(myMiddlew
 | `middlewares/limiter` | 三种限流构造器 | 限流（见 [limiter-breaker.md](limiter-breaker.md)） |
 | `middlewares/breaker` | `NewCircuitBreaker(config)` | 熔断（同上） |
 | `middlewares/cache` | `New(cache.Config{...})` | 响应缓存，默认旁路 Cookie 请求（见 README「拓展能力」） |
-| `middlewares/compress` | `New(compress.Config{...})` | gzip 压缩，按内容类型与阈值判定（同上） |
+| `middlewares/compress` | `New(compress.Config{...})` | gzip 压缩，按内容类型与阈值判定；`q=0`（含 `*;q=0`）视为客户端拒绝 |
 | `middlewares/trace` | `NewTracer(exporter, ...)` | W3C `traceparent` 传播与异步导出（同上） |
-| `middlewares/session` | `New(store, options...)` | 服务端会话：签名 Cookie + 可替换存储，支持轮换与销毁 |
+| `middlewares/session` | `New(store, options...)` | 服务端会话：签名 Cookie + 可替换存储，支持轮换与销毁；panic 路径同样持久化，Hijack 前同步 Set-Cookie |
 
 所有构造器都只创建实例（结构体或接口），实例通过 `AdaptToMiddleware()` 适配为
 `leego.MiddlewareFunc` 后才能挂载；包装与解包工具函数除外。这样实例可以在多处复用
@@ -187,7 +187,7 @@ engine.UseMiddlewares(middlewares.NewRecoveryWithConfig(&middlewares.RecoveryCon
 | 字段 | 说明 |
 | --- | --- |
 | `Output` | 堆栈输出目标，默认 `os.Stdout` |
-| `DumpRequest` | 是否转储请求行与头 |
+| `DumpRequest` | 是否转储请求行与头；`Authorization`、`Cookie`、`Set-Cookie`、`X-Api-Key` 等敏感头自动替换为 `[REDACTED]` |
 | `DumpRequestBody` | 是否转储请求体（可能包含敏感信息，默认关闭） |
 | `HandleFunc` | 自定义收尾逻辑；为 `nil` 时返回 `500` 纯文本 |
 
@@ -195,6 +195,9 @@ engine.UseMiddlewares(middlewares.NewRecoveryWithConfig(&middlewares.RecoveryCon
 `NewRecovery()`，panic 也会记录堆栈并在响应尚未开始时返回 500（`http.ErrAbortHandler`
 仍按标准库语义上抛）。若需要覆盖「路由匹配阶段」的 panic、输出请求转储或自定义
 收尾，仍应把 `NewRecovery()` 注册为全局中间件（推荐做法）。
+
+请求转储在克隆出的 Header 上脱敏，不会改动原始请求头；脱敏后的占位符为
+`[REDACTED]`，可安全地把日志交给集中式平台。
 
 ### 指标采集补充
 

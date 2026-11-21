@@ -168,12 +168,18 @@ func (own *writer) Write(data []byte) (int, error) {
 		own.decided = true
 
 		contentType := own.inner.Header().Get("Content-Type")
+		sniffed := false
 		if contentType == "" && len(data) > 0 {
-			// 仅用于判定，不写回响应头：真正的嗅探仍由 net/http 完成。
+			// 仅用于判定；若最终压缩，必须将其回写到响应头，
+			// 否则底层会对压缩后的字节重新嗅探出错误类型（如 application/x-gzip）。
 			contentType = http.DetectContentType(data)
+			sniffed = true
 		}
 
 		if own.shouldCompress(http.StatusOK, contentType) {
+			if sniffed {
+				own.inner.Header().Set("Content-Type", contentType)
+			}
 			own.enable()
 		}
 	}
@@ -310,16 +316,41 @@ func (own *writer) shouldCompress(status int, contentType string) bool {
 }
 
 // acceptsGzip 判断客户端是否接受 gzip。
+//
+// 需解析 q 参数：Accept-Encoding: gzip;q=0 表示客户端明确拒绝 gzip，
+// 不能仅因出现 gzip 字样就压缩。
 func acceptsGzip(request *http.Request) bool {
 	if request == nil {
 		return true
 	}
 
 	for _, item := range strings.Split(request.Header.Get("Accept-Encoding"), ",") {
-		encoding := strings.TrimSpace(strings.SplitN(item, ";", 2)[0])
-		if strings.EqualFold(encoding, "gzip") || encoding == "*" {
-			return true
+		parts := strings.Split(item, ";")
+		encoding := strings.TrimSpace(parts[0])
+		if !strings.EqualFold(encoding, "gzip") && encoding != "*" {
+			continue
 		}
+
+		if isZeroQuality(parts[1:]) {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
+// isZeroQuality 判断参数列表中的 q 值是否为 0（即明确拒绝）。
+func isZeroQuality(params []string) bool {
+	for _, param := range params {
+		key, value, found := strings.Cut(param, "=")
+		if !found || !strings.EqualFold(strings.TrimSpace(key), "q") {
+			continue
+		}
+
+		// q 形如 0、0.0、0.000 表示拒绝；非 0 值视为接受。
+		return strings.Trim(strings.TrimSpace(value), "0.") == ""
 	}
 
 	return false

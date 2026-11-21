@@ -236,10 +236,11 @@ type Engine struct {
 	// group 为根路由组，使 Engine 直接具备路由注册能力。
 	*group
 
-	// config 保存引擎配置；写入只发生在注册期。
-	config EngineConfig
-	// trustedProxies 保存解析后的可信代理网段。
-	trustedProxies []netip.Prefix
+	// config 保存引擎配置的不可变快照；通过原子指针整体替换，
+	// 使运行期读取无需加锁，也不会与 Set* 的并发写入产生数据竞争。
+	config atomic.Pointer[EngineConfig]
+	// trustedProxies 保存解析后的可信代理网段的不可变快照。
+	trustedProxies atomic.Pointer[[]netip.Prefix]
 
 	// router 为路由器。
 	router Router
@@ -290,21 +291,22 @@ type Engine struct {
 func NewEngine(options ...EngineOption) *Engine {
 	checkGoVersion()
 
+	config := NewDefaultEngineConfig()
+	for _, option := range options {
+		if option != nil {
+			option(&config)
+		}
+	}
+
 	engine := &Engine{
-		config:       NewDefaultEngineConfig(),
 		handlers:     make(map[string]Handler),
 		printBuilder: &strings.Builder{},
 		writerPool:   response.NewWriterPool(),
 	}
-
-	for _, option := range options {
-		if option != nil {
-			option(&engine.config)
-		}
-	}
+	engine.config.Store(&config)
 
 	// 可信代理属于启动期配置，解析失败时保留合法项并记录警告。
-	if err := engine.SetTrustedProxies(engine.config.TrustedProxies...); err != nil {
+	if err := engine.SetTrustedProxies(config.TrustedProxies...); err != nil {
 		logging.LogWarn("%v", err)
 	}
 
@@ -321,35 +323,68 @@ func NewEngine(options ...EngineOption) *Engine {
 
 // GetConfig 返回当前配置的深拷贝。
 func (own *Engine) GetConfig() EngineConfig {
-	return own.config.Clone()
+	return own.getConfig().Clone()
+}
+
+// getConfig 返回当前配置的只读快照。
+//
+// 返回值指向不可变对象，调用方不得修改；需要修改时使用 updateConfig。
+func (own *Engine) getConfig() *EngineConfig {
+	if config := own.config.Load(); config != nil {
+		return config
+	}
+
+	// 零值引擎（未经过 NewEngine）兜底，避免空指针。
+	config := NewDefaultEngineConfig()
+	own.config.Store(&config)
+	return &config
+}
+
+// updateConfig 以写时复制方式更新配置。
+//
+// 每次更新都基于当前快照克隆一份再整体替换，保证并发读取始终看到
+// 一份完整一致的配置，不会读到“改了一半”的中间状态。
+func (own *Engine) updateConfig(mutate func(*EngineConfig)) {
+	for {
+		current := own.getConfig()
+		next := current.Clone()
+		mutate(&next)
+		if own.config.CompareAndSwap(current, &next) {
+			return
+		}
+	}
 }
 
 // SetName 设置服务名称。
 func (own *Engine) SetName(name string) {
 	if name = strings.TrimSpace(name); name != "" {
-		own.config.Name = name
+		own.updateConfig(func(config *EngineConfig) { config.Name = name })
 	}
 }
 
 // GetName 返回服务名称。
 func (own *Engine) GetName() string {
-	return own.config.Name
+	return own.getConfig().Name
 }
 
 // SetMaxMultipartMemory 设置解析 multipart 表单时允许使用的最大内存。
 func (own *Engine) SetMaxMultipartMemory(bytes int64) {
 	if bytes > 0 {
-		own.config.MaxMultipartMemory = bytes
+		own.updateConfig(func(config *EngineConfig) { config.MaxMultipartMemory = bytes })
 	}
 }
 
 // getMultipartMemory 返回解析 multipart 表单时可用的内存上限。
 func (own *Engine) getMultipartMemory() int64 {
-	if own == nil || own.config.MaxMultipartMemory <= 0 {
+	if own == nil {
 		return _DEFAULT_MULTIPART_MEMORY
 	}
 
-	return own.config.MaxMultipartMemory
+	if config := own.getConfig(); config.MaxMultipartMemory > 0 {
+		return config.MaxMultipartMemory
+	}
+
+	return _DEFAULT_MULTIPART_MEMORY
 }
 
 // SetErrorHandler 设置自定义错误处理器。
@@ -387,8 +422,10 @@ func (own *Engine) SetTrustedProxies(cidrs ...string) error {
 		prefixes = append(prefixes, prefix)
 	}
 
-	own.trustedProxies = prefixes
-	own.config.TrustedProxies = append([]string(nil), cidrs...)
+	own.trustedProxies.Store(&prefixes)
+	own.updateConfig(func(config *EngineConfig) {
+		config.TrustedProxies = append([]string(nil), cidrs...)
+	})
 	if len(invalid) > 0 {
 		return fmt.Errorf("leego: invalid trusted proxy entries: %s", strings.Join(invalid, ", "))
 	}
@@ -417,7 +454,16 @@ func parsePrefix(value string) (netip.Prefix, error) {
 
 // GetTrustedProxies 返回可信代理网段的文本形式。
 func (own *Engine) GetTrustedProxies() []string {
-	return append([]string(nil), own.config.TrustedProxies...)
+	return append([]string(nil), own.getConfig().TrustedProxies...)
+}
+
+// getTrustedProxies 返回可信代理网段的只读快照；调用方不得修改。
+func (own *Engine) getTrustedProxies() []netip.Prefix {
+	if prefixes := own.trustedProxies.Load(); prefixes != nil {
+		return *prefixes
+	}
+
+	return nil
 }
 
 // LoadHTMLGlob 按通配模式加载 HTML 模板。
@@ -766,17 +812,23 @@ func (own *Engine) serveMatched(ctx *Context, handler Handler) {
 	monitor := handler.GetCollector()
 	if monitor != nil {
 		monitor.Increase()
+		start := time.Now()
+
+		// 必须用 defer：处理器 panic 时由上层 Recovery 接管，
+		// 若正常返回路径才回收，在途计数会永久泄漏。
+		defer func() {
+			status := ctx.GetStatusCode()
+			if status == 0 {
+				status = http.StatusInternalServerError
+			}
+			monitor.Decrease(status, time.Since(start))
+		}()
 	}
 
-	start := time.Now()
 	if handler.IsEnabled() {
 		handler.ServeHTTP(ctx)
 	} else {
 		ctx.ResponseError(http.StatusLocked, response.GetStatusLowerText(http.StatusLocked))
-	}
-
-	if monitor != nil {
-		monitor.Decrease(ctx.GetStatusCode(), time.Since(start))
 	}
 }
 
@@ -936,7 +988,8 @@ func (own *Engine) GetServer() *http.Server {
 
 // logStartup 输出路由注册信息与监听地址。
 func (own *Engine) logStartup(addr, scheme string) {
-	if own.config.DisableStartupLog {
+	config := own.getConfig()
+	if config.DisableStartupLog {
 		return
 	}
 
@@ -951,8 +1004,8 @@ func (own *Engine) logStartup(addr, scheme string) {
 
 	// 长连接提示：写超时到点会直接断开 SSE/WebSocket 连接，
 	// 而症状（连接使用一段时间后静默断开）很难让人联想到超时配置。
-	if own.config.WriteTimeout > 0 {
-		logging.LogInfo("Hint: WriteTimeout=%s will close long-lived responses; use leego.WithWriteTimeout(0) for SSE/WebSocket", own.config.WriteTimeout)
+	if config.WriteTimeout > 0 {
+		logging.LogInfo("Hint: WriteTimeout=%s will close long-lived responses; use leego.WithWriteTimeout(0) for SSE/WebSocket", config.WriteTimeout)
 	}
 
 	logging.LogInfo("Listening and serving %s on %s ...", strings.ToUpper(scheme), addr)
@@ -1021,7 +1074,7 @@ func (own *Engine) GetHTTPHandler() http.Handler {
 // 启用后返回同时包含 HTTP/1.1、HTTP/2 与明文 HTTP/2 的集合——保留 HTTP/2 是为了
 // RunTLS 场景下 ALPN 仍能协商到 h2，而不是只提供 h2c。
 func (own *Engine) GetHTTPProtocols() *http.Protocols {
-	if !own.config.H2C {
+	if !own.getConfig().H2C {
 		return nil
 	}
 

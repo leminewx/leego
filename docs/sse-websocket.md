@@ -130,6 +130,8 @@ engine.GET("/sse/:client", func(ctx *leego.Context) {
 - 投递失败会注销该连接，并把错误写入错误通道；
 - `Broadcast` / `BroadcastTo` / `Close` 的逐连接通知由信号量限制在 64 个并发协程，
   慢客户端不会放大 goroutine 数量；每个连接仍由自身写循环串行写入；
+- `Broadcast` / `BroadcastTo` **同步等待**本批投递完成才返回，慢客户端会延长调用方
+  的阻塞时间，不要在请求热路径上直接广播；
 - `Close()` 会先向所有连接投递 `shutdown` 消息，并等待最多 50ms 让关闭消息刷出，
   然后关闭连接与错误通道；
 - `Close()` 幂等，且不会关闭连接的 `messageChan`（投递方可能仍持有引用）。
@@ -200,6 +202,10 @@ connection, err := upgraderInstance.Upgrade(ctx.Request, ctx.Response, nil)
 `Sec-WebSocket-Version: 13`、`Sec-WebSocket-Key` 为 16 字节 Base64。任一不满足
 返回错误，不会写出 101 响应。
 
+升级响应会手工拼接 101 报文，因此调用方通过 `Upgrade(req, w, respHeader)` 传入的
+响应头会按 RFC 7230 校验：头名必须是合法 token，头值不得包含 CR / LF / NUL；
+不合法的项直接丢弃，避免响应头注入。
+
 ### 连接读写
 
 ```go
@@ -227,7 +233,7 @@ for {
 - 服务端要求客户端帧**必须掩码**，客户端要求服务端帧**不能掩码**；
 - 控制帧（PING / PONG / CLOSE）负载不得超过 125 字节；
 - 文本帧必须是合法 UTF-8；
-- 超过 `MaxReadLimit` 的帧直接拒绝；
+- 超过 `MaxReadLimit` 的帧直接拒绝；服务端同时向对端发送 1009（消息过大）关闭帧；
 - 写操作由互斥锁串行化；
 - `Close()` 幂等；`CloseWithCode(code, text)` 发送关闭帧后关闭底层连接；
 - `ErrConnectionIsClosed` / `ErrWriteIsClosed` 用于区分「已关闭」的读写错误。

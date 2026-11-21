@@ -149,6 +149,35 @@ func TestAddRoutePanicsOnDuplicate(t *testing.T) {
 	})
 }
 
+// TestAddRouteKeepsRegistryConsistentOnTreeConflict 验证路由树插入失败不留半注册索引。
+//
+// 同名参数不同名的路由会在 Insert 阶段 panic；修复前先登记 handlers
+// 再插路由树，失败后 handlers 中会残留一条永远匹配不到的处理器。
+func TestAddRouteKeepsRegistryConsistentOnTreeConflict(t *testing.T) {
+	engine := NewEngine(DisableStartupLog())
+	engine.GET("/users/:id", func(ctx *Context) {
+		_ = ctx.ResponseText(http.StatusOK, ctx.GetPathValue("id"))
+	}, "users")
+
+	assertPanics(t, "冲突参数名", func() {
+		engine.GET("/users/:name", func(ctx *Context) {}, "users-by-name")
+	})
+
+	engine.handlersMu.RLock()
+	_, exists := engine.handlers[http.MethodGet+" /users/:name"]
+	engine.handlersMu.RUnlock()
+
+	if exists {
+		t.Fatal("Insert 失败后不得残留未进树的处理器索引")
+	}
+
+	// 已注册路由必须仍然可用。
+	recorder := performRequest(engine, http.MethodGet, "/users/42", nil)
+	if recorder.Code != http.StatusOK || recorder.Body.String() != "42" {
+		t.Fatalf("响应 = (%d, %q), want (200, 42)", recorder.Code, recorder.Body.String())
+	}
+}
+
 // TestAddRoutePanicsOnNilHandler 验证 nil 处理函数被拒绝。
 func TestAddRoutePanicsOnNilHandler(t *testing.T) {
 	engine := NewEngine(DisableStartupLog())

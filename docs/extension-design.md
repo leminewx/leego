@@ -421,7 +421,8 @@ type Config struct {
 	Types   []string // 默认 text/*, application/json, application/xml, application/javascript
 }
 
-func New(config ...Config) leego.MiddlewareFunc
+func New(config ...Config) *Compress
+func (*Compress) AdaptToMiddleware() leego.MiddlewareFunc
 ```
 
 **实现步骤**
@@ -429,10 +430,13 @@ func New(config ...Config) leego.MiddlewareFunc
 1. `writerPool sync.Pool` 复用 `gzip.Writer`；请求结束时 `Reset(io.Discard)` 后归还。
 2. 包装器实现 `response.Writer`（`Flush` 先 `gzip.Flush` 再底层 `Flush`）。
 3. `WriteHeader` 时决定是否压缩：`Content-Type` 命中 + 无 `Content-Encoding` +
-   方法非 `HEAD` + 非 `text/event-stream` + 非 `101 Switching Protocols`。
+   方法非 `HEAD` + 非 `text/event-stream` + 非 `101 Switching Protocols`；
+   `Accept-Encoding` 解析 `;q=`，`q=0`（含 `*;q=0`）视为客户端拒绝。
 4. `Unwrap()` 返回底层 writer，保证 `http.ResponseController` 与 sendfile 仍可用。
 5. 不压缩已 `Hijack` 的连接（WebSocket）：`Hijack` 直接委托底层，
    并标记 `skipCompress`，后续 `Write` 透传。
+6. `Write` 路径嗅探出 `Content-Type` 且决定压缩时，先把该类型回写底层 Header，
+   避免 `net/http` 对压缩后的字节重嗅成 `application/x-gzip`。
 
 **注意**：包装器 `GetSize()` 返回**实际写出的压缩后字节**，与 collector 统计口径一致；
 若需要原始大小，另设 `GetOriginalSize()`，不改变 `response.Writer` 契约。
@@ -452,7 +456,8 @@ type Config struct {
 	Methods  []string      // 默认 GET / HEAD
 }
 
-func New(config ...Config) leego.MiddlewareFunc
+func New(config ...Config) *Cache
+func (*Cache) AdaptToMiddleware() leego.MiddlewareFunc
 ```
 
 **实现步骤**
@@ -493,7 +498,8 @@ type Span struct {
 
 type Exporter interface{ Export(ctx context.Context, spans []Span) error }
 
-func New(exporter Exporter, options ...Option) leego.MiddlewareFunc
+func NewTracer(exporter Exporter, options ...Option) *Tracer
+func (*Tracer) AdaptToMiddleware() leego.MiddlewareFunc
 func TraceFrom(ctx context.Context) (*Span, bool)
 func ParseTraceparent(value string) (traceID, parentID string, sampled bool, ok bool)
 func FormatTraceparent(traceID, spanID string, sampled bool) string
@@ -655,7 +661,7 @@ func (own *Scheduler) Stop(ctx context.Context) error // 等待在途任务
 实现要点：`container/heap` 按 `nextRun` 排序；单协程 `select` 定时器 + 取消；
 Worker 数有界（默认 `GOMAXPROCS`），队满拒绝并计数；每个任务在独立协程中执行
 并 `recover`，单个任务 panic 不会杀死调度器；语义明确为 **at-most-once**
-（进程崩溃则丢失），写入包注释。
+（进程崩溃则丢失），写入包注释；`Stop` 后已注册但未执行的任务不再派发。
 
 ---
 
@@ -678,8 +684,8 @@ func NewProxy(balancer *Balancer, options ...Option) leego.HandleFunc
 `*url.URL` 指针复用）并共享连接池；`Rewrite` 模式下标准库会先剥离客户端自带的
 `Forwarded` / `X-Forwarded-*`，再由 `SetXForwarded` 写入真实来源；灰度按 header
 命中或权重分流；`FlushInterval` 为负数时支持 SSE 流式透传；`ErrorHandler` 通过
-`OnError` 回调快速失败；超时预算通过 `X-Request-Timeout` 向下游传递；502 只返回
-固定文案，不泄露上游地址。
+`OnError` 回调快速失败；超时预算通过 `X-Request-Timeout` 向下游传递，写入该头前先
+`Clone` 请求头，不污染调用链共享的原始 Header；502 只返回固定文案，不泄露上游地址。
 
 ---
 

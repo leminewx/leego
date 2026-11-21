@@ -173,7 +173,7 @@ func registerBasicRoutes(engine *leego.Engine) {
 // registerLoginRoutes 注册登录、SSE 与文件相关路由。
 func registerLoginRoutes(engine *leego.Engine) {
 	// HMAC-SHA384 签名器：生产环境应从配置中心或环境变量读取密钥。
-	signer, err := jwt.NewHMACSigner(jwt.HS384, []byte("leego-demo-secret-please-change"))
+	signer, err := jwt.NewHMACSigner(jwt.HS384, []byte("leego-demo-secret-please-change-0123456789abcdef"))
 	if err != nil {
 		log.Fatalf("初始化 JWT 签名器失败: %v", err)
 	}

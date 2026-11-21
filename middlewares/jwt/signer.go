@@ -39,10 +39,22 @@ var _ Signer = (*hmacSigner)(nil)
 //
 // 参数：
 //   - algorithm：HS256 / HS384 / HS512，其他值回退为 HS256；
-//   - key：密钥，不能为空——空密钥会让 HMAC 失去认证能力，任意载荷都可被伪造。
+//   - key：密钥，不能为空，且长度不得小于所选算法的哈希输出长度
+//     （RFC 7518 §3.2：HS256≥32、HS384≥48、HS512≥64 字节）。
+//     过短的密钥会降低签名的抗暴力破解强度，因此直接拒绝。
 func NewHMACSigner(algorithm Algorithm, key []byte) (Signer, error) {
 	if len(key) == 0 {
 		return nil, errors.New("jwt: HMAC key must not be empty")
+	}
+
+	minimum := minHMACKeyLength(algorithm)
+	if minimum == 0 {
+		// 未知算法一律拒绝，避免“笔误静默降级为 HS256”带来的安全与互操作问题。
+		return nil, fmt.Errorf("%w: %q", ErrUnsupportedMethod, algorithm)
+	}
+
+	if len(key) < minimum {
+		return nil, fmt.Errorf("jwt: %s requires a key of at least %d bytes, got %d", algorithm, minimum, len(key))
 	}
 
 	signer := &hmacSigner{}
@@ -51,15 +63,29 @@ func NewHMACSigner(algorithm Algorithm, key []byte) (Signer, error) {
 		signer.hashPool = &sync.Pool{New: func() any { return hmac.New(sha512.New, key) }}
 	case HS384:
 		signer.hashPool = &sync.Pool{New: func() any { return hmac.New(sha512.New384, key) }}
-	case HS256:
-		signer.hashPool = &sync.Pool{New: func() any { return hmac.New(sha256.New, key) }}
 	default:
-		// 未知算法一律拒绝，避免“笔误静默降级为 HS256”带来的安全与互操作问题。
-		return nil, fmt.Errorf("%w: %q", ErrUnsupportedMethod, algorithm)
+		signer.hashPool = &sync.Pool{New: func() any { return hmac.New(sha256.New, key) }}
 	}
 
 	signer.header = NewHeader(algorithm)
 	return signer, nil
+}
+
+// minHMACKeyLength 返回算法要求的最小密钥长度（字节）。
+//
+// 依据 RFC 7518 §3.2，HMAC 密钥长度不得短于哈希输出长度；
+// 未知算法返回 0。
+func minHMACKeyLength(algorithm Algorithm) int {
+	switch algorithm {
+	case HS256:
+		return 32
+	case HS384:
+		return 48
+	case HS512:
+		return 64
+	default:
+		return 0
+	}
 }
 
 // GetHeader 返回签名器使用的头部。

@@ -187,6 +187,51 @@ func TestContextReadBodyRespectsMaxBytes(t *testing.T) {
 	}
 }
 
+// TestContextBodyTooLargeMapsTo413 验证超限请求体在默认错误响应中映射为 413。
+//
+// 修复前 MaxBytesError 会落入默认分支返回 500，客户端无法区分
+// “请求太大”与“服务端内部错误”。
+func TestContextBodyTooLargeMapsTo413(t *testing.T) {
+	engine := NewEngine(WithMaxBodyBytes(4), DisableStartupLog())
+	engine.POST("/upload", func(ctx *Context) {
+		if _, err := ctx.ReadBody(); err != nil {
+			ctx.Fail(err)
+			return
+		}
+
+		_ = ctx.ResponseText(http.StatusOK, "ok")
+	})
+
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader("too large")))
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("状态码 = %d, want 413", recorder.Code)
+	}
+
+	var body map[string]map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("错误响应不是合法 JSON: %v", err)
+	}
+
+	if body["error"]["code"] != "request_entity_too_large" {
+		t.Fatalf("错误码 = %q, want request_entity_too_large", body["error"]["code"])
+	}
+
+	// 错误文案不得回显底层细节（如 max bytes 限制值）。
+	if strings.Contains(strings.ToLower(recorder.Body.String()), "maxbytes") {
+		t.Fatalf("响应体泄露内部错误：%q", recorder.Body.String())
+	}
+}
+
+// TestContextGetRemoteIPWithoutRequest 验证缺失请求时安全返回空值。
+func TestContextGetRemoteIPWithoutRequest(t *testing.T) {
+	ctx := &Context{}
+	if got := ctx.GetRemoteIP(); got != "" {
+		t.Fatalf("GetRemoteIP() = %q, want 空字符串", got)
+	}
+}
+
 // TestContextBindFormRespectsMaxBytes 验证表单体同样受 MaxBodyBytes 限制。
 //
 // x-www-form-urlencoded 的请求体是在 ParseForm 内部读取的，上限必须在那之前
@@ -473,7 +518,9 @@ func TestContextErrorChain(t *testing.T) {
 		t.Fatalf("错误响应不是合法 JSON: %v", err)
 	}
 
-	if body["error"]["code"] != "internal_error" || body["error"]["message"] != "first" {
+	// 非 HTTPError 的原始错误不得回显给客户端，避免内部信息泄露；
+	// 默认只返回通用文案，原始错误仍保留在错误链中。
+	if body["error"]["code"] != "internal_error" || body["error"]["message"] != http.StatusText(http.StatusInternalServerError) {
 		t.Fatalf("错误响应 = %+v", body)
 	}
 
